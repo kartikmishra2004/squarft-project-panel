@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "squarft-project-panel",
+    "slug": "squarft-project-panel",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icons/app-icon.png",
+    "scheme": "squarftprojectpanel",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kartik2611mishra.squarftprojectpanel"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.kartik2611mishra.squarftprojectpanel"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icons/icon.png",
+          "resizeMode": "cover",
+          "imageWidth": 200,
+          "backgroundColor": "#4A43EC",
+          "dark": {
+            "backgroundColor": "#4A43EC"
+          }
+        }
+      ]
+    ],
+    "splash": {
+      "image": "./assets/icons/icon.png",
+      "resizeMode": "cover",
+      "imageWidth": 200,
+      "backgroundColor": "#4A43EC",
+      "dark": {
+        "backgroundColor": "#4A43EC"
+      }
+    },
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
