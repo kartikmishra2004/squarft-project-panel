@@ -1,16 +1,34 @@
-import { Text, View, TextInput, TouchableOpacity, Image } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Link, router } from "expo-router";
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
-import { setName, setMobile, setPassword, setConfirmPassword, setOtpFlow } from "../../store/slices/authSlice";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+    setName,
+    setMobile,
+    setPassword,
+    setConfirmPassword,
+    setOtpFlow,
+    setCompanyName,
+    setReraNumber,
+    setLocation
+} from "../../store/slices/authSlice";
 
 const logo = require("../../assets/icons/app-icon.png");
 
 export default function Register() {
     const dispatch = useDispatch();
-    const { name, mobile, password, confirmPassword } = useSelector((state) => state.auth);
+    const {
+        name,
+        mobile,
+        password,
+        confirmPassword,
+        companyName,
+        reraNumber,
+        location
+    } = useSelector((state) => state.auth);
     const [showConfirm, setShowConfirm] = useState(false);
 
     const handleRegister = () => {
@@ -19,93 +37,142 @@ export default function Register() {
     };
 
     return (
-        <View className="flex-1">
-            <StatusBar style="light" />
-
-            <View className="bg-[#4A43EC] pt-16 pb-10 px-7">
-                <View style={{ width: 60, height: 60, overflow: 'hidden' }} className="mb-5 mt-4" >
-                    <Image source={logo} style={{ width: 110, height: 110, margin: -30 }} resizeMode="contain" />
-                </View>
-                <Text className="text-white text-[36px] font-bold mb-1">Register</Text>
-                <Link href="/login">
-                    <Text className="text-white text-[14px] underline ">Log in</Text>
-                </Link>
-            </View>
-
-            <View className="flex-1 bg-white px-6 pt-8">
-
-                <Text className="text-gray-500 text-[13px] mb-1.5">Enter Your Name</Text>
-                <View className="border border-gray-200 rounded-xl px-4 py-2 mb-5">
-                    <TextInput
-                        value={name}
-                        onChangeText={(val) => dispatch(setName(val))}
-                        placeholder="Name"
-                        placeholderTextColor="#aaa"
-                        className="text-[15px] text-black"
-                    />
-                </View>
-
-                {/* Mobile */}
-                <Text className="text-gray-500 text-[13px] mb-1.5">Enter Your Mobile Number</Text>
-                <View className="border border-gray-200 rounded-xl px-4 py-2 mb-5">
-                    <TextInput
-                        value={mobile}
-                        onChangeText={(val) => dispatch(setMobile(val))}
-                        placeholder="Number"
-                        placeholderTextColor="#aaa"
-                        keyboardType="phone-pad"
-                        className="text-[15px] text-black"
-                    />
-                </View>
-
-                <Text className="text-gray-500 text-[13px] mb-1.5">Password</Text>
-                <View className="border border-gray-200 rounded-xl px-4 py-2 flex-row items-center mb-8">
-                    <TextInput
-                        value={password}
-                        onChangeText={(val) => dispatch(setPassword(val))}
-                        placeholder="••••••••"
-                        placeholderTextColor="#aaa"
-                        secureTextEntry={!showConfirm}
-                        className="flex-1 text-[15px] text-black"
-                    />
-                       <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
-                        <Ionicons
-                            name={showConfirm ? "eye-outline" : "eye-off-outline"}
-                            size={20}
-                            color="#aaa"
-                        />
-                    </TouchableOpacity>
-                    
-                </View>
-
-
-                <Text className="text-gray-500 text-[13px] mb-1.5">Confirm Password</Text>
-                <View className="border border-gray-200 rounded-xl px-4 py-2 flex-row items-center mb-8">
-                    <TextInput
-                        value={confirmPassword}
-                        onChangeText={(val) => dispatch(setConfirmPassword(val))}
-                        placeholder="••••••••"
-                        placeholderTextColor="#aaa"
-                        secureTextEntry={!showConfirm}
-                        className="flex-1 text-[15px] text-black"
-                    />
-                    <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
-                        <Ionicons
-                            name={showConfirm ? "eye-outline" : "eye-off-outline"}
-                            size={20}
-                            color="#aaa"
-                        />
-                    </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                    onPress={handleRegister}
-                    className="bg-[#4A43EC] rounded-2xl py-4 items-center"
+        <SafeAreaView className="flex-1 bg-white" edges={['bottom']}>
+            <StatusBar style="dark" />
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 40}
+            >
+                <ScrollView
+                    className="flex-1"
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
                 >
-                    <Text className="text-white text-[16px] font-semibold">Register</Text>
-                </TouchableOpacity>
+                    <View className="bg-[#4A43EC] pt-12 pb-8 px-7">
+                        <View style={{ width: 60, height: 60, overflow: 'hidden' }} className="mb-4 mt-2" >
+                            <Image source={logo} style={{ width: 110, height: 110, margin: -30 }} resizeMode="contain" />
+                        </View>
+                        <Text className="text-white text-[32px] font-lato-bold mb-1">Register</Text>
+                        <View className="flex-row items-center">
+                            <Text className="text-white/80 text-[14px]">Already have an account? </Text>
+                            <Link href="/login">
+                                <Text className="text-white text-[14px] font-lato-bold underline ">Log in</Text>
+                            </Link>
+                        </View>
+                    </View>
 
-            </View>
-        </View>
+                    <View className="px-6 pt-6">
+                        {/* Name */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Full Name</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 mb-4">
+                            <TextInput
+                                value={name}
+                                onChangeText={(val) => dispatch(setName(val))}
+                                placeholder="Full Name"
+                                placeholderTextColor="#aaa"
+                                className="text-[15px] text-black font-lato"
+                            />
+                        </View>
+
+                        {/* Company Name */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Company Name</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 mb-4">
+                            <TextInput
+                                value={companyName}
+                                onChangeText={(val) => dispatch(setCompanyName(val))}
+                                placeholder="Company Name"
+                                placeholderTextColor="#aaa"
+                                className="text-[15px] text-black font-lato"
+                            />
+                        </View>
+
+                        {/* RERA Number */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">RERA Number</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 mb-4">
+                            <TextInput
+                                value={reraNumber}
+                                onChangeText={(val) => dispatch(setReraNumber(val))}
+                                placeholder="RERA Number"
+                                placeholderTextColor="#aaa"
+                                className="text-[15px] text-black font-lato"
+                            />
+                        </View>
+
+                        {/* Mobile */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Phone Number</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 mb-4">
+                            <TextInput
+                                value={mobile}
+                                onChangeText={(val) => dispatch(setMobile(val))}
+                                placeholder="Phone Number"
+                                placeholderTextColor="#aaa"
+                                keyboardType="phone-pad"
+                                className="text-[15px] text-black font-lato"
+                            />
+                        </View>
+
+                        {/* Location */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Location</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 mb-4">
+                            <TextInput
+                                value={location}
+                                onChangeText={(val) => dispatch(setLocation(val))}
+                                placeholder="Location"
+                                placeholderTextColor="#aaa"
+                                className="text-[15px] text-black font-lato"
+                            />
+                        </View>
+
+                        {/* Password */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Password</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 flex-row items-center mb-4">
+                            <TextInput
+                                value={password}
+                                onChangeText={(val) => dispatch(setPassword(val))}
+                                placeholder="••••••••"
+                                placeholderTextColor="#aaa"
+                                secureTextEntry={!showConfirm}
+                                className="flex-1 text-[15px] text-black font-lato"
+                            />
+                            <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                                <Ionicons
+                                    name={showConfirm ? "eye-outline" : "eye-off-outline"}
+                                    size={20}
+                                    color="#aaa"
+                                />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Confirm Password */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Confirm Password</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 flex-row items-center mb-8">
+                            <TextInput
+                                value={confirmPassword}
+                                onChangeText={(val) => dispatch(setConfirmPassword(val))}
+                                placeholder="••••••••"
+                                placeholderTextColor="#aaa"
+                                secureTextEntry={!showConfirm}
+                                className="flex-1 text-[15px] text-black font-lato"
+                            />
+                            <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                                <Ionicons
+                                    name={showConfirm ? "eye-outline" : "eye-off-outline"}
+                                    size={20}
+                                    color="#aaa"
+                                />
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                            onPress={handleRegister}
+                            className="bg-[#4A43EC] rounded-2xl py-4 items-center mb-10 shadow-lg shadow-blue-500/30"
+                        >
+                            <Text className="text-white text-[16px] font-lato-bold">Register</Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </SafeAreaView>
     );
 }
