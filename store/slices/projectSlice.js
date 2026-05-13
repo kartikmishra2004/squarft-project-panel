@@ -48,7 +48,7 @@ const projectSlice = createSlice({
         },
         removePropertyType: (state, action) => {
             state.step2.selectedTypes = state.step2.selectedTypes.filter(t => t.id !== action.payload);
-            delete state.step3.units[action.payload];
+            delete state.step3.unitConfigs[action.payload];
         },
         updatePropertyType: (state, action) => {
             const index = state.step2.selectedTypes.findIndex(t => t.id === action.payload.id);

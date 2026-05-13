@@ -27,6 +27,7 @@ import {
     updateStep4,
     resetForm,
 } from "../../store/slices/projectSlice";
+import { addProject } from "../../store/slices/projectsSlice";
 
 const { width } = Dimensions.get("window");
 
@@ -100,7 +101,24 @@ export default function AddProject() {
         if (currentStep < 4) {
             dispatch(setStep(currentStep + 1));
         } else {
-            console.log("Submitting form...");
+            // Final Step (Submit)
+            const finalProjectData = {
+                id: Date.now().toString(),
+                ...step1,
+                selectedTypes: step2.selectedTypes.map(type => ({
+                    ...type,
+                    units: step3.unitConfigs[type.id]?.map((unit, idx) => ({
+                        ...unit,
+                        ...step4.unitData[`${type.id}-${idx}`]
+                    })) || []
+                })),
+                createdAt: new Date().toISOString(),
+                status: 'Active'
+            };
+            
+            dispatch(addProject(finalProjectData));
+            dispatch(resetForm());
+            router.push('/success');
         }
     };
 
@@ -738,6 +756,7 @@ function Step3() {
     const dispatch = useDispatch();
     const { step2, step3 } = useSelector((state) => state.project);
     const { width } = Dimensions.get('window');
+    const [openAreaDropdown, setOpenAreaDropdown] = useState(null); // format: "typeId-unitIdx"
 
     const updateQuantity = (typeId, quantity) => {
         dispatch(updateStep3({ typeId, quantity: parseInt(quantity) || 0 }));
@@ -767,11 +786,11 @@ function Step3() {
                             <Text className="font-lato-bold text-[#4A43EC] text-sm uppercase">
                                 {type.subType.toUpperCase()} ({type.mainType})
                             </Text>
-                            <View className="mt-3">
-                                <Text className="text-xs font-lato-bold text-black mb-2">How many units of this type?</Text>
-                                <View className="bg-white border border-gray-200 rounded-xl px-4 h-11 justify-center">
+                            <View className="mt-4">
+                                <Text className="text-sm font-lato-bold text-black mb-2.5">How many units of this type?</Text>
+                                <View className="bg-white border border-gray-200 rounded-xl px-4 h-14 justify-center">
                                     <TextInput
-                                        className="text-[13px] font-lato-medium text-black"
+                                        className="text-base font-lato-medium text-black"
                                         placeholder="eg. 2"
                                         keyboardType="numeric"
                                         value={configs.length.toString()}
@@ -783,16 +802,16 @@ function Step3() {
                         </View>
 
                         {configs.map((unit, idx) => (
-                            <View key={`${type.id}-${idx}`} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                                <Text className="font-lato-bold text-black text-sm mb-4">Unit {idx + 1} Details</Text>
+                            <View key={`${type.id}-${idx}`} className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm">
+                                <Text className="font-lato-bold text-black text-base mb-5">Unit {idx + 1} Details</Text>
                                 
                                 {type.subType === 'apartment' && (
-                                    <View className="flex-row gap-3 mb-4">
+                                    <View className="flex-row gap-4 mb-5">
                                         <View className="flex-1">
-                                            <Text className="text-[10px] font-lato-bold mb-1.5">Tower</Text>
-                                            <View className="bg-white border border-gray-200 rounded-lg px-3 h-10 justify-center">
+                                            <Text className="text-xs font-lato-bold text-gray-500 mb-2">Tower</Text>
+                                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                                 <TextInput
-                                                    className="text-[13px] text-gray-800 font-lato-medium"
+                                                    className="text-sm text-gray-800 font-lato-medium"
                                                     placeholder="A"
                                                     value={unit.tower}
                                                     onChangeText={v => updateUnitDetail(type.id, idx, 'tower', v)}
@@ -801,10 +820,10 @@ function Step3() {
                                             </View>
                                         </View>
                                         <View className="flex-1">
-                                            <Text className="text-[10px] font-lato-bold mb-1.5">Floor</Text>
-                                            <View className="bg-white border border-gray-200 rounded-lg px-3 h-10 justify-center">
+                                            <Text className="text-xs font-lato-bold text-gray-500 mb-2">Floor</Text>
+                                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                                 <TextInput
-                                                    className="text-[13px] text-gray-800 font-lato-medium"
+                                                    className="text-sm text-gray-800 font-lato-medium"
                                                     placeholder="5"
                                                     value={unit.floor}
                                                     onChangeText={v => updateUnitDetail(type.id, idx, 'floor', v)}
@@ -816,16 +835,16 @@ function Step3() {
                                 )}
 
                                 {(type.subType === 'villa' || type.subType === 'rowhouse' || type.subType === 'apartment') && (
-                                    <View className="mb-4">
-                                        <Text className="text-[10px] font-lato-bold mb-2">BHK Type</Text>
-                                        <View className="flex-row flex-wrap gap-2">
+                                    <View className="mb-5">
+                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">BHK Type</Text>
+                                        <View className="flex-row flex-wrap gap-2.5">
                                             {bhkOptions.map((opt) => (
                                                 <TouchableOpacity
                                                     key={opt}
                                                     onPress={() => updateUnitDetail(type.id, idx, 'bhk', opt)}
-                                                    className={`px-3 py-1 rounded-full border ${unit.bhk === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
+                                                    className={`px-4 py-2 rounded-xl border ${unit.bhk === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
                                                 >
-                                                    <Text className={`text-[9px] font-lato-bold ${unit.bhk === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
+                                                    <Text className={`text-xs font-lato-bold ${unit.bhk === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
                                                 </TouchableOpacity>
                                             ))}
                                         </View>
@@ -833,28 +852,28 @@ function Step3() {
                                 )}
 
                                 {type.subType === 'office' && (
-                                    <View className="mb-4">
-                                        <Text className="text-[10px] font-lato-bold mb-2">Office Type</Text>
-                                        <View className="flex-row flex-wrap gap-2">
+                                    <View className="mb-5">
+                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Office Type</Text>
+                                        <View className="flex-row flex-wrap gap-2.5">
                                             {officeTypes.map((opt) => (
                                                 <TouchableOpacity
                                                     key={opt}
                                                     onPress={() => updateUnitDetail(type.id, idx, 'officeType', opt)}
-                                                    className={`px-3 py-1 rounded-full border ${unit.officeType === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
+                                                    className={`px-4 py-2 rounded-xl border ${unit.officeType === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
                                                 >
-                                                    <Text className={`text-[9px] font-lato-bold ${unit.officeType === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
+                                                    <Text className={`text-xs font-lato-bold ${unit.officeType === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
                                                 </TouchableOpacity>
                                             ))}
                                         </View>
                                     </View>
                                 )}
 
-                                <View className="flex-row gap-3 mb-4">
-                                    <View className="flex-[2]">
-                                        <Text className="text-[10px] font-lato-bold mb-1.5">Area ({unit.areaUnit})</Text>
-                                        <View className="bg-white border border-gray-200 rounded-lg px-3 h-10 justify-center">
+                                <View className="flex-row gap-4 mb-5">
+                                    <View className="flex-[3]">
+                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2">Area ({unit.areaUnit})</Text>
+                                        <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                             <TextInput
-                                                className="text-[13px] text-gray-800 font-lato-medium"
+                                                className="text-sm text-gray-800 font-lato-medium"
                                                 placeholder="1200"
                                                 keyboardType="numeric"
                                                 value={unit.area}
@@ -863,11 +882,11 @@ function Step3() {
                                             />
                                         </View>
                                     </View>
-                                    <View className="flex-1">
-                                        <Text className="text-[10px] font-lato-bold mb-1.5">Property No.</Text>
-                                        <View className="bg-white border border-gray-200 rounded-lg px-3 h-10 justify-center">
+                                    <View className="flex-[2]">
+                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2">Property No.</Text>
+                                        <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                             <TextInput
-                                                className="text-[13px] text-gray-800 font-lato-medium"
+                                                className="text-sm text-gray-800 font-lato-medium"
                                                 placeholder="A-101"
                                                 value={unit.propertyNumber}
                                                 onChangeText={v => updateUnitDetail(type.id, idx, 'propertyNumber', v)}
@@ -880,39 +899,56 @@ function Step3() {
                                 {type.subType === 'apartment' && (
                                     <TouchableOpacity 
                                         onPress={() => updateUnitDetail(type.id, idx, 'hasShop', !unit.hasShop)}
-                                        className="flex-row items-center gap-2 mb-4"
+                                        className="flex-row items-center gap-3 mb-5 py-1"
                                     >
-                                        <View className={`w-4 h-4 rounded border items-center justify-center ${unit.hasShop ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-300'}`}>
-                                            {unit.hasShop && <Ionicons name="checkmark" size={12} color="white" />}
+                                        <View className={`w-5 h-5 rounded-md border items-center justify-center ${unit.hasShop ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-300'}`}>
+                                            {unit.hasShop && <Ionicons name="checkmark" size={14} color="white" />}
                                         </View>
-                                        <Text className="text-[10px] font-lato-medium text-gray-700">Has shop at ground floor?</Text>
+                                        <Text className="text-[13px] font-lato-medium text-gray-700">Has shop at ground floor?</Text>
                                     </TouchableOpacity>
                                 )}
 
                                 {/* Per-Unit Area Unit Dropdown */}
-                                <View className="mb-4">
-                                    <Text className="text-[10px] font-lato-bold mb-1.5">Area Unit</Text>
-                                    <View className="flex-row flex-wrap gap-2">
-                                        {areaUnits.map((u) => (
-                                            <TouchableOpacity
-                                                key={u}
-                                                onPress={() => updateUnitDetail(type.id, idx, 'areaUnit', u)}
-                                                className={`px-2.5 py-1 rounded-full border ${unit.areaUnit === u ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
-                                            >
-                                                <Text className={`text-[8px] font-lato-bold ${unit.areaUnit === u ? 'text-white' : 'text-gray-500'}`}>{u}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
+                                <View className="mb-5 z-[50]">
+                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Area Unit</Text>
+                                    <TouchableOpacity
+                                        onPress={() => setOpenAreaDropdown(openAreaDropdown === `${type.id}-${idx}` ? null : `${type.id}-${idx}`)}
+                                        className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
+                                    >
+                                        <Text className="text-sm font-lato-medium text-black">{unit.areaUnit}</Text>
+                                        <Ionicons name={openAreaDropdown === `${type.id}-${idx}` ? "chevron-up" : "chevron-down"} size={18} color="#666" />
+                                    </TouchableOpacity>
+
+                                    {openAreaDropdown === `${type.id}-${idx}` && (
+                                        <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[51] overflow-hidden">
+                                            <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }}>
+                                                {areaUnits.map((u) => (
+                                                    <TouchableOpacity
+                                                        key={u}
+                                                        onPress={() => {
+                                                            updateUnitDetail(type.id, idx, 'areaUnit', u);
+                                                            setOpenAreaDropdown(null);
+                                                        }}
+                                                        className={`px-4 py-3 border-b border-gray-50 ${unit.areaUnit === u ? 'bg-[#F4F7FF]' : ''}`}
+                                                    >
+                                                        <Text className={`text-sm font-lato-bold ${unit.areaUnit === u ? 'text-[#4A43EC]' : 'text-gray-800'}`}>
+                                                            {u}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    )}
                                 </View>
 
                                 {/* Per-Unit Amenities */}
-                                <View className="mb-4">
-                                    <Text className="text-[10px] font-lato-bold mb-1.5">Unit Amenities</Text>
+                                <View className="mb-5">
+                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Unit Amenities</Text>
                                     {unit.amenities?.map((amenity, aIdx) => (
-                                        <View key={aIdx} className="flex-row gap-2 mb-2">
-                                            <View className="flex-1 bg-white border border-gray-200 rounded-lg px-3 h-10 justify-center">
+                                        <View key={aIdx} className="flex-row gap-3 mb-3">
+                                            <View className="flex-1 bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                                 <TextInput
-                                                    className="text-[12px] text-gray-800 font-lato-medium"
+                                                    className="text-sm text-gray-800 font-lato-medium"
                                                     placeholder="eg. Garden Facing"
                                                     value={amenity}
                                                     onChangeText={v => {
@@ -929,30 +965,30 @@ function Step3() {
                                                         const newAmenities = unit.amenities.filter((_, i) => i !== aIdx);
                                                         updateUnitDetail(type.id, idx, 'amenities', newAmenities);
                                                     }}
-                                                    className="w-10 h-10 bg-red-50 rounded-lg items-center justify-center"
+                                                    className="w-12 h-12 bg-red-50 rounded-xl items-center justify-center border border-red-100"
                                                 >
-                                                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                                                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
                                                 </TouchableOpacity>
                                             )}
                                         </View>
                                     ))}
                                     <TouchableOpacity 
                                         onPress={() => updateUnitDetail(type.id, idx, 'amenities', [...(unit.amenities || []), ''])}
-                                        className="flex-row items-center"
+                                        className="flex-row items-center py-1"
                                     >
-                                        <Ionicons name="add-circle-outline" size={14} color="#4A43EC" />
-                                        <Text className="text-[9px] font-lato-bold text-[#4A43EC] ml-1">Add Amenity</Text>
+                                        <Ionicons name="add-circle-outline" size={18} color="#4A43EC" />
+                                        <Text className="text-xs font-lato-bold text-[#4A43EC] ml-2">Add More Amenity</Text>
                                     </TouchableOpacity>
                                 </View>
 
                                 {/* Per-Unit Extra Charges */}
                                 <View>
-                                    <Text className="text-[10px] font-lato-bold mb-1.5">Unit Specific Charges</Text>
+                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Unit Specific Charges</Text>
                                     {unit.extraCharges?.map((charge, cIdx) => (
-                                        <View key={cIdx} className="flex-row gap-2 mb-2">
-                                            <View className="flex-[2] bg-white border border-gray-200 rounded-lg px-3 h-10 justify-center">
+                                        <View key={cIdx} className="flex-row gap-3 mb-3">
+                                            <View className="flex-[2] bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                                 <TextInput
-                                                    className="text-[11px] text-gray-800 font-lato-medium"
+                                                    className="text-sm text-gray-800 font-lato-medium"
                                                     placeholder="Charge Title"
                                                     value={charge.title}
                                                     onChangeText={v => {
@@ -963,9 +999,9 @@ function Step3() {
                                                     style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                 />
                                             </View>
-                                            <View className="flex-1 bg-white border border-gray-200 rounded-lg px-3 h-10 justify-center">
+                                            <View className="flex-1 bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                                 <TextInput
-                                                    className="text-[11px] text-gray-800 font-lato-medium"
+                                                    className="text-sm text-gray-800 font-lato-medium"
                                                     placeholder="Amount"
                                                     keyboardType="numeric"
                                                     value={charge.amount}
@@ -983,19 +1019,19 @@ function Step3() {
                                                         const newCharges = unit.extraCharges.filter((_, i) => i !== cIdx);
                                                         updateUnitDetail(type.id, idx, 'extraCharges', newCharges);
                                                     }}
-                                                    className="w-10 h-10 bg-red-50 rounded-lg items-center justify-center"
+                                                    className="w-12 h-12 bg-red-50 rounded-xl items-center justify-center border border-red-100"
                                                 >
-                                                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                                                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
                                                 </TouchableOpacity>
                                             )}
                                         </View>
                                     ))}
                                     <TouchableOpacity 
                                         onPress={() => updateUnitDetail(type.id, idx, 'extraCharges', [...(unit.extraCharges || []), { title: '', amount: '' }])}
-                                        className="flex-row items-center"
+                                        className="flex-row items-center py-1"
                                     >
-                                        <Ionicons name="add-circle-outline" size={14} color="#4A43EC" />
-                                        <Text className="text-[9px] font-lato-bold text-[#4A43EC] ml-1">Add Charge</Text>
+                                        <Ionicons name="add-circle-outline" size={18} color="#4A43EC" />
+                                        <Text className="text-xs font-lato-bold text-[#4A43EC] ml-2">Add Extra Charge</Text>
                                     </TouchableOpacity>
                                 </View>
                             </View>

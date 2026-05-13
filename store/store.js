@@ -1,12 +1,14 @@
 import { configureStore } from '@reduxjs/toolkit';
-import appSlice from './slices/appSlice';
-import authSlice from './slices/authSlice';
-import projectSlice from './slices/projectSlice';
+import appReducer from './slices/appSlice';
+import authReducer from './slices/authSlice';
+import projectReducer from './slices/projectSlice';
+import projectsReducer from './slices/projectsSlice';
 
 export const store = configureStore({
     reducer: {
-        app: appSlice,
-        auth: authSlice,
-        project: projectSlice,
+        app: appReducer,
+        auth: authReducer,
+        project: projectReducer,
+        projects: projectsReducer,
     },
 });
