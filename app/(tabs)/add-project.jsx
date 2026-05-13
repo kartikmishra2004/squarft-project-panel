@@ -25,9 +25,13 @@ import {
     updatePropertyType,
     updateStep3,
     updateStep4,
+    bulkUploadProject,
+    bulkUploadSubtype,
     resetForm,
 } from "../../store/slices/projectSlice";
 import { addProject } from "../../store/slices/projectsSlice";
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get("window");
 
@@ -602,6 +606,37 @@ function Step1() {
     );
 }
 
+// --- CSV Helper ---
+const parseCSV = (text) => {
+    const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+    if (lines.length === 0) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const data = lines.slice(1).map(line => {
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                values.push(current.trim().replace(/^"|"$/g, ''));
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        values.push(current.trim().replace(/^"|"$/g, ''));
+        const obj = {};
+        headers.forEach((h, i) => {
+            obj[h] = values[i];
+        });
+        return obj;
+    });
+    return data;
+};
+
 // --- Step 2 Component ---
 function Step2() {
     const { width } = Dimensions.get('window');
@@ -677,22 +712,29 @@ function Step2() {
             {/* Added Types List */}
             {step2.selectedTypes.length > 0 && (
                 <View className="gap-3">
-                    <Text className="text-sm font-lato-bold text-gray-500 uppercase">Selected Types</Text>
-                    {step2.selectedTypes.map((item) => (
-                        <View key={item.id} className="bg-white border border-gray-100 rounded-xl px-4 py-3 flex-row justify-between items-center shadow-sm">
-                            <View className="flex-1 justify-center">
-                                <Text className="font-lato-bold text-black text-[13px] leading-tight">
-                                    {item.subType.toUpperCase()}
-                                </Text>
-                                <Text className="text-[11px] text-[#4A43EC] font-lato-bold uppercase mt-0.5 leading-tight">
-                                    {item.mainType}
-                                </Text>
+                    {step2.selectedTypes.map((item) => {
+                        const typeIcon = subTypesData[item.mainType]?.find(t => t.id === item.subType)?.image;
+                        return (
+                            <View key={item.id} className="bg-white border border-gray-100 rounded-xl px-4 py-3 flex-row justify-between items-center shadow-sm mb-3">
+                                <View className="flex-row items-center flex-1">
+                                    <View className="w-18 h-18 bg-[#F4F7FF] rounded-2xl items-center justify-center mr-4">
+                                        <Image source={typeIcon} className="w-14 h-14" resizeMode="contain" />
+                                    </View>
+                                    <View className="justify-center">
+                                        <Text className="font-lato-bold text-black text-[13px] leading-tight">
+                                            {item.subType.toUpperCase()}
+                                        </Text>
+                                        <Text className="text-[11px] text-[#4A43EC] font-lato-bold uppercase mt-0.5 leading-tight">
+                                            {item.mainType}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <TouchableOpacity onPress={() => handleRemoveType(item.id)} className="ml-4">
+                                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                                </TouchableOpacity>
                             </View>
-                            <TouchableOpacity onPress={() => handleRemoveType(item.id)} className="ml-4">
-                                <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                            </TouchableOpacity>
-                        </View>
-                    ))}
+                        );
+                    })}
                 </View>
             )}
 
@@ -756,7 +798,19 @@ function Step3() {
     const dispatch = useDispatch();
     const { step2, step3 } = useSelector((state) => state.project);
     const { width } = Dimensions.get('window');
+    
+    // Use the first selected type as the default active tab if available
+    const [activeTypeTab, setActiveTypeTab] = useState(step2.selectedTypes[0]?.id);
+    const [uploadModes, setUploadModes] = useState({}); // { [typeId]: 'manual' | 'bulk' }
+    const [openUploadModeDropdown, setOpenUploadModeDropdown] = useState(false);
     const [openAreaDropdown, setOpenAreaDropdown] = useState(null); // format: "typeId-unitIdx"
+
+    // Keep active tab valid if types are removed
+    useEffect(() => {
+        if (step2.selectedTypes.length > 0 && !step2.selectedTypes.find(t => t.id === activeTypeTab)) {
+            setActiveTypeTab(step2.selectedTypes[0].id);
+        }
+    }, [step2.selectedTypes, activeTypeTab]);
 
     const updateQuantity = (typeId, quantity) => {
         dispatch(updateStep3({ typeId, quantity: parseInt(quantity) || 0 }));
@@ -764,6 +818,105 @@ function Step3() {
 
     const updateUnitDetail = (typeId, unitIndex, field, value) => {
         dispatch(updateStep3({ typeId, unitIndex, data: { [field]: value } }));
+    };
+
+    const handleDownloadFormat = async (type) => {
+        try {
+            let headers = ['Sub Type', 'Property Number', 'Area', 'Area Unit'];
+            
+            if (type.subType === 'apartment') {
+                headers.push('BHK', 'Tower', 'Floor');
+            } else if (type.subType === 'villa' || type.subType === 'rowhouse') {
+                headers.push('BHK');
+            } else if (type.subType === 'office') {
+                headers.push('Office Type');
+            }
+            
+            headers.push('Selling Price', 'Price Negotiable', 'Tax Exclude', 'Payment Mode');
+            
+            const headersStr = headers.join(',');
+            
+            // Generate a sample row
+            const sampleRow = headers.map(h => {
+                if (h === 'Sub Type') return type.subType;
+                if (h === 'Property Number') return 'A-101';
+                if (h === 'Area') return '1200';
+                if (h === 'Area Unit') return 'Sq-ft';
+                if (h === 'BHK') return '2 BHK';
+                if (h === 'Tower') return 'Tower A';
+                if (h === 'Floor') return '1st';
+                if (h === 'Office Type') return 'Co-working';
+                if (h === 'Selling Price') return '5000000';
+                if (h === 'Price Negotiable' || h === 'Tax Exclude') return 'false';
+                if (h === 'Payment Mode') return 'full';
+                return '';
+            }).join(',');
+
+            const csvContent = `${headersStr}\n${sampleRow}`;
+            const fileUri = `${FileSystem.documentDirectory}${type.subType}_format.csv`;
+            
+            await FileSystem.writeAsStringAsync(fileUri, csvContent);
+            await Sharing.shareAsync(fileUri);
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const handleBulkUpload = async (type) => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: "text/comma-separated-values",
+                copyToCacheDirectory: true
+            });
+
+            if (result.canceled) return;
+
+            const fileUri = result.assets[0].uri;
+            const content = await FileSystem.readAsStringAsync(fileUri);
+            const data = parseCSV(content);
+
+            if (data.length === 0) {
+                alert("The CSV file is empty.");
+                return;
+            }
+
+            const unitConfigs = [];
+            const unitData = {};
+
+            data.forEach((row, index) => {
+                // Basic validation: skip rows without a property number
+                if (!row['Property Number']) return;
+
+                unitConfigs.push({
+                    tower: row['Tower'] || '',
+                    floor: row['Floor'] || '',
+                    bhk: row['BHK'] || '',
+                    officeType: row['Office Type'] || '',
+                    area: row['Area'] || '',
+                    areaUnit: row['Area Unit'] || 'Sq-ft',
+                    amenities: [''],
+                    propertyNumber: row['Property Number'] || '',
+                    hasShop: false,
+                    extraCharges: [{ title: '', amount: '' }]
+                });
+
+                unitData[`${type.id}-${index}`] = {
+                    images: [],
+                    documents: [],
+                    sellingPrice: row['Selling Price'] || '',
+                    priceNegotiable: row['Price Negotiable']?.toLowerCase() === 'true',
+                    taxExclude: row['Tax Exclude']?.toLowerCase() === 'true',
+                    paymentMode: row['Payment Mode'] || 'full',
+                    agreed: true,
+                };
+            });
+
+            dispatch(bulkUploadSubtype({ typeId: type.id, unitConfigs, unitData }));
+            alert(`Bulk upload successful! Added ${unitConfigs.length} units for ${type.subType}.`);
+        } catch (error) {
+            console.error(error);
+            alert("Error uploading CSV. Please check the format.");
+        }
     };
 
     if (step2.selectedTypes.length === 0) {
@@ -774,38 +927,131 @@ function Step3() {
         );
     }
 
+    const activeType = step2.selectedTypes.find(t => t.id === activeTypeTab) || step2.selectedTypes[0];
+
     return (
         <View className="gap-6">
             <Text className="text-base font-lato-bold text-black">Configure Units</Text>
 
-            {step2.selectedTypes.map((type) => {
-                const configs = step3.unitConfigs[type.id] || [];
-                return (
-                    <View key={type.id} className="gap-4">
-                        <View className="bg-[#4A43EC]/5 p-4 rounded-2xl border border-[#4A43EC]/10">
-                            <Text className="font-lato-bold text-[#4A43EC] text-sm uppercase">
-                                {type.subType.toUpperCase()} ({type.mainType})
-                            </Text>
-                            <View className="mt-4">
-                                <Text className="text-sm font-lato-bold text-black mb-2.5">How many units of this type?</Text>
-                                <View className="bg-white border border-gray-200 rounded-xl px-4 h-14 justify-center">
-                                    <TextInput
-                                        className="text-base font-lato-medium text-black"
-                                        placeholder="eg. 2"
-                                        keyboardType="numeric"
-                                        value={configs.length.toString()}
-                                        onChangeText={(v) => updateQuantity(type.id, v)}
-                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                    />
-                                </View>
+            {/* Subtypes Tabs */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+                {step2.selectedTypes.map((type) => {
+                    const typeIcon = subTypesData[type.mainType]?.find(t => t.id === type.subType)?.image;
+                    const isActive = activeTypeTab === type.id;
+                    return (
+                        <TouchableOpacity
+                            key={type.id}
+                            onPress={() => setActiveTypeTab(type.id)}
+                            className={`bg-white border rounded-lg px-3 py-2 mb-1 flex-row items-center mr-3 ${isActive ? 'border-[#4A43EC]' : 'border-gray-100'}`}
+                        >
+                            <View className="w-8 h-8 bg-[#F4F7FF] rounded-md items-center justify-center mr-2">
+                                <Image source={typeIcon} className="w-5 h-5" resizeMode="contain" />
                             </View>
+                            <View className="justify-center">
+                                <Text className={`font-lato-bold text-[11px] leading-tight ${isActive ? 'text-[#4A43EC]' : 'text-black'}`}>
+                                    {type.subType.toUpperCase()}
+                                </Text>
+                                <Text className={`text-[9px] font-lato-bold uppercase mt-0.5 leading-tight ${isActive ? 'text-[#4A43EC]/80' : 'text-gray-500'}`}>
+                                    {type.mainType}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    );
+                })}
+            </ScrollView>
+
+            <View className="h-[1px] bg-gray-100 my-2" />
+
+            {/* Active Subtype Configuration */}
+            {activeType && (() => {
+                const configs = step3.unitConfigs[activeType.id] || [];
+                return (
+                    <View className="gap-4">
+                        <View className="mb-4 z-[60]">
+                            <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Upload Type for {activeType.subType}</Text>
+                            <TouchableOpacity
+                                onPress={() => setOpenUploadModeDropdown(!openUploadModeDropdown)}
+                                className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
+                            >
+                                <Text className="text-sm font-lato-medium text-black">
+                                    {uploadModes[activeType.id] === 'bulk' ? 'Bulk upload' : 'Manual'}
+                                </Text>
+                                <Ionicons name={openUploadModeDropdown ? "chevron-up" : "chevron-down"} size={18} color="#666" />
+                            </TouchableOpacity>
+
+                            {openUploadModeDropdown && (
+                                <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[61] overflow-hidden">
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setUploadModes(prev => ({ ...prev, [activeType.id]: 'manual' }));
+                                            setOpenUploadModeDropdown(false);
+                                        }}
+                                        className={`px-4 py-3 border-b border-gray-50 ${uploadModes[activeType.id] !== 'bulk' ? 'bg-[#F4F7FF]' : ''}`}
+                                    >
+                                        <Text className={`text-sm font-lato-bold ${uploadModes[activeType.id] !== 'bulk' ? 'text-[#4A43EC]' : 'text-gray-800'}`}>Manual</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            setUploadModes(prev => ({ ...prev, [activeType.id]: 'bulk' }));
+                                            setOpenUploadModeDropdown(false);
+                                        }}
+                                        className={`px-4 py-3 ${uploadModes[activeType.id] === 'bulk' ? 'bg-[#F4F7FF]' : ''}`}
+                                    >
+                                        <Text className={`text-sm font-lato-bold ${uploadModes[activeType.id] === 'bulk' ? 'text-[#4A43EC]' : 'text-gray-800'}`}>Bulk upload</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
 
-                        {configs.map((unit, idx) => (
-                            <View key={`${type.id}-${idx}`} className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm">
-                                <Text className="font-lato-bold text-black text-base mb-5">Unit {idx + 1} Details</Text>
-                                
-                                {type.subType === 'apartment' && (
+                        {uploadModes[activeType.id] === 'bulk' ? (
+                            <View className="bg-[#4A43EC]/5 p-6 rounded-2xl border border-[#4A43EC]/10 items-center justify-center gap-5">
+                                <MaterialIcons name="cloud-upload" size={48} color="#4A43EC" opacity={0.5} />
+                                <Text className="text-center text-sm font-lato-medium text-gray-600 mb-2">
+                                    Download the format, fill in your {activeType.subType} details, and upload the CSV file.
+                                </Text>
+                                <View className="flex-row gap-3 w-full">
+                                    <TouchableOpacity 
+                                        onPress={() => handleBulkUpload(activeType)}
+                                        className="flex-1 bg-[#4A43EC] h-12 rounded-xl flex-row items-center justify-center gap-2"
+                                    >
+                                        <MaterialIcons name="file-upload" size={18} color="white" />
+                                        <Text className="text-white font-lato-bold text-[11px]">Upload CSV</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity 
+                                        onPress={() => handleDownloadFormat(activeType)}
+                                        className="flex-1 bg-white border border-gray-200 h-12 rounded-xl flex-row items-center justify-center gap-2"
+                                    >
+                                        <MaterialIcons name="file-download" size={18} color="#6B7280" />
+                                        <Text className="text-gray-500 font-lato-bold text-[11px]">Down format</Text>
+                                    </TouchableOpacity>
+                                </View>
+                                {configs.length > 0 && (
+                                    <Text className="text-xs text-green-600 font-lato-bold mt-2">
+                                        ✓ {configs.length} units currently added.
+                                    </Text>
+                                )}
+                            </View>
+                        ) : (
+                            <View className="gap-4">
+                                <View className="bg-[#4A43EC]/5 p-4 rounded-2xl border border-[#4A43EC]/10">
+                                    <Text className="text-sm font-lato-bold text-black mb-2.5">How many units of this type?</Text>
+                                    <View className="bg-white border border-gray-200 rounded-xl px-4 h-14 justify-center">
+                                        <TextInput
+                                            className="text-base font-lato-medium text-black"
+                                            placeholder="eg. 2"
+                                            keyboardType="numeric"
+                                            value={configs.length.toString()}
+                                            onChangeText={(v) => updateQuantity(activeType.id, v)}
+                                            style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                        />
+                                    </View>
+                                </View>
+
+                                {configs.map((unit, idx) => (
+                                    <View key={`${activeType.id}-${idx}`} className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm">
+                                        <Text className="font-lato-bold text-black text-base mb-5">Unit {idx + 1} Details</Text>
+                                        
+                                        {activeType.subType === 'apartment' && (
                                     <View className="flex-row gap-4 mb-5">
                                         <View className="flex-1">
                                             <Text className="text-xs font-lato-bold text-gray-500 mb-2">Tower</Text>
@@ -814,7 +1060,7 @@ function Step3() {
                                                     className="text-sm text-gray-800 font-lato-medium"
                                                     placeholder="A"
                                                     value={unit.tower}
-                                                    onChangeText={v => updateUnitDetail(type.id, idx, 'tower', v)}
+                                                    onChangeText={v => updateUnitDetail(activeType.id, idx, 'tower', v)}
                                                     style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                 />
                                             </View>
@@ -826,7 +1072,7 @@ function Step3() {
                                                     className="text-sm text-gray-800 font-lato-medium"
                                                     placeholder="5"
                                                     value={unit.floor}
-                                                    onChangeText={v => updateUnitDetail(type.id, idx, 'floor', v)}
+                                                    onChangeText={v => updateUnitDetail(activeType.id, idx, 'floor', v)}
                                                     style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                 />
                                             </View>
@@ -834,14 +1080,14 @@ function Step3() {
                                     </View>
                                 )}
 
-                                {(type.subType === 'villa' || type.subType === 'rowhouse' || type.subType === 'apartment') && (
+                                {(activeType.subType === 'villa' || activeType.subType === 'rowhouse' || activeType.subType === 'apartment') && (
                                     <View className="mb-5">
                                         <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">BHK Type</Text>
                                         <View className="flex-row flex-wrap gap-2.5">
                                             {bhkOptions.map((opt) => (
                                                 <TouchableOpacity
                                                     key={opt}
-                                                    onPress={() => updateUnitDetail(type.id, idx, 'bhk', opt)}
+                                                    onPress={() => updateUnitDetail(activeType.id, idx, 'bhk', opt)}
                                                     className={`px-4 py-2 rounded-xl border ${unit.bhk === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
                                                 >
                                                     <Text className={`text-xs font-lato-bold ${unit.bhk === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
@@ -851,14 +1097,14 @@ function Step3() {
                                     </View>
                                 )}
 
-                                {type.subType === 'office' && (
+                                {activeType.subType === 'office' && (
                                     <View className="mb-5">
                                         <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Office Type</Text>
                                         <View className="flex-row flex-wrap gap-2.5">
                                             {officeTypes.map((opt) => (
                                                 <TouchableOpacity
                                                     key={opt}
-                                                    onPress={() => updateUnitDetail(type.id, idx, 'officeType', opt)}
+                                                    onPress={() => updateUnitDetail(activeType.id, idx, 'officeType', opt)}
                                                     className={`px-4 py-2 rounded-xl border ${unit.officeType === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
                                                 >
                                                     <Text className={`text-xs font-lato-bold ${unit.officeType === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
@@ -877,7 +1123,7 @@ function Step3() {
                                                 placeholder="1200"
                                                 keyboardType="numeric"
                                                 value={unit.area}
-                                                onChangeText={v => updateUnitDetail(type.id, idx, 'area', v)}
+                                                onChangeText={v => updateUnitDetail(activeType.id, idx, 'area', v)}
                                                 style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                             />
                                         </View>
@@ -889,16 +1135,16 @@ function Step3() {
                                                 className="text-sm text-gray-800 font-lato-medium"
                                                 placeholder="A-101"
                                                 value={unit.propertyNumber}
-                                                onChangeText={v => updateUnitDetail(type.id, idx, 'propertyNumber', v)}
+                                                onChangeText={v => updateUnitDetail(activeType.id, idx, 'propertyNumber', v)}
                                                 style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                             />
                                         </View>
                                     </View>
                                 </View>
 
-                                {type.subType === 'apartment' && (
+                                {activeType.subType === 'apartment' && (
                                     <TouchableOpacity 
-                                        onPress={() => updateUnitDetail(type.id, idx, 'hasShop', !unit.hasShop)}
+                                        onPress={() => updateUnitDetail(activeType.id, idx, 'hasShop', !unit.hasShop)}
                                         className="flex-row items-center gap-3 mb-5 py-1"
                                     >
                                         <View className={`w-5 h-5 rounded-md border items-center justify-center ${unit.hasShop ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-300'}`}>
@@ -912,21 +1158,21 @@ function Step3() {
                                 <View className="mb-5 z-[50]">
                                     <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Area Unit</Text>
                                     <TouchableOpacity
-                                        onPress={() => setOpenAreaDropdown(openAreaDropdown === `${type.id}-${idx}` ? null : `${type.id}-${idx}`)}
+                                        onPress={() => setOpenAreaDropdown(openAreaDropdown === `${activeType.id}-${idx}` ? null : `${activeType.id}-${idx}`)}
                                         className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
                                     >
                                         <Text className="text-sm font-lato-medium text-black">{unit.areaUnit}</Text>
-                                        <Ionicons name={openAreaDropdown === `${type.id}-${idx}` ? "chevron-up" : "chevron-down"} size={18} color="#666" />
+                                        <Ionicons name={openAreaDropdown === `${activeType.id}-${idx}` ? "chevron-up" : "chevron-down"} size={18} color="#666" />
                                     </TouchableOpacity>
 
-                                    {openAreaDropdown === `${type.id}-${idx}` && (
+                                    {openAreaDropdown === `${activeType.id}-${idx}` && (
                                         <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[51] overflow-hidden">
                                             <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }}>
                                                 {areaUnits.map((u) => (
                                                     <TouchableOpacity
                                                         key={u}
                                                         onPress={() => {
-                                                            updateUnitDetail(type.id, idx, 'areaUnit', u);
+                                                            updateUnitDetail(activeType.id, idx, 'areaUnit', u);
                                                             setOpenAreaDropdown(null);
                                                         }}
                                                         className={`px-4 py-3 border-b border-gray-50 ${unit.areaUnit === u ? 'bg-[#F4F7FF]' : ''}`}
@@ -954,7 +1200,7 @@ function Step3() {
                                                     onChangeText={v => {
                                                         const newAmenities = [...unit.amenities];
                                                         newAmenities[aIdx] = v;
-                                                        updateUnitDetail(type.id, idx, 'amenities', newAmenities);
+                                                        updateUnitDetail(activeType.id, idx, 'amenities', newAmenities);
                                                     }}
                                                     style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                 />
@@ -963,7 +1209,7 @@ function Step3() {
                                                 <TouchableOpacity 
                                                     onPress={() => {
                                                         const newAmenities = unit.amenities.filter((_, i) => i !== aIdx);
-                                                        updateUnitDetail(type.id, idx, 'amenities', newAmenities);
+                                                        updateUnitDetail(activeType.id, idx, 'amenities', newAmenities);
                                                     }}
                                                     className="w-12 h-12 bg-red-50 rounded-xl items-center justify-center border border-red-100"
                                                 >
@@ -973,7 +1219,7 @@ function Step3() {
                                         </View>
                                     ))}
                                     <TouchableOpacity 
-                                        onPress={() => updateUnitDetail(type.id, idx, 'amenities', [...(unit.amenities || []), ''])}
+                                        onPress={() => updateUnitDetail(activeType.id, idx, 'amenities', [...(unit.amenities || []), ''])}
                                         className="flex-row items-center py-1"
                                     >
                                         <Ionicons name="add-circle-outline" size={18} color="#4A43EC" />
@@ -994,7 +1240,7 @@ function Step3() {
                                                     onChangeText={v => {
                                                         const newCharges = [...unit.extraCharges];
                                                         newCharges[cIdx] = { ...newCharges[cIdx], title: v };
-                                                        updateUnitDetail(type.id, idx, 'extraCharges', newCharges);
+                                                        updateUnitDetail(activeType.id, idx, 'extraCharges', newCharges);
                                                     }}
                                                     style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                 />
@@ -1008,7 +1254,7 @@ function Step3() {
                                                     onChangeText={v => {
                                                         const newCharges = [...unit.extraCharges];
                                                         newCharges[cIdx] = { ...newCharges[cIdx], amount: v };
-                                                        updateUnitDetail(type.id, idx, 'extraCharges', newCharges);
+                                                        updateUnitDetail(activeType.id, idx, 'extraCharges', newCharges);
                                                     }}
                                                     style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                 />
@@ -1017,7 +1263,7 @@ function Step3() {
                                                 <TouchableOpacity 
                                                     onPress={() => {
                                                         const newCharges = unit.extraCharges.filter((_, i) => i !== cIdx);
-                                                        updateUnitDetail(type.id, idx, 'extraCharges', newCharges);
+                                                        updateUnitDetail(activeType.id, idx, 'extraCharges', newCharges);
                                                     }}
                                                     className="w-12 h-12 bg-red-50 rounded-xl items-center justify-center border border-red-100"
                                                 >
@@ -1027,7 +1273,7 @@ function Step3() {
                                         </View>
                                     ))}
                                     <TouchableOpacity 
-                                        onPress={() => updateUnitDetail(type.id, idx, 'extraCharges', [...(unit.extraCharges || []), { title: '', amount: '' }])}
+                                        onPress={() => updateUnitDetail(activeType.id, idx, 'extraCharges', [...(unit.extraCharges || []), { title: '', amount: '' }])}
                                         className="flex-row items-center py-1"
                                     >
                                         <Ionicons name="add-circle-outline" size={18} color="#4A43EC" />
@@ -1036,9 +1282,11 @@ function Step3() {
                                 </View>
                             </View>
                         ))}
+                            </View>
+                        )}
                     </View>
                 );
-            })}
+            })()}
         </View>
     );
 }

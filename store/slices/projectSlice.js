@@ -110,6 +110,18 @@ const projectSlice = createSlice({
                 state.step4 = { ...state.step4, ...action.payload };
             }
         },
+        bulkUploadProject: (state, action) => {
+            const { step1, step2, step3, step4 } = action.payload;
+            if (step1) state.step1 = { ...state.step1, ...step1 };
+            if (step2) state.step2 = { ...state.step2, ...step2 };
+            if (step3) state.step3 = { ...state.step3, ...step3 };
+            if (step4) state.step4 = { ...state.step4, ...step4 };
+        },
+        bulkUploadSubtype: (state, action) => {
+            const { typeId, unitConfigs, unitData } = action.payload;
+            state.step3.unitConfigs[typeId] = unitConfigs;
+            Object.assign(state.step4.unitData, unitData);
+        },
         resetForm: () => initialState,
     },
 });
@@ -122,6 +134,8 @@ export const {
     updatePropertyType,
     updateStep3,
     updateStep4,
+    bulkUploadProject,
+    bulkUploadSubtype,
     resetForm,
 } = projectSlice.actions;
 

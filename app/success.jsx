@@ -1,11 +1,13 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StatusBar, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
 export default function Success() {
+    const router = useRouter();
+
     return (
         <View className="flex-1 bg-white items-center justify-center px-8">
             <StatusBar barStyle="dark-content" />
