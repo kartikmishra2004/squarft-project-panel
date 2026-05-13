@@ -60,6 +60,10 @@ const subTypesData = {
 
 const bhkOptions = ["1 BHK", "2 BHK", "3 BHK", "4 BHK", "5 BHK", "5 BHK+"];
 const officeTypes = ["Co-working", "Ready to Move", "Bare Shell"];
+const areaUnits = [
+    'Sq-ft', 'Sq-yrd', 'Sq-m', 'Acre', 'Bigha', 
+    'Hectare', 'Guntha', 'Kanal', 'Marla', 'Biswa', 'Kottah'
+];
 
 const steps = [
     { id: 1, title: "Basic Details" },
@@ -103,11 +107,11 @@ export default function AddProject() {
     const isNextDisabled = () => {
         if (currentStep === 1) {
             const {
-                location, city, state, pincode,
+                projectName, location, city, state, pincode,
                 salesOfficerName, salesOfficerContact, salesVerified,
                 responsiblePersonName, responsiblePersonContact, responsibleVerified
             } = step1;
-            return !location || !city || !state || !pincode ||
+            return !projectName || !location || !city || !state || !pincode ||
                 !salesOfficerName || !salesOfficerContact || !salesVerified ||
                 !responsiblePersonName || !responsiblePersonContact || !responsibleVerified;
         }
@@ -271,6 +275,7 @@ function Step1() {
 
     const salesOtpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
     const responsibleOtpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
+    const projectNameRef = useRef(null);
     const locationRef = useRef(null);
     const cityRef = useRef(null);
     const stateRef = useRef(null);
@@ -319,6 +324,22 @@ function Step1() {
 
     return (
         <View className="gap-6">
+            {/* Project Name */}
+            <View>
+                <Text className="text-xs font-lato-bold text-black mb-1.5">Project Name</Text>
+                <Pressable onPress={() => projectNameRef.current?.focus()} className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center">
+                    <TextInput
+                        ref={projectNameRef}
+                        className="flex-1 text-[13px] text-gray-800 font-lato-medium"
+                        placeholder="eg. The Grand Residency"
+                        placeholderTextColor="#9CA3AF"
+                        value={step1.projectName}
+                        onChangeText={(v) => updateField('projectName', v)}
+                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                    />
+                </Pressable>
+            </View>
+
             {/* Location */}
             <View>
                 <Text className="text-xs font-lato-bold text-black mb-1.5">Location</Text>
@@ -569,10 +590,6 @@ function Step2() {
     const dispatch = useDispatch();
     const { step2 } = useSelector((state) => state.project);
     const [showUnitDropdown, setShowUnitDropdown] = useState(false);
-    const areaUnits = [
-        'Sq-ft', 'Sq-yrd', 'Sq-m', 'Acre', 'Bigha', 
-        'Hectare', 'Guntha', 'Kanal', 'Marla', 'Biswa', 'Kottah'
-    ];
 
     const towerRef = useRef(null);
     const floorRef = useRef(null);

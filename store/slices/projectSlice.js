@@ -3,6 +3,7 @@ import { createSlice } from '@reduxjs/toolkit';
 const initialState = {
     currentStep: 1,
     step1: {
+        projectName: '',
         location: '',
         city: '',
         state: '',
