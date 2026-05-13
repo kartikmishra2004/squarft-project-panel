@@ -489,11 +489,11 @@ function Step1() {
                         {[0, 1, 2, 3].map((i) => (
                             <View
                                 key={i}
-                                className={`w-11 h-11 bg-white border rounded-xl items-center justify-center ${step1.salesVerified ? 'border-green-500 bg-green-50' : step1.salesOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
+                                className={`w-14 h-14 bg-white border rounded-xl items-center justify-center ${step1.salesVerified ? 'border-green-500 bg-green-50' : step1.salesOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
                             >
                                 <TextInput
                                     ref={salesOtpRefs[i]}
-                                    className="text-sm font-lato-medium text-black text-center w-full h-full"
+                                    className="text-lg font-lato-bold text-black text-center w-full h-full"
                                     maxLength={1}
                                     keyboardType="number-pad"
                                     value={step1.salesOfficerOtp[i]}
@@ -509,9 +509,9 @@ function Step1() {
                     {!step1.salesVerified && (
                         <TouchableOpacity
                             onPress={() => verifyOtp('sales')}
-                            className="bg-[#4A43EC] mt-3 py-2.5 rounded-xl items-center"
+                            className="bg-[#4A43EC] mt-3 py-3.5 rounded-xl items-center"
                         >
-                            <Text className="text-white text-[11px] font-lato-bold">Verify OTP</Text>
+                            <Text className="text-white text-[13px] font-lato-bold">Verify OTP</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -575,11 +575,11 @@ function Step1() {
                         {[0, 1, 2, 3].map((i) => (
                             <View
                                 key={i}
-                                className={`w-11 h-11 bg-white border rounded-xl items-center justify-center ${step1.responsibleVerified ? 'border-green-500 bg-green-50' : step1.responsibleOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
+                                className={`w-14 h-14 bg-white border rounded-xl items-center justify-center ${step1.responsibleVerified ? 'border-green-500 bg-green-50' : step1.responsibleOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
                             >
                                 <TextInput
                                     ref={responsibleOtpRefs[i]}
-                                    className="text-sm font-lato-medium text-black text-center w-full h-full"
+                                    className="text-lg font-lato-bold text-black text-center w-full h-full"
                                     maxLength={1}
                                     keyboardType="number-pad"
                                     value={step1.responsiblePersonOtp[i]}
@@ -595,9 +595,9 @@ function Step1() {
                     {!step1.responsibleVerified && (
                         <TouchableOpacity
                             onPress={() => verifyOtp('responsible')}
-                            className="bg-[#4A43EC] mt-3 py-2.5 rounded-xl items-center"
+                            className="bg-[#4A43EC] mt-3 py-3.5 rounded-xl items-center"
                         >
-                            <Text className="text-white text-[11px] font-lato-bold">Verify OTP</Text>
+                            <Text className="text-white text-[13px] font-lato-bold">Verify OTP</Text>
                         </TouchableOpacity>
                     )}
                 </View>
