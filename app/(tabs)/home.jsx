@@ -1,16 +1,22 @@
-import { Text, View, ScrollView, Image, TouchableOpacity, TextInput, Platform } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Text, View, ScrollView, Image, TouchableOpacity } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons, FontAwesome, MaterialIcons, Feather } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { mockData } from "../../constants/mockData";
+import ProjectDetailModal from "../../components/ProjectDetailModal";
 
 const projectImg = require("../../assets/images/project_main.png");
 const profileImg = require("../../assets/images/user_profile.png");
 
 export default function Home() {
     const [activeTab, setActiveTab] = useState("Overview");
+
+    const [selectedProjectId, setSelectedProjectId] = useState(mockData.projects[0]?.id ?? "");
+    const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+    const [isProjectDetailVisible, setIsProjectDetailVisible] = useState(false);
+    const [selectedDeal, setSelectedDeal] = useState(null);
     const [inventoryType, setInventoryType] = useState("apartment");
     const [selectedTower, setSelectedTower] = useState("tower-a");
     const [selectedPlotStack, setSelectedPlotStack] = useState("stack-a");
@@ -101,17 +107,6 @@ export default function Home() {
         }
     };
 
-    const getLeadTagStyle = (tone) => {
-        switch (tone) {
-            case "hot":
-                return "bg-[#FFF0DF] text-[#FB923C]";
-            case "warm":
-                return "bg-[#DDEBFF] text-[#4F83FF]";
-            default:
-                return "bg-gray-100 text-gray-500";
-        }
-    };
-
     const getDealStatusStyle = (tone) => {
         switch (tone) {
             case "success":
@@ -127,10 +122,11 @@ export default function Home() {
         }
     };
 
-    const selectedProject = mockData.projects[0];
-    const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [], leads: [] };
+    const projectOptions = mockData.projects;
+    const selectedProject = projectOptions.find((project) => project.id === selectedProjectId) || projectOptions[0] || { inventory: {} };
+    const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
     const dealsData = selectedProject.deals || [];
-    const selectedInventory = selectedProject.inventory[inventoryType] || { sections: [] };
+    const selectedInventory = selectedProject.inventory?.[inventoryType] || { sections: [] };
     const selectedTowerData = selectedInventory.towers?.find((tower) => tower.key === selectedTower) || selectedInventory.towers?.[0] || null;
     const selectedPlotData = selectedInventory.stacks?.find((stack) => stack.key === selectedPlotStack) || selectedInventory.stacks?.[0] || null;
     const activePlotUnit = selectedPlotData?.levels.flatMap((level) => level.cards || []).find((card) => card.unit === selectedPlotUnit)
@@ -168,7 +164,8 @@ export default function Home() {
                         style={{
                             paddingTop: Math.max(insets.top, 20) + 7,
                             paddingHorizontal: 20,
-                            paddingBottom: 50
+                            paddingBottom: 50,
+                            overflow: "visible"
                         }}
                     >
                         {/* Profile & Notification */}
@@ -193,14 +190,48 @@ export default function Home() {
                         </View>
 
                         {/* Search & Add Project */}
-                        <View className="flex-row items-center gap-2.5 mb-4">
-                            <View className="flex-1 h-9 bg-white rounded-xl flex-row items-center px-3">
-                                <Ionicons name="search" size={16} color="#4A43EC" />
-                                <TextInput
-                                    placeholder="Select Project"
-                                    placeholderTextColor="#9CA3AF"
-                                    className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]"
-                                />
+                        <View className="flex-row items-center gap-2.5 mb-4" style={{ zIndex: 1000, elevation: 1000, position: "relative" }}>
+                            <View className="flex-1 relative z-50" style={{ zIndex: 9999, elevation: 9999 }}>
+                                <TouchableOpacity
+                                    activeOpacity={0.85}
+                                    onPress={() => setIsProjectDropdownOpen((current) => !current)}
+                                    className="h-9 bg-white rounded-xl flex-row items-center px-3"
+                                >
+                                    <Ionicons name="chevron-down" size={16} color="#4A43EC" />
+                                    <Text className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]" numberOfLines={1}>
+                                        {selectedProject?.title || "Select Project"}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {isProjectDropdownOpen ? (
+                                    <View
+                                        className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
+                                        style={{ zIndex: 10000, elevation: 50 }}
+                                    >
+                                        {projectOptions.map((project) => {
+                                            const isSelected = project.id === selectedProjectId;
+
+                                            return (
+                                                <TouchableOpacity
+                                                    key={project.id}
+                                                    activeOpacity={0.85}
+                                                    onPress={() => {
+                                                        setSelectedProjectId(project.id);
+                                                        setIsProjectDropdownOpen(false);
+                                                    }}
+                                                    className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
+                                                >
+                                                    <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
+                                                        {project.title}
+                                                    </Text>
+                                                    <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                                        {project.location}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+                                ) : null}
                             </View>
                             <TouchableOpacity className="h-9 px-3 rounded-xl flex-row items-center border border-white/50">
                                 <View className="w-[18px] h-[18px] rounded-full bg-white items-center justify-center">
@@ -211,31 +242,31 @@ export default function Home() {
                         </View>
 
                         {/* Stats Cards */}
-                        <View className="flex-row justify-between">
-                            <View className="flex-1 bg-white rounded-xl overflow-hidden shadow-sm mr-2 border border-white/50">
-                                <View className="bg-[#4A43EC] py-1.5 items-center">
-                                    <Text className="text-white text-[7px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
+                        <View className="flex-row justify-between" style={{ zIndex: 1, elevation: 1, position: "relative" }}>
+                            <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                <View className="bg-[#4A43EC] py-2.5 items-center">
+                                    <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
                                 </View>
-                                <View className="py-2.5 items-center bg-white">
-                                    <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{mockData.stats.totalReceived}</Text>
-                                </View>
-                            </View>
-
-                            <View className="flex-1 bg-white rounded-xl overflow-hidden shadow-sm mr-2 border border-white/50">
-                                <View className="bg-[#4A43EC] py-1.5 items-center">
-                                    <Text className="text-white text-[7px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
-                                </View>
-                                <View className="py-2.5 items-center bg-white">
-                                    <Text className="text-[#10B981] text-[11px] font-lato-bold">{mockData.stats.upcomingAmount}</Text>
+                                <View className="py-3 items-center bg-white">
+                                    <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{mockData.stats.totalReceived}</Text>
                                 </View>
                             </View>
 
-                            <View className="flex-1 bg-white rounded-xl overflow-hidden shadow-sm border border-white/50">
-                                <View className="bg-[#4A43EC] py-1.5 items-center">
-                                    <Text className="text-white text-[7px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
+                            <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                <View className="bg-[#4A43EC] py-2.5 items-center">
+                                    <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
                                 </View>
-                                <View className="py-2.5 items-center bg-white">
-                                    <Text className="text-[#EF4444] text-[11px] font-lato-bold">{mockData.stats.toBeReleased}</Text>
+                                <View className="py-3 items-center bg-white">
+                                    <Text className="text-[#10B981] text-[13px] font-lato-bold">{mockData.stats.upcomingAmount}</Text>
+                                </View>
+                            </View>
+
+                            <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-white/50 min-h-[72px]">
+                                <View className="bg-[#4A43EC] py-2.5 items-center">
+                                    <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
+                                </View>
+                                <View className="py-3 items-center bg-white">
+                                    <Text className="text-[#EF4444] text-[13px] font-lato-bold">{mockData.stats.toBeReleased}</Text>
                                 </View>
                             </View>
                         </View>
@@ -318,81 +349,75 @@ export default function Home() {
             >
                 {activeTab === "Overview" ? (
                     <View className="pt-2">
-                        {mockData.projects.map((project) => (
-                            <View key={project.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
-                                <View className="flex-row h-36">
-                                    <View className="flex-[2] relative">
-                                        <Image source={projectImg} className="w-full h-full" />
-                                        <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
-                                            <Text className="text-white text-[8px] font-lato">{project.developer}</Text>
-                                        </View>
-                                    </View>
-                                    <View className="flex-1 ml-0.5 bg-gray-200 relative">
-                                        <Image source={projectImg} className="w-full h-full opacity-60" resizeMode="cover" />
-                                        <View className="absolute bottom-2 right-2 bg-black/50 px-1.5 py-0.5 rounded-md">
-                                            <Text className="text-white text-[8px] font-lato-bold">{project.imagesCount}</Text>
-                                        </View>
+                        <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
+                            <View className="flex-row h-36">
+                                <View className="flex-[2] relative">
+                                    <Image source={projectImg} className="w-full h-full" />
+                                    <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
+                                        <Text className="text-white text-[8px] font-lato">{selectedProject.developer}</Text>
                                     </View>
                                 </View>
-
-                                <View className="p-3">
-                                    <View className="flex-row items-center mb-1.5">
-                                        <Text className="text-gray-400 text-[9px] font-lato">Possession: {project.possession}</Text>
-                                        <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
-                                        <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {project.avgPrice}</Text>
-                                    </View>
-
-                                    <View className="flex-row items-center justify-between mb-0.5">
-                                        <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{project.title}</Text>
-                                        {project.rera && (
-                                            <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
-                                                <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
-                                                <Ionicons name="checkmark-circle" size={9} color="#10B981" />
-                                            </View>
-                                        )}
-                                    </View>
-                                    <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{project.location}</Text>
-
-                                    <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
-                                        <View className="flex-row">
-                                            {project.apartments.map((apt, idx) => (
-                                                <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
-                                                    <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
-                                                    <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
-                                                </View>
-                                            ))}
-                                        </View>
-                                    </View>
-
-                                    <View className="flex-row justify-between mb-4">
-                                        <View className="flex-1 bg-white border border-gray-100 rounded-lg py-1.5 items-center mr-2">
-                                            <Text className="text-gray-400 text-[8px] font-lato-bold uppercase">Unit</Text>
-                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{project.units.total}</Text>
-                                        </View>
-                                        <View className="flex-1 bg-white border border-gray-100 rounded-lg py-1.5 items-center mr-2">
-                                            <Text className="text-gray-400 text-[8px] font-lato-bold uppercase">Avail.</Text>
-                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{project.units.avail}</Text>
-                                        </View>
-                                        <View className="flex-1 bg-white border border-gray-100 rounded-lg py-1.5 items-center">
-                                            <Text className="text-gray-400 text-[8px] font-lato-bold uppercase">Sold</Text>
-                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{project.units.sold}</Text>
-                                        </View>
-                                    </View>
-
-                                    <View className="flex-row gap-2.5">
-                                        <TouchableOpacity
-                                            onPress={() => setActiveTab("Inventory")}
-                                            className="flex-1 border border-[#4A43EC] rounded-lg py-2 items-center"
-                                        >
-                                            <Text className="text-[#4A43EC] font-lato-bold text-[11px]">Edit Inventory</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity className="flex-1 border border-[#4A43EC] rounded-lg py-2 items-center">
-                                            <Text className="text-[#4A43EC] font-lato-bold text-[11px]">Track Follow-Up</Text>
-                                        </TouchableOpacity>
+                                <View className="flex-1 ml-0.5 bg-gray-200 relative">
+                                    <Image source={projectImg} className="w-full h-full opacity-60" resizeMode="cover" />
+                                    <View className="absolute bottom-2 right-2 bg-black/50 px-1.5 py-0.5 rounded-md">
+                                        <Text className="text-white text-[8px] font-lato-bold">{selectedProject.imagesCount}</Text>
                                     </View>
                                 </View>
                             </View>
-                        ))}
+
+                            <View className="p-3">
+                                <View className="flex-row items-center mb-1.5">
+                                    <Text className="text-gray-400 text-[9px] font-lato">Possession: {selectedProject.possession}</Text>
+                                    <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
+                                    <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {selectedProject.avgPrice}</Text>
+                                </View>
+
+                                <View className="flex-row items-center justify-between mb-0.5">
+                                    <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{selectedProject.title}</Text>
+                                    {selectedProject.rera && (
+                                        <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
+                                            <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
+                                            <Ionicons name="checkmark-circle" size={9} color="#10B981" />
+                                        </View>
+                                    )}
+                                </View>
+                                <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{selectedProject.location}</Text>
+
+                                <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
+                                    <View className="flex-row">
+                                        {selectedProject.apartments.map((apt, idx) => (
+                                            <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
+                                                <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
+                                                <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                </View>
+
+                                <View className="flex-row justify-between mb-4">
+                                    <View className="flex-1 bg-[#EEF4FF] border border-[#DDE8FF] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                        <Text className="text-[#2563EB] text-[8px] font-lato-bold uppercase">Total</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.total}</Text>
+                                    </View>
+                                    <View className="flex-1 bg-[#ECFBF6] border border-[#D7F5E8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                        <Text className="text-[#10B981] text-[8px] font-lato-bold uppercase">Avail</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.avail}</Text>
+                                    </View>
+                                    <View className="flex-1 bg-[#FFF3EF] border border-[#FFE1D6] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                        <Text className="text-[#EF4444] text-[8px] font-lato-bold uppercase">Sold</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.sold}</Text>
+                                    </View>
+                                    <View className="flex-1 bg-[#FFF8EA] border border-[#FDECC8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                        <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.booked}</Text>
+                                    </View>
+                                    <View className="flex-1 bg-[#F2F0FF] border border-[#E3DDFF] rounded-lg py-1.5 items-center min-w-0">
+                                        <Text className="text-[#6D5EF8] text-[8px] font-lato-bold uppercase">Token</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.token}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </View>
                     </View>
                 ) : activeTab === "Inventory" ? (
                     <View className="p-4">
@@ -635,22 +660,27 @@ export default function Home() {
                                 </TouchableOpacity>
                             </View>
 
-                            <View className="h-[118px] relative justify-end">
-                                <View className="flex-row items-end justify-between px-1">
-                                    {visitsData.pipeline.stages.map((stage) => (
-                                        <View key={stage.label} className="flex-1 items-center justify-end">
-                                            <View className="items-center justify-end mb-1" style={{ height: 52 }}>
+                            <View className="h-[88px] relative justify-center">
+                                <View className="absolute left-4 right-4 top-[27px] h-[1px] bg-[#E5E7F2]" />
+                                <View className="flex-row items-start justify-between px-1">
+                                    {visitsData.pipeline.stages.map((stage, index) => {
+                                        const palette = ["#7B73F8", "#8B86FF", "#6C7CFF", "#4FA8FF", "#F2BE4B", "#B8B0F2", "#D6F2DE"];
+                                        const circleColor = palette[index % palette.length];
+
+                                        return (
+                                            <View key={stage.label} className="flex-1 items-center">
                                                 <View
-                                                    className={`w-[50px] rounded-t-[14px] items-center justify-center ${stage.active ? "bg-[#8077F4]" : "bg-[#DAD7FD]"}`}
-                                                    style={{ height: stage.height }}
-                                                />
-                                                {stage.active ? (
-                                                    <Text className="absolute bottom-[12px] text-white text-[11px] font-lato-bold">{stage.value}</Text>
-                                                ) : null}
+                                                    className="w-8 h-8 rounded-full items-center justify-center border border-white"
+                                                    style={{ backgroundColor: circleColor }}
+                                                >
+                                                    <Text className="text-white text-[10px] font-lato-bold">{stage.value}</Text>
+                                                </View>
+                                                <Text className="mt-2 text-[10px] font-lato text-[#718096] text-center leading-3" numberOfLines={2}>
+                                                    {stage.label}
+                                                </Text>
                                             </View>
-                                            <Text className="mt-1 text-[10px] font-lato-bold text-[#7C8AA5]">{stage.label}</Text>
-                                        </View>
-                                    ))}
+                                        );
+                                    })}
                                 </View>
                             </View>
                         </View>
@@ -662,195 +692,134 @@ export default function Home() {
                             </TouchableOpacity>
                         </View>
 
-                        <View className="flex-row justify-between mb-4">
-                            {visitsData.followUps.map((item, index) => (
+                        <View className="mb-4">
+                            {visitsData.followUps.map((item) => (
                                 <View
                                     key={`${item.name}-${item.time}`}
-                                    className={`flex-1 bg-white rounded-[16px] border border-gray-100 px-3 py-3 ${index === 0 ? "mr-3" : ""}`}
-                                    style={{ minHeight: 88 }}
+                                    className="bg-white rounded-[16px] border border-gray-100 px-3 py-3 mb-2.5"
                                 >
-                                    <View className="flex-row items-center justify-between mb-2.5">
-                                        <View className={`px-2.5 py-0.5 rounded-md ${getVisitChipStyle(item.tone)}`}>
-                                            <Text className="text-[9px] font-lato-bold">{item.type}</Text>
+                                    <View className="flex-row items-start">
+                                        <View className="w-9 h-9 rounded-full bg-[#E8ECFF] items-center justify-center mr-3 mt-0.5">
+                                            <Text className="text-[11px] font-lato-bold text-[#4A43EC]">{item.initials}</Text>
                                         </View>
-                                        <Text className="text-[10px] font-lato text-[#8E9AAF]">{item.time}</Text>
+
+                                        <View className="flex-1 pr-3">
+                                            <View className="flex-row items-start justify-between">
+                                                <View className="flex-1 pr-2">
+                                                    <Text className="text-[14px] font-lato-bold text-[#1F2937] leading-4">{item.name}</Text>
+                                                    <Text className="mt-0.5 text-[11px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                                        {item.project}
+                                                    </Text>
+                                                </View>
+                                                <View className={`px-2.5 py-1 rounded-full ${getVisitChipStyle(item.tone)}`}>
+                                                    <Text className="text-[9px] font-lato-bold">{item.tone === "indigo" ? "Hot" : "Warm"}</Text>
+                                                </View>
+                                            </View>
+
+                                            <View className="flex-row items-center mt-2">
+                                                <View className={`px-2.5 py-1 rounded-md ${getVisitChipStyle(item.tone)}`}>
+                                                    <Text className="text-[9px] font-lato-bold">{item.type}</Text>
+                                                </View>
+                                                <Text className="ml-2.5 text-[11px] font-lato text-[#8E9AAF]">{item.time}</Text>
+                                            </View>
+
+                                            <Text className="mt-2 text-[10px] font-lato text-[#8E9AAF]">{item.salesperson}</Text>
+
+                                            <View className="flex-row items-center justify-end mt-2.5">
+                                                <TouchableOpacity className="px-4 py-2 rounded-full bg-[#6F5DF5]">
+                                                    <Text className="text-[11px] font-lato-bold text-white">{item.action}</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
                                     </View>
-                                    <Text className="text-[13px] font-lato-bold text-[#1F2937] leading-4">{item.name}</Text>
-                                    <Text className="mt-0.5 text-[11px] font-lato text-[#8E9AAF]">{item.project}</Text>
                                 </View>
                             ))}
                         </View>
-
-                        <View className="flex-row items-center justify-between mb-3">
-                            <Text className="text-[16px] font-lato-bold text-[#1F2937]">Recent Leads</Text>
-                            <View className="flex-row items-center">
-                                <View className="px-2.5 py-1 rounded-md bg-[#EEF2FF] mr-2">
-                                    <Text className="text-[10px] font-lato-bold text-[#94A3B8]">Newest</Text>
-                                </View>
-                                <View className="px-2.5 py-1 rounded-md bg-[#EEEAFE]">
-                                    <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Priority</Text>
-                                </View>
-                            </View>
-                        </View>
-
-                        {visitsData.leads.map((lead, index) => (
-                            <View
-                                key={`${lead.name}-${index}`}
-                                className="bg-white rounded-[16px] border border-gray-100 px-3 py-3 mb-3"
-                            >
-                                <View className="flex-row items-start justify-between mb-2.5">
-                                    <View className="flex-row items-center flex-1 pr-3">
-                                        <View className="w-11 h-11 rounded-full bg-[#E8ECFF] items-center justify-center mr-3">
-                                            <Text className="text-[14px] font-lato-bold text-[#4A43EC]">{lead.initials}</Text>
-                                        </View>
-                                        <View className="flex-1">
-                                            <Text className="text-[14px] font-lato-bold text-[#1F2937]">{lead.name}</Text>
-                                            <Text className="mt-0.5 text-[11px] font-lato text-[#8E9AAF]">
-                                                {lead.project} • {lead.meta}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <View className={`px-2 py-0.5 rounded-full ${getLeadTagStyle(lead.tagTone)}`}>
-                                        <Text className="text-[9px] font-lato-bold uppercase">{lead.tag}</Text>
-                                    </View>
-                                </View>
-
-                                <View className="flex-row justify-between">
-                                    <TouchableOpacity className="flex-1 flex-row items-center justify-center py-2 rounded-full border border-[#D8DDEB] mr-2">
-                                        <Feather name="phone" size={14} color="#1F2937" />
-                                        <Text className="ml-2 text-[12px] font-lato-bold text-[#1F2937]">Call</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity className="flex-1 flex-row items-center justify-center py-2 rounded-full border border-[#D8DDEB] mr-2">
-                                        <Feather name="message-square" size={14} color="#1F2937" />
-                                        <Text className="ml-2 text-[12px] font-lato-bold text-[#1F2937]">Message</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity className="flex-1 flex-row items-center justify-center py-2 rounded-full bg-[#EDEAFF]">
-                                        <Ionicons name="sync-outline" size={14} color="#4A43EC" />
-                                        <Text className="ml-2 text-[12px] font-lato-bold text-[#4A43EC]">Update</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        ))}
                     </View>
                 ) : activeTab === "Deals" ? (
                     <View className="px-5 pt-5 pb-4">
-                        {dealsData.map((deal, index) => (
-                            <View
+                        {dealsData.map((deal) => (
+                            <TouchableOpacity
                                 key={deal.title}
-                                className={`bg-white rounded-[18px] border border-[#D9DDE8] mb-4 overflow-hidden ${index === dealsData.length - 1 ? "" : ""}`}
+                                activeOpacity={0.9}
+                                onPress={() => {
+                                    setSelectedDeal(deal);
+                                    setIsProjectDetailVisible(true);
+                                }}
+                                className="bg-white rounded-[16px] border border-[#E3E7F0] mb-3.5 overflow-hidden"
+                                style={{
+                                    shadowColor: "#0F172A",
+                                    shadowOffset: { width: 0, height: 1 },
+                                    shadowOpacity: 0.04,
+                                    shadowRadius: 8,
+                                    elevation: 1,
+                                }}
                             >
-                                <View className="px-4 pt-4 pb-3">
-                                    <View className="flex-row items-start justify-between mb-1.5">
+                                <View className="px-4 pt-3.5 pb-3.5">
+                                    <View className="flex-row items-start justify-between mb-2.5">
                                         <View className="flex-1 pr-3">
-                                            <Text className="text-[17px] font-lato-bold text-[#1F2937] leading-5">{deal.title}</Text>
-                                            <View className={`self-start mt-2 px-3 py-1 rounded-full ${getDealStatusStyle(deal.statusTone)}`}>
-                                                <Text className="text-[11px] font-lato-bold">{deal.status}</Text>
+                                            <Text className="text-[16px] font-lato-bold text-[#1F2937] leading-5" numberOfLines={1}>
+                                                {deal.title}
+                                            </Text>
+                                            <View className="flex-row items-center mt-1.5">
+                                                <View className="h-2 w-2 rounded-full bg-[#6F5DF5] mr-2" />
+                                                <Text className="text-[12px] font-lato text-[#7E889A]" numberOfLines={1}>
+                                                    {deal.bookedBy} • {deal.mobile}
+                                                </Text>
                                             </View>
                                         </View>
                                         <View className="items-end">
-                                            <Text className="text-[18px] font-lato-bold text-[#4A43EC] leading-5">{deal.amount}</Text>
-                                            <Text className="mt-1 text-[12px] font-lato-bold text-[#6B7280]">{deal.date}</Text>
+                                            <View className={`px-3 py-1 rounded-full ${getDealStatusStyle("muted")}`}>
+                                                <Text className="text-[10px] font-lato-bold text-[#7B73F8]">{deal.dealStatus}</Text>
+                                            </View>
+                                            <Text className="mt-1 text-[11px] font-lato text-[#8E98AA]">{deal.bookingDate}</Text>
                                         </View>
                                     </View>
 
-                                    {deal.progress != null ? (
-                                        <View className="mt-2">
-                                            <View className="flex-row items-center justify-between mb-2">
-                                                <Text className="text-[13px] font-lato-bold text-[#374151]">Payment Progress</Text>
-                                                <Text className="text-[13px] font-lato-bold text-[#4B5563]">{deal.progress}%</Text>
-                                            </View>
-                                            <View className="h-[12px] rounded-full bg-[#EBEDF3] overflow-hidden">
-                                                <View className="h-full bg-[#3029E8] rounded-full" style={{ width: `${deal.progress}%` }} />
-                                            </View>
-                                            <View className="flex-row justify-between mt-3">
-                                                {deal.steps.map((step) => (
-                                                    <Text key={step.label} className="text-[10px] font-lato-bold text-[#8B93A7] tracking-[1px]">
-                                                        {step.label}
-                                                    </Text>
-                                                ))}
-                                            </View>
-                                            <View className="flex-row items-center mt-3 border-t border-[#E5E7F0] pt-3">
-                                                {deal.steps.map((step, stepIndex) => (
-                                                    <View key={step.label} className={`flex-1 items-center ${stepIndex < deal.steps.length - 1 ? "border-r border-[#D7DBE7]" : ""}`}>
-                                                        <View className={`w-7 h-7 rounded-full items-center justify-center ${step.state === "done" ? "bg-[#3029E8]" : "border border-[#AAB0BD] bg-white"}`}>
-                                                            {step.state === "done" ? (
-                                                                <Ionicons name="checkmark" size={16} color="white" />
-                                                            ) : (
-                                                                <View className="w-2.5 h-2.5 rounded-full border border-[#AAB0BD]" />
-                                                            )}
-                                                        </View>
-                                                        <Text className={`mt-1.5 text-[10px] font-lato-bold ${step.state === "done" ? "text-[#3029E8]" : "text-[#B0B5C2]"}`}>
-                                                            {step.state === "done" ? "PAID" : step.state === "current" ? "PENDING" : "UPCOMING"}
+                                    <View className="mb-3">
+                                        <View className="flex-row items-center justify-between mb-1.5">
+                                            <Text className="text-[12px] font-lato-bold text-[#4B5563]">Payment Progress</Text>
+                                            <Text className="text-[12px] font-lato-bold text-[#6F5DF5]">{deal.progress}%</Text>
+                                        </View>
+                                        <View className="h-[8px] rounded-full bg-[#ECEFF6] overflow-hidden">
+                                            <View className="h-full bg-[#3029E8] rounded-full" style={{ width: `${deal.progress}%` }} />
+                                        </View>
+                                    </View>
+
+                                    <View className="flex-row gap-2 mb-3">
+                                        <View className="flex-1 rounded-xl bg-[#F7F8FC] px-3 py-2">
+                                            <Text className="text-[9px] font-lato-bold text-[#96A0B2] tracking-[1px]">DEAL VALUE</Text>
+                                            <Text className="mt-0.5 text-[13px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.dealValue}</Text>
+                                        </View>
+                                        <View className="flex-1 rounded-xl bg-[#F7F8FC] px-3 py-2">
+                                            <Text className="text-[9px] font-lato-bold text-[#96A0B2] tracking-[1px]">NEXT DUE</Text>
+                                            <Text className="mt-0.5 text-[13px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.nextDue}</Text>
+                                        </View>
+                                    </View>
+
+                                    <View className="flex-row items-center justify-between">
+                                        <View className="flex-1 flex-row items-center gap-2">
+                                            {deal.steps.map((step, stepIndex) => (
+                                                <View key={step.label} className="flex-row items-center">
+                                                    <View
+                                                        className={`px-2.5 py-1 rounded-full ${step.state === "done" ? "bg-[#E5ECFF]" : step.state === "current" ? "bg-[#F3EFFF]" : "bg-[#F3F4F6]"}`}
+                                                    >
+                                                        <Text
+                                                            className={`text-[9px] font-lato-bold tracking-[1px] ${step.state === "done" ? "text-[#3559E4]" : step.state === "current" ? "text-[#6F5DF5]" : "text-[#8B93A7]"}`}
+                                                        >
+                                                            {step.label}
                                                         </Text>
                                                     </View>
-                                                ))}
-                                            </View>
+                                                    {stepIndex < deal.steps.length - 1 ? <View className="w-1.5" /> : null}
+                                                </View>
+                                            ))}
                                         </View>
-                                    ) : null}
-
-                                    {deal.milestone ? (
-                                        <View className="mt-3 rounded-[14px] border border-[#DDE2EE] bg-[#F4F6FA] px-3 py-3 flex-row items-center">
-                                            <View className="w-10 h-10 rounded-[10px] bg-[#D8D6FF] items-center justify-center mr-3">
-                                                <Ionicons name="document-text-outline" size={18} color="#3029E8" />
-                                            </View>
-                                            <View className="flex-1">
-                                                <Text className="text-[13px] font-lato-bold text-[#2C3240]">{deal.milestone.title}</Text>
-                                                <Text className="mt-0.5 text-[12px] font-lato text-[#6F7684]">{deal.milestone.subtitle}</Text>
-                                            </View>
+                                        <View className={`px-3 py-1.5 rounded-full ${getDealStatusStyle("success")}`}>
+                                            <Text className="text-[11px] font-lato-bold text-[#009B79]">{deal.footerStatus}</Text>
                                         </View>
-                                    ) : null}
-
-                                    {deal.note ? (
-                                        <View className="mt-3 rounded-[12px] border border-dashed border-[#D5D9E6] bg-[#F7F8FC] px-3 py-3 flex-row items-start">
-                                            <View className="mt-0.5 mr-2">
-                                                <Ionicons name="shield-checkmark-outline" size={18} color="#6B7280" />
-                                            </View>
-                                            <Text className="flex-1 text-[12px] font-lato text-[#6F7684] leading-4">{deal.note}</Text>
-                                        </View>
-                                    ) : null}
-
-                                    {deal.customer ? (
-                                        <View className="mt-3 rounded-[12px] border border-[#D9D1B8] bg-[#FBF7EF] px-3 py-3">
-                                            <View className="flex-row items-center justify-between mb-2">
-                                                <Text className="text-[12px] font-lato-bold text-[#5E6474]">Customer</Text>
-                                                <Text className="text-[13px] font-lato text-[#2A2F3A]">{deal.customer.name}</Text>
-                                            </View>
-                                            <View className="flex-row items-center justify-between">
-                                                <Text className="text-[12px] font-lato-bold text-[#5E6474]">Contact</Text>
-                                                <Text className="text-[13px] font-lato text-[#2A2F3A]">{deal.customer.contact}</Text>
-                                            </View>
-                                        </View>
-                                    ) : null}
+                                    </View>
                                 </View>
-
-                                {deal.footer ? (
-                                    <View className="flex-row items-center justify-between px-4 py-3 border-t border-[#D9DDE8] bg-white">
-                                        <Text className="text-[12px] font-lato-bold text-[#5E6474]">{deal.footer.left}</Text>
-                                        <Text className="text-[12px] font-lato-bold text-[#5E6474]">{deal.footer.right}</Text>
-                                    </View>
-                                ) : null}
-
-                                {deal.action ? (
-                                    <View className="px-4 py-3 border-t border-[#D9DDE8] items-center">
-                                        <TouchableOpacity>
-                                            <Text className="text-[12px] font-lato-bold text-[#4A43EC] uppercase tracking-[1px] flex-row">
-                                                {deal.action}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                ) : null}
-
-                                {deal.actions ? (
-                                    <View className="flex-row border-t border-[#D9DDE8]">
-                                        <TouchableOpacity className="flex-1 py-3 items-center border-r border-[#D9DDE8]">
-                                            <Text className="text-[12px] font-lato-bold text-[#6B7280] uppercase tracking-[1px]">{deal.actions[0]}</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity className="flex-1 py-3 items-center">
-                                            <Text className="text-[12px] font-lato-bold text-[#4A43EC] uppercase tracking-[1px]">{deal.actions[1]}</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                ) : null}
-                            </View>
+                            </TouchableOpacity>
                         ))}
                     </View>
                 ) : (
@@ -859,6 +828,16 @@ export default function Home() {
                     </View>
                 )}
             </ScrollView>
+
+            <ProjectDetailModal
+                visible={isProjectDetailVisible}
+                onClose={() => {
+                    setIsProjectDetailVisible(false);
+                    setSelectedDeal(null);
+                }}
+                project={selectedProject}
+                variant={selectedDeal}
+            />
         </View>
     );
 }

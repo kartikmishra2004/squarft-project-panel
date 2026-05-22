@@ -23,9 +23,11 @@ export const mockData = {
                 { type: "4 BHK APARTMENT", price: "₹3.5 Cr" }
             ],
             units: {
-                total: 45,
-                avail: 12,
-                sold: 33
+                total: 120,
+                avail: 48,
+                sold: 32,
+                booked: 24,
+                token: 16
             },
             imagesCount: "1/28",
             visits: {
@@ -38,28 +40,53 @@ export const mockData = {
                     title: "Sales Pipeline",
                     action: "View Details",
                     stages: [
-                        { label: "New", value: 86, height: 28 },
-                        { label: "Contacted", value: 198, height: 44 },
-                        { label: "Visits", value: 342, height: 58, active: true },
-                        { label: "Negot.", value: 74, height: 34 }
+                        { label: "New", value: 14, height: 28 },
+                        { label: "Contacted", value: 10, height: 28 },
+                        { label: "Visit\nSched.", value: 8, height: 28 },
+                        { label: "Visited", value: 6, height: 28, active: true },
+                        { label: "Negotiation", value: 4, height: 28 },
+                        { label: "Token", value: 3, height: 28 },
+                        { label: "Done", value: 1, height: 28 }
                     ]
                 },
                 followUps: [
-                    { type: "SITE VISIT", time: "10:30 AM", name: "Rahul Sharma", project: "Skyline Residency", tone: "indigo" },
-                    { type: "CALL", time: "02:00 PM", name: "Ananya Iyer", project: "Green Valley Towers", tone: "orange" }
-                ],
-                leads: [
-                    { initials: "RS", name: "Rohan Singh", project: "Skyline Residency", meta: "3 BHK", tag: "HOT", tagTone: "hot" },
-                    { initials: "PM", name: "Priya Menon", project: "The Grand Atrium", meta: "Commercial", tag: "WARM", tagTone: "warm" }
+                    { initials: "RS", type: "Site Visit", time: "Today 4:30 PM", name: "Rahul Sharma", project: "Serenity Reserve • 3 BHK", salesperson: "Sales Officer: Amit Verma", tone: "indigo", action: "Update" },
+                    { initials: "PK", type: "Payment Disc.", time: "Tomorrow 11 AM", name: "Priya Kulkarni", project: "Serenity Reserve • 4 BHK", salesperson: "Sales Officer: Riya Joshi", tone: "orange", action: "Update" }
                 ]
             },
             deals: [
                 {
+                    propertyType: "3 BHK Apartment",
+                    area: "1,450 Sq.Ft",
+                    possession: "Apr, 2027",
+                    avgPricePerSqft: "₹9.25k",
+                    amenities: ["Gymnasium", "Swimming Pool", "24/7 Security", "Power Backup"],
+                    bookedBy: "Rahul Sharma",
+                    mobile: "98XXXX01",
+                    bookingDate: "22 May 2026",
+                    tokenAmount: "₹51,000",
+                    dealValue: "₹84,00,000",
+                    received: "₹10,51,000",
+                    pending: "₹73,49,000",
+                    nextDue: "15 June 2026",
+                    dealStatus: "Agreement Pending",
+                    bookingAmount: "₹10,00,000",
+                    bookingAmountDate: "30 May 2026",
+                    agreementAmount: "₹20,00,000",
+                    registryAmount: "₹40,00,000",
+                    registryDue: "—",
+                    paymentSchedule: [
+                        { title: "Token", amount: "₹51,000", detail: "22 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Booking Amount", amount: "₹10,00,000", detail: "30 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Agreement", amount: "₹20,00,000", detail: "Due: 15 June 2026", status: "Upcoming", tone: "warning" },
+                        { title: "Registry", amount: "₹40,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                    ],
                     title: "Tower A • Unit A-302",
-                    amount: "₹1,00,000",
-                    date: "9 May 2026",
-                    status: "Token Received",
-                    statusTone: "success",
+                    contactLine: "Rahul Sharma • 98XXXX01",
+                    topStatus: "Token Done",
+                    footerStatus: "Token Paid",
+                    footerTotal: "₹84,00,000 Total",
+                    footerDue: "Next Due: 15 June 2026",
                     progress: 33,
                     steps: [
                         { label: "TOKEN", state: "done" },
@@ -68,42 +95,124 @@ export const mockData = {
                     ]
                 },
                 {
+                    propertyType: "Retail Shop",
+                    area: "980 Sq.Ft",
+                    possession: "Apr, 2027",
+                    avgPricePerSqft: "₹9.25k",
+                    amenities: ["Car Parking", "24/7 Security", "Power Backup", "Wi-Fi Zone"],
+                    bookedBy: "Priya Kulkarni",
+                    mobile: "98XXXX12",
+                    bookingDate: "24 May 2026",
+                    tokenAmount: "₹42,000",
+                    dealValue: "₹42,00,000",
+                    received: "₹12,10,000",
+                    pending: "₹29,90,000",
+                    nextDue: "22 June 2026",
+                    dealStatus: "Installment",
+                    bookingAmount: "₹10,00,000",
+                    bookingAmountDate: "30 May 2026",
+                    agreementAmount: "₹8,00,000",
+                    registryAmount: "₹24,00,000",
+                    registryDue: "Later",
+                    paymentSchedule: [
+                        { title: "Token", amount: "₹42,000", detail: "24 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Booking Amount", amount: "₹10,00,000", detail: "30 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Agreement", amount: "₹8,00,000", detail: "Due: 22 June 2026", status: "Upcoming", tone: "warning" },
+                        { title: "Registry", amount: "₹24,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                    ],
                     title: "Shop G-12",
-                    amount: "₹5,00,000",
-                    date: "12 May 2026",
-                    status: "Installment Received",
-                    statusTone: "info",
-                    milestone: {
-                        title: "2nd Milestone Completed",
-                        subtitle: "Structural floor casting stage"
-                    },
-                    footer: {
-                        left: "Due Next: ₹2,50,000",
-                        right: "June 2026"
-                    }
+                    contactLine: "Priya Kulkarni • 98XXXX12",
+                    topStatus: "Installment",
+                    footerStatus: "Paid",
+                    footerTotal: "₹42,00,000 Total",
+                    footerDue: "Next Due: 22 June 2026",
+                    progress: 58,
+                    steps: [
+                        { label: "TOKEN", state: "done" },
+                        { label: "AGREEMENT", state: "done" },
+                        { label: "POSSESSION", state: "current" }
+                    ]
                 },
                 {
+                    propertyType: "3 BHK Apartment",
+                    area: "1,900 Sq.Ft",
+                    possession: "Apr, 2027",
+                    avgPricePerSqft: "₹9.25k",
+                    amenities: ["Clubhouse", "Garden", "Sports Court", "Power Backup"],
+                    bookedBy: "Aman Verma",
+                    mobile: "98XXXX34",
+                    bookingDate: "18 May 2026",
+                    tokenAmount: "₹75,000",
+                    dealValue: "₹96,00,000",
+                    received: "₹22,00,000",
+                    pending: "₹74,00,000",
+                    nextDue: "15 July 2026",
+                    dealStatus: "Agreement Pending",
+                    bookingAmount: "₹15,00,000",
+                    bookingAmountDate: "25 May 2026",
+                    agreementAmount: "₹30,00,000",
+                    registryAmount: "₹44,00,000",
+                    registryDue: "Later",
+                    paymentSchedule: [
+                        { title: "Token", amount: "₹75,000", detail: "18 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Booking Amount", amount: "₹15,00,000", detail: "25 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Agreement", amount: "₹30,00,000", detail: "Due: 15 July 2026", status: "Upcoming", tone: "warning" },
+                        { title: "Registry", amount: "₹44,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                    ],
                     title: "Tower C • Unit C-505",
-                    amount: "₹0",
-                    date: "Drafting Stage",
-                    status: "Agreement Stage",
-                    statusTone: "warning",
-                    note: "Documents currently being reviewed by legal team.",
-                    action: "View Documents"
+                    contactLine: "Aman Verma • 98XXXX34",
+                    topStatus: "Agreement",
+                    footerStatus: "Pending",
+                    footerTotal: "₹96,00,000 Total",
+                    footerDue: "Next Due: 15 July 2026",
+                    progress: 72,
+                    steps: [
+                        { label: "TOKEN", state: "done" },
+                        { label: "AGREEMENT", state: "current" },
+                        { label: "POSSESSION", state: "upcoming" }
+                    ]
                 },
                 {
+                    propertyType: "Villa",
+                    area: "3,400 Sq.Ft",
+                    possession: "Apr, 2027",
+                    avgPricePerSqft: "₹9.25k",
+                    amenities: ["Garden", "Car Parking", "24/7 Security", "Clubhouse"],
+                    bookedBy: "Neha Kapoor",
+                    mobile: "98XXXX78",
+                    bookingDate: "20 May 2026",
+                    tokenAmount: "₹1,25,000",
+                    dealValue: "₹1,25,00,000",
+                    received: "₹25,00,000",
+                    pending: "₹1,00,00,000",
+                    nextDue: "30 June 2026",
+                    dealStatus: "Upcoming Token",
+                    bookingAmount: "₹20,00,000",
+                    bookingAmountDate: "28 May 2026",
+                    agreementAmount: "₹35,00,000",
+                    registryAmount: "₹45,00,000",
+                    registryDue: "Later",
+                    paymentSchedule: [
+                        { title: "Token", amount: "₹1,25,000", detail: "20 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Booking Amount", amount: "₹20,00,000", detail: "28 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Agreement", amount: "₹35,00,000", detail: "Due: 30 June 2026", status: "Upcoming", tone: "warning" },
+                        { title: "Registry", amount: "₹45,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                    ],
                     title: "Villa V-07",
-                    amount: "₹10,00,000",
-                    date: "Due Soon",
-                    status: "Upcoming Token",
-                    statusTone: "muted",
-                    customer: {
-                        name: "Rahul Sharma",
-                        contact: "+91 98XXX-XX001"
-                    },
-                    actions: ["Remind", "Collect Now"]
+                    contactLine: "Neha Kapoor • 98XXXX78",
+                    topStatus: "Upcoming Token",
+                    footerStatus: "Due Soon",
+                    footerTotal: "₹1,25,00,000 Total",
+                    footerDue: "Next Due: 30 June 2026",
+                    progress: 19,
+                    steps: [
+                        { label: "TOKEN", state: "current" },
+                        { label: "AGREEMENT", state: "upcoming" },
+                        { label: "POSSESSION", state: "upcoming" }
+                    ]
                 }
             ],
+            amenities: ["Gymnasium", "Swimming Pool", "24/7 Security", "Power Backup"],
             inventory: {
                 apartment: {
                     towers: [
@@ -325,12 +434,141 @@ export const mockData = {
                 sold: 55
             },
             imagesCount: "1/15",
+            visits: {
+                metrics: [
+                    { label: "TOTAL", value: "624", delta: "+9%", valueColor: "#4F46E5" },
+                    { label: "HOT", value: "84", delta: "+4%", valueColor: "#F97316" },
+                    { label: "CONV.", value: "19", delta: "+6%", valueColor: "#10B981" }
+                ],
+                pipeline: {
+                    title: "Sales Pipeline",
+                    action: "View Details",
+                    stages: [
+                        { label: "New", value: 9, height: 28 },
+                        { label: "Contacted", value: 7, height: 28 },
+                        { label: "Visited", value: 4, height: 28, active: true },
+                        { label: "Negotiation", value: 3, height: 28 },
+                        { label: "Token", value: 2, height: 28 }
+                    ]
+                },
+                followUps: [
+                    { initials: "AS", type: "Site Visit", time: "Today 2:00 PM", name: "Amit Sharma", project: "Royal Palms • 2 BHK", salesperson: "Sales Officer: Neha Rao", tone: "indigo", action: "Update" }
+                ]
+            },
+            deals: [
+                {
+                    propertyType: "2 BHK Apartment",
+                    area: "1,180 Sq.Ft",
+                    possession: "Dec, 2026",
+                    avgPricePerSqft: "₹8.50k",
+                    amenities: ["Gymnasium", "Swimming Pool", "24/7 Security", "Car Parking"],
+                    bookedBy: "Amit Sharma",
+                    mobile: "97XXXX45",
+                    bookingDate: "16 May 2026",
+                    tokenAmount: "₹75,000",
+                    dealValue: "₹65,00,000",
+                    received: "₹18,40,000",
+                    pending: "₹46,60,000",
+                    nextDue: "20 June 2026",
+                    dealStatus: "Agreement Pending",
+                    bookingAmount: "₹10,00,000",
+                    bookingAmountDate: "30 May 2026",
+                    agreementAmount: "₹15,00,000",
+                    registryAmount: "₹36,60,000",
+                    registryDue: "Later",
+                    paymentSchedule: [
+                        { title: "Token", amount: "₹75,000", detail: "16 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Booking Amount", amount: "₹10,00,000", detail: "30 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
+                        { title: "Agreement", amount: "₹15,00,000", detail: "Due: 20 June 2026", status: "Upcoming", tone: "warning" },
+                        { title: "Registry", amount: "₹36,60,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                    ],
+                    title: "Tower B • Unit B-202",
+                    contactLine: "Amit Sharma • 97XXXX45",
+                    amount: "₹75,000",
+                    date: "16 May 2026",
+                    topStatus: "Token Done",
+                    footerStatus: "Token Paid",
+                    footerTotal: "₹65,00,000 Total",
+                    footerDue: "Next Due: 20 June 2026",
+                    status: "Token Received",
+                    statusTone: "success",
+                    progress: 28,
+                    steps: [
+                        { label: "TOKEN", state: "done" },
+                        { label: "AGREEMENT", state: "current" },
+                        { label: "POSSESSION", state: "upcoming" }
+                    ]
+                }
+            ],
+            amenities: ["Gymnasium", "Swimming Pool", "24/7 Security", "Power Backup"],
             inventory: {
-                apartment: { sections: [] },
-                villa: { sections: [] },
-                rowhouse: { sections: [] },
-                plot: { stacks: [] },
-                shop: { sections: [] }
+                apartment: {
+                    towers: [
+                        {
+                            key: "tower-a",
+                            label: "Tower A",
+                            sections: [
+                                {
+                                    rowLabel: "FLOOR 1",
+                                    units: [
+                                        { id: "#1201", status: "Available", title: "2 BHK Premium", area: "1,180 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                        { id: "#1202", status: "Booked", title: "3 BHK Premium", area: "1,520 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                villa: {
+                    sections: [
+                        {
+                            rowLabel: "ROW 1",
+                            units: [
+                                { id: "V-01", status: "Available", title: "3 BHK Villa", area: "2,850 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                { id: "V-02", status: "Booked", title: "4 BHK Villa", area: "3,200 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                            ]
+                        }
+                    ]
+                },
+                rowhouse: {
+                    sections: [
+                        {
+                            rowLabel: "ROW 1",
+                            units: [
+                                { id: "R-01", status: "Available", title: "3 BHK Rowhouse", area: "2,000 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                { id: "R-02", status: "Tokened", title: "3 BHK Rowhouse", area: "2,100 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                            ]
+                        }
+                    ]
+                },
+                plot: {
+                    stacks: [
+                        {
+                            key: "stack-a",
+                            label: "Stack A",
+                            levels: [
+                                {
+                                    level: 12,
+                                    cards: [
+                                        { unit: "A-1201", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Available", active: true, icon: "checkmark-circle" },
+                                        { unit: "A-1202", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Reserved", active: false, icon: "lock-closed" }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                shop: {
+                    sections: [
+                        {
+                            rowLabel: "ROW 1",
+                            units: [
+                                { id: "S-01", status: "Available", title: "Retail Shop", area: "900 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                { id: "S-02", status: "Booked", title: "Cafe Space", area: "760 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                            ]
+                        }
+                    ]
+                }
             }
         }
     ]
