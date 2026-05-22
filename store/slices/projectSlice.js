@@ -26,6 +26,7 @@ const initialState = {
     },
     step3: {
         unitConfigs: {}, // Keyed by typeId, value is array of unit detail objects
+        builderData: {}, // Keyed by typeId, value is visual builder state
     },
     step4: {
         unitData: {}, // Keyed by unique unit ID (e.g. "typeId-unitIndex")
@@ -49,6 +50,12 @@ const projectSlice = createSlice({
         removePropertyType: (state, action) => {
             state.step2.selectedTypes = state.step2.selectedTypes.filter(t => t.id !== action.payload);
             delete state.step3.unitConfigs[action.payload];
+            if (state.step3.builderData) delete state.step3.builderData[action.payload];
+            Object.keys(state.step4.unitData).forEach(id => {
+                if (id.startsWith(`${action.payload}-`)) {
+                    delete state.step4.unitData[id];
+                }
+            });
         },
         updatePropertyType: (state, action) => {
             const index = state.step2.selectedTypes.findIndex(t => t.id === action.payload.id);
@@ -90,6 +97,72 @@ const projectSlice = createSlice({
             } else {
                 state.step3 = { ...state.step3, ...action.payload };
             }
+        },
+        updateBuilderData: (state, action) => {
+            const { typeId, subType, builderState } = action.payload;
+            if (!state.step3.builderData) state.step3.builderData = {};
+            state.step3.builderData[typeId] = builderState;
+
+            const newUnitConfigs = [];
+            const newUnitData = {};
+
+            const sections = builderState.sections || [];
+            sections.forEach(section => {
+                const rows = section.floors ?? section.rows ?? section.lanes ?? 1;
+                const cols = section.unitsPerFloor ?? section.plotsPerRow ?? section.villasPerLane ?? 1;
+
+                for (let r = 1; r <= rows; r++) {
+                    for (let c = 1; c <= cols; c++) {
+                        const key = `${r}_${c}`;
+                        if (section.unitMap && section.unitMap[key]) {
+                            const configId = section.unitMap[key];
+                            const config = section.configs?.find(cfg => cfg.id === configId) || {};
+                            const override = section.unitOverrides?.[key] || {};
+
+                            const displayNum = `${r}${c.toString().padStart(2, '0')}`;
+                            const propertyNumber = override.customName || displayNum;
+
+                            const unitConfig = {
+                                tower: section.name,
+                                floor: r.toString(),
+                                bhk: subType === 'office' ? (config.type || 'Co-working') : (config.type || '2 BHK'),
+                                officeType: subType === 'office' ? (config.type || 'Co-working') : '',
+                                area: (override.customArea || config.area || '0').toString(),
+                                areaUnit: subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
+                                amenities: [config.name || 'Standard'],
+                                propertyNumber: propertyNumber,
+                                hasShop: false,
+                                extraCharges: [{ title: 'Maintenance', amount: '0' }]
+                            };
+
+                            newUnitConfigs.push(unitConfig);
+
+                            const unitIndex = newUnitConfigs.length - 1;
+                            const unitId = `${typeId}-${unitIndex}`;
+                            const sellingPrice = (override.customPrice || config.price || '').toString().replace(/,/g, '');
+
+                            const existing = state.step4.unitData[unitId] || {};
+                            newUnitData[unitId] = {
+                                images: existing.images || [],
+                                documents: existing.documents || [],
+                                sellingPrice: sellingPrice || existing.sellingPrice || '',
+                                priceNegotiable: existing.priceNegotiable || false,
+                                taxExclude: existing.taxExclude || false,
+                                paymentMode: existing.paymentMode || 'full',
+                                agreed: existing.agreed ?? true,
+                            };
+                        }
+                    }
+                }
+            });
+
+            state.step3.unitConfigs[typeId] = newUnitConfigs;
+            Object.keys(state.step4.unitData).forEach(id => {
+                if (!id.startsWith(`${typeId}-`)) {
+                    newUnitData[id] = state.step4.unitData[id];
+                }
+            });
+            state.step4.unitData = newUnitData;
         },
         updateStep4: (state, action) => {
             const { unitId, data } = action.payload;
@@ -133,6 +206,7 @@ export const {
     removePropertyType,
     updatePropertyType,
     updateStep3,
+    updateBuilderData,
     updateStep4,
     bulkUploadProject,
     bulkUploadSubtype,

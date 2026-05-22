@@ -11,6 +11,8 @@ import {
     KeyboardAvoidingView,
     Platform,
     Pressable,
+    Keyboard,
+    TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -24,6 +26,7 @@ import {
     removePropertyType,
     updatePropertyType,
     updateStep3,
+    updateBuilderData,
     updateStep4,
     bulkUploadProject,
     bulkUploadSubtype,
@@ -199,90 +202,96 @@ export default function AddProject() {
     };
 
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            className="flex-1"
-        >
-            <View className="flex-1 bg-[#F8F9FE]">
-                <StatusBar barStyle="light-content" />
+        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                className="flex-1"
+            >
+                <View className="flex-1 bg-[#F8F9FE]">
+                    <StatusBar barStyle="light-content" />
 
-                {/* Header Section */}
-                <View className="bg-[#4A43EC] pt-12 pb-8 px-5 relative overflow-hidden">
-                    {/* Decorative Circle */}
-                    <View
-                        style={{
-                            position: "absolute",
-                            right: -width * 0.5,
-                            top: -width * 0.25,
-                            width: width * 0.85,
-                            height: width * 0.85,
-                            borderRadius: width * 0.4,
-                            backgroundColor: "#3D36C7",
-                            opacity: 0.5
-                        }}
-                    />
+                    {/* Header Section */}
+                    <View className="bg-[#4A43EC] pt-12 pb-8 px-5 relative overflow-hidden">
+                        {/* Decorative Circle */}
+                        <View
+                            style={{
+                                position: "absolute",
+                                right: -width * 0.5,
+                                top: -width * 0.25,
+                                width: width * 0.85,
+                                height: width * 0.85,
+                                borderRadius: width * 0.4,
+                                backgroundColor: "#3D36C7",
+                                opacity: 0.5
+                            }}
+                        />
 
-                    <View className="flex-row items-center mt-6 justify-between mb-8">
-                        <TouchableOpacity onPress={handleBack} className="p-1">
-                            <Ionicons name="arrow-back" size={20} color="white" />
-                        </TouchableOpacity>
-                        <Text className="text-white text-base font-lato-bold">Add Project</Text>
-                        <View style={{ width: 20 }} />
-                    </View>
+                        <View className="flex-row items-center mt-6 justify-between mb-8">
+                            <TouchableOpacity onPress={handleBack} className="p-1">
+                                <Ionicons name="arrow-back" size={20} color="white" />
+                            </TouchableOpacity>
+                            <Text className="text-white text-base font-lato-bold">Add Project</Text>
+                            <View style={{ width: 20 }} />
+                        </View>
 
-                    {/* Step Indicator */}
-                    <View className="flex-row justify-between items-start mt-8">
-                        {steps.map((step) => (
-                            <View key={step.id} className="items-center" style={{ width: (width - 40) / 4 }}>
-                                <View
-                                    className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${currentStep === step.id ? 'bg-white' : 'bg-transparent border border-white/40'
-                                        }`}
-                                >
-                                    <Text className={`text-xs font-lato-bold ${currentStep === step.id ? 'text-[#4A43EC]' : 'text-white/60'
-                                        }`}>
-                                        {step.id}
+                        {/* Step Indicator */}
+                        <View className="flex-row justify-between items-start mt-8">
+                            {steps.map((step) => (
+                                <View key={step.id} className="items-center" style={{ width: (width - 40) / 4 }}>
+                                    <View
+                                        className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${currentStep === step.id ? 'bg-white' : 'bg-transparent border border-white/40'
+                                            }`}
+                                    >
+                                        <Text className={`text-xs font-lato-bold ${currentStep === step.id ? 'text-[#4A43EC]' : 'text-white/60'
+                                            }`}>
+                                            {step.id}
+                                        </Text>
+                                    </View>
+                                    <Text className={`text-[8px] text-center font-lato-medium ${currentStep === step.id ? 'text-white' : 'text-white/60'
+                                        }`} numberOfLines={1}>
+                                        {step.title}
                                     </Text>
                                 </View>
-                                <Text className={`text-[8px] text-center font-lato-medium ${currentStep === step.id ? 'text-white' : 'text-white/60'
-                                    }`} numberOfLines={1}>
-                                    {step.title}
-                                </Text>
-                            </View>
-                        ))}
+                            ))}
+                        </View>
+                    </View>
+
+                    {/* Content Section */}
+                    <View className="flex-1 bg-white -mt-5 rounded-t-[20px] overflow-hidden">
+                        <ScrollView
+                            ref={scrollRef}
+                            className="flex-1 px-5 pt-6"
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={{ paddingBottom: 100 }}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+                                <View className="flex-1">
+                                    {currentStep === 1 && <Step1 />}
+                                    {currentStep === 2 && <Step2 />}
+                                    {currentStep === 3 && <Step3 />}
+                                    {currentStep === 4 && <Step4 />}
+
+                                    {/* Next Button */}
+                                    <View className="mt-8 mb-4">
+                                        <TouchableOpacity
+                                            className={`py-4 rounded-xl items-center ${isNextDisabled() ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
+                                            activeOpacity={0.8}
+                                            onPress={handleNext}
+                                            disabled={isNextDisabled()}
+                                        >
+                                            <Text className="text-white text-sm font-lato-bold">
+                                                {currentStep === 4 ? "Submit" : "Next"}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </TouchableWithoutFeedback>
+                        </ScrollView>
                     </View>
                 </View>
-
-                {/* Content Section */}
-                <View className="flex-1 bg-white -mt-5 rounded-t-[20px] overflow-hidden">
-                    <ScrollView
-                        ref={scrollRef}
-                        className="flex-1 px-5 pt-6"
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={{ paddingBottom: 100 }}
-                        keyboardShouldPersistTaps="handled"
-                    >
-                        {currentStep === 1 && <Step1 />}
-                        {currentStep === 2 && <Step2 />}
-                        {currentStep === 3 && <Step3 />}
-                        {currentStep === 4 && <Step4 />}
-
-                        {/* Next Button */}
-                        <View className="mt-8 mb-4">
-                            <TouchableOpacity
-                                className={`py-4 rounded-xl items-center ${isNextDisabled() ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
-                                activeOpacity={0.8}
-                                onPress={handleNext}
-                                disabled={isNextDisabled()}
-                            >
-                                <Text className="text-white text-sm font-lato-bold">
-                                    {currentStep === 4 ? "Submit" : "Next"}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </ScrollView>
-                </View>
-            </View>
-        </KeyboardAvoidingView>
+            </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
     );
 }
 
@@ -793,6 +802,53 @@ function Step2() {
     );
 }
 
+// --- Project Engine Helper ---
+const getDefaultBuilderState = (subType) => {
+    let secName = 'Tower A';
+    let rCount = 8;
+    let cCount = 4;
+
+    if (subType === 'plot') {
+        secName = 'Sector A';
+        rCount = 5;
+        cCount = 6;
+    } else if (subType === 'apartment') {
+        secName = 'Tower A';
+        rCount = 8;
+        cCount = 4;
+    } else if (subType === 'villa' || subType === 'rowhouse') {
+        secName = 'Section 1';
+        rCount = 3;
+        cCount = 4;
+    } else {
+        secName = 'Section 1';
+        rCount = 4;
+        cCount = 6;
+    }
+
+    return {
+        sections: [
+            {
+                id: 1,
+                name: secName,
+                floors: rCount,
+                rows: rCount,
+                lanes: rCount,
+                unitsPerFloor: cCount,
+                plotsPerRow: cCount,
+                villasPerLane: cCount,
+                configs: [], // No variants by default
+                unitMap: {}, // No units assigned by default
+                unitOverrides: {}
+            }
+        ],
+        activeSectionId: 1,
+        activeConfigId: null, // No active config by default
+        gridMode: 'paint', // 'paint' | 'edit'
+        selectedUnitKey: null
+    };
+};
+
 // --- Step 3 Component ---
 function Step3() {
     const dispatch = useDispatch();
@@ -803,7 +859,7 @@ function Step3() {
     const [activeTypeTab, setActiveTypeTab] = useState(step2.selectedTypes[0]?.id);
     const [uploadModes, setUploadModes] = useState({}); // { [typeId]: 'manual' | 'bulk' }
     const [openUploadModeDropdown, setOpenUploadModeDropdown] = useState(false);
-    const [openAreaDropdown, setOpenAreaDropdown] = useState(null); // format: "typeId-unitIdx"
+    const [openGridModeDropdown, setOpenGridModeDropdown] = useState(false);
 
     // Keep active tab valid if types are removed
     useEffect(() => {
@@ -812,12 +868,254 @@ function Step3() {
         }
     }, [step2.selectedTypes, activeTypeTab]);
 
-    const updateQuantity = (typeId, quantity) => {
-        dispatch(updateStep3({ typeId, quantity: parseInt(quantity) || 0 }));
+    const activeType = step2.selectedTypes.find(t => t.id === activeTypeTab) || step2.selectedTypes[0];
+
+    // Initialize builder data if not present
+    useEffect(() => {
+        if (activeType && !step3.builderData?.[activeType.id]) {
+            dispatch(updateBuilderData({
+                typeId: activeType.id,
+                subType: activeType.subType,
+                builderState: getDefaultBuilderState(activeType.subType)
+            }));
+        }
+    }, [activeType, step3.builderData]);
+
+    const builderState = step3.builderData?.[activeType?.id] || (activeType ? getDefaultBuilderState(activeType.subType) : null);
+
+    const handleUpdateBuilder = (updater) => {
+        if (!activeType) return;
+        const currentState = step3.builderData?.[activeType.id] || getDefaultBuilderState(activeType.subType);
+        const newState = updater(currentState);
+        dispatch(updateBuilderData({
+            typeId: activeType.id,
+            subType: activeType.subType,
+            builderState: newState
+        }));
     };
 
-    const updateUnitDetail = (typeId, unitIndex, field, value) => {
-        dispatch(updateStep3({ typeId, unitIndex, data: { [field]: value } }));
+    const handleSetActiveSection = (secId) => {
+        handleUpdateBuilder(prev => ({ ...prev, activeSectionId: secId, selectedUnitKey: null }));
+    };
+
+    const handleAddSection = () => {
+        handleUpdateBuilder(prev => {
+            const newId = (prev.sections[prev.sections.length - 1]?.id || 0) + 1;
+            let newSecName = '';
+            if (activeType.subType === 'plot') {
+                newSecName = `Sector ${String.fromCharCode(64 + newId)}`;
+            } else if (activeType.subType === 'apartment') {
+                newSecName = `Tower ${String.fromCharCode(64 + newId)}`;
+            } else {
+                newSecName = `Section ${newId}`;
+            }
+            const newSection = {
+                id: newId,
+                name: newSecName,
+                floors: prev.sections[0]?.floors ?? 5,
+                rows: prev.sections[0]?.rows ?? 5,
+                lanes: prev.sections[0]?.lanes ?? 5,
+                unitsPerFloor: prev.sections[0]?.unitsPerFloor ?? 4,
+                plotsPerRow: prev.sections[0]?.plotsPerRow ?? 4,
+                villasPerLane: prev.sections[0]?.villasPerLane ?? 4,
+                configs: prev.sections[0]?.configs ? JSON.parse(JSON.stringify(prev.sections[0].configs)) : [],
+                unitMap: {},
+                unitOverrides: {}
+            };
+            
+            if (newSection.configs.length > 0) {
+                const rCount = newSection.floors;
+                const cCount = newSection.unitsPerFloor;
+                for (let r = 1; r <= rCount; r++) {
+                    for (let c = 1; c <= cCount; c++) {
+                        newSection.unitMap[`${r}_${c}`] = newSection.configs[0].id;
+                    }
+                }
+            }
+
+            return {
+                ...prev,
+                sections: [...prev.sections, newSection],
+                activeSectionId: newId,
+                selectedUnitKey: null
+            };
+        });
+    };
+
+    const handleUpdateDimensions = (field, value) => {
+        const parsed = parseInt(value);
+        const val = isNaN(parsed) ? 0 : parsed;
+        handleUpdateBuilder(prev => ({
+            ...prev,
+            sections: prev.sections.map(sec => {
+                if (sec.id !== prev.activeSectionId) return sec;
+                const updated = { ...sec, [field]: val };
+                if (field === 'floors') { updated.rows = val; updated.lanes = val; }
+                if (field === 'rows') { updated.floors = val; updated.lanes = val; }
+                if (field === 'lanes') { updated.floors = val; updated.rows = val; }
+                if (field === 'unitsPerFloor') { updated.plotsPerRow = val; updated.villasPerLane = val; }
+                if (field === 'plotsPerRow') { updated.unitsPerFloor = val; updated.villasPerLane = val; }
+                if (field === 'villasPerLane') { updated.unitsPerFloor = val; updated.plotsPerRow = val; }
+                return updated;
+            })
+        }));
+    };
+
+    const handleUpdateSectionName = (name) => {
+        handleUpdateBuilder(prev => ({
+            ...prev,
+            sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, name } : sec)
+        }));
+    };
+
+    const handleRemoveSection = (secId) => {
+        handleUpdateBuilder(prev => {
+            if (prev.sections.length <= 1) return prev;
+            const remaining = prev.sections.filter(s => s.id !== secId);
+            return {
+                ...prev,
+                sections: remaining,
+                activeSectionId: prev.activeSectionId === secId ? remaining[0].id : prev.activeSectionId,
+                selectedUnitKey: null
+            };
+        });
+    };
+
+    const handleSetActiveConfig = (cfgId) => {
+        handleUpdateBuilder(prev => ({ ...prev, activeConfigId: cfgId }));
+    };
+
+    const handleAddConfig = () => {
+        handleUpdateBuilder(prev => {
+            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+            if (!activeSec) return prev;
+            const newCfgId = 'cfg_' + Date.now();
+            const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'];
+            const nextColor = colors[activeSec.configs.length % colors.length];
+            const newCfg = {
+                id: newCfgId,
+                type: '',
+                name: '',
+                area: '',
+                price: '',
+                color: nextColor
+            };
+            return {
+                ...prev,
+                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, configs: [...sec.configs, newCfg] } : sec),
+                activeConfigId: newCfgId
+            };
+        });
+    };
+
+    const handleRemoveConfig = (cfgId) => {
+        handleUpdateBuilder(prev => {
+            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+            if (!activeSec) return prev;
+            const remainingConfigs = activeSec.configs.filter(c => c.id !== cfgId);
+            
+            const newUnitMap = { ...activeSec.unitMap };
+            Object.keys(newUnitMap).forEach(key => {
+                if (newUnitMap[key] === cfgId) {
+                    delete newUnitMap[key];
+                }
+            });
+
+            return {
+                ...prev,
+                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? {
+                    ...sec,
+                    configs: remainingConfigs,
+                    unitMap: newUnitMap
+                } : sec),
+                activeConfigId: prev.activeConfigId === cfgId ? (remainingConfigs[0]?.id || null) : prev.activeConfigId
+            };
+        });
+    };
+
+    const handleUpdateConfigField = (cfgId, field, value) => {
+        handleUpdateBuilder(prev => ({
+            ...prev,
+            sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? {
+                ...sec,
+                configs: sec.configs.map(c => c.id === cfgId ? { ...c, [field]: value } : c)
+            } : sec)
+        }));
+    };
+
+    const handleCellClick = (key) => {
+        handleUpdateBuilder(prev => {
+            if (prev.gridMode === 'paint') {
+                if (!prev.activeConfigId) {
+                    alert("Please add and select a variant first before assigning units.");
+                    return prev;
+                }
+                const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+                if (!activeSec) return prev;
+                const newMap = { ...activeSec.unitMap };
+                if (newMap[key] === prev.activeConfigId) {
+                    delete newMap[key];
+                } else {
+                    newMap[key] = prev.activeConfigId;
+                }
+                return {
+                    ...prev,
+                    sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitMap: newMap } : sec)
+                };
+            } else {
+                const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+                if (!activeSec || !activeSec.unitMap?.[key]) {
+                    alert("Please assign a base variant to this unit in 'Assign Variants' mode before customizing.");
+                    return prev;
+                }
+                return { ...prev, selectedUnitKey: key };
+            }
+        });
+    };
+
+    const handleSelectAll = () => {
+        handleUpdateBuilder(prev => {
+            if (!prev.activeConfigId) {
+                alert("Please add and select a variant first before assigning units.");
+                return prev;
+            }
+            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+            if (!activeSec) return prev;
+            const rows = activeSec.floors ?? activeSec.rows ?? activeSec.lanes ?? 1;
+            const cols = activeSec.unitsPerFloor ?? activeSec.plotsPerRow ?? activeSec.villasPerLane ?? 1;
+            const newMap = {};
+            for (let r = 1; r <= rows; r++) {
+                for (let c = 1; c <= cols; c++) {
+                    newMap[`${r}_${c}`] = prev.activeConfigId;
+                }
+            }
+            return {
+                ...prev,
+                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitMap: newMap } : sec)
+            };
+        });
+    };
+
+    const handleClearAll = () => {
+        handleUpdateBuilder(prev => ({
+            ...prev,
+            sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitMap: {} } : sec)
+        }));
+    };
+
+    const handleUpdateOverride = (key, field, value) => {
+        handleUpdateBuilder(prev => {
+            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+            if (!activeSec) return prev;
+            const currentOverrides = { ...activeSec.unitOverrides };
+            const unitOverride = { ...(currentOverrides[key] || {}) };
+            unitOverride[field] = value;
+            currentOverrides[key] = unitOverride;
+            return {
+                ...prev,
+                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitOverrides: currentOverrides } : sec)
+            };
+        });
     };
 
     const handleDownloadFormat = async (type) => {
@@ -836,7 +1134,6 @@ function Step3() {
             
             const headersStr = headers.join(',');
             
-            // Generate a sample row
             const sampleRow = headers.map(h => {
                 if (h === 'Sub Type') return type.subType;
                 if (h === 'Property Number') return 'A-101';
@@ -884,7 +1181,6 @@ function Step3() {
             const unitData = {};
 
             data.forEach((row, index) => {
-                // Basic validation: skip rows without a property number
                 if (!row['Property Number']) return;
 
                 unitConfigs.push({
@@ -927,11 +1223,13 @@ function Step3() {
         );
     }
 
-    const activeType = step2.selectedTypes.find(t => t.id === activeTypeTab) || step2.selectedTypes[0];
+    const activeSection = builderState?.sections?.find(s => s.id === builderState.activeSectionId) || builderState?.sections?.[0];
+    const activeConfig = activeSection?.configs?.find(c => c.id === builderState?.activeConfigId) || activeSection?.configs?.[0];
+    const configsList = step3.unitConfigs[activeType?.id] || [];
 
     return (
         <View className="gap-6">
-            <Text className="text-base font-lato-bold text-black">Configure Units</Text>
+            <Text className="text-base font-lato-bold text-black">Configure Units (Project Engine)</Text>
 
             {/* Subtypes Tabs */}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
@@ -960,333 +1258,622 @@ function Step3() {
                 })}
             </ScrollView>
 
-            <View className="h-[1px] bg-gray-100 my-2" />
+            <View className="h-[1px] bg-gray-100 my-1" />
 
-            {/* Active Subtype Configuration */}
-            {activeType && (() => {
-                const configs = step3.unitConfigs[activeType.id] || [];
-                return (
-                    <View className="gap-4">
-                        <View className="mb-4 z-[60]">
-                            <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Upload Type for {activeType.subType}</Text>
-                            <TouchableOpacity
-                                onPress={() => setOpenUploadModeDropdown(!openUploadModeDropdown)}
-                                className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
-                            >
-                                <Text className="text-sm font-lato-medium text-black">
-                                    {uploadModes[activeType.id] === 'bulk' ? 'Bulk upload' : 'Manual'}
-                                </Text>
-                                <Ionicons name={openUploadModeDropdown ? "chevron-up" : "chevron-down"} size={18} color="#666" />
-                            </TouchableOpacity>
+            {/* Upload Mode Switcher */}
+            {activeType && (
+                <View className="gap-4">
+                    <View className="z-[60]">
+                        <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Configuration Mode for {activeType.subType}</Text>
+                        <TouchableOpacity
+                            onPress={() => setOpenUploadModeDropdown(!openUploadModeDropdown)}
+                            className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
+                        >
+                            <Text className="text-sm font-lato-medium text-black">
+                                {uploadModes[activeType.id] === 'bulk' ? 'Bulk upload (CSV)' : 'Visual Builder (Project Engine)'}
+                            </Text>
+                            <Ionicons name={openUploadModeDropdown ? "chevron-up" : "chevron-down"} size={18} color="#666" />
+                        </TouchableOpacity>
 
-                            {openUploadModeDropdown && (
-                                <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[61] overflow-hidden">
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            setUploadModes(prev => ({ ...prev, [activeType.id]: 'manual' }));
-                                            setOpenUploadModeDropdown(false);
-                                        }}
-                                        className={`px-4 py-3 border-b border-gray-50 ${uploadModes[activeType.id] !== 'bulk' ? 'bg-[#F4F7FF]' : ''}`}
-                                    >
-                                        <Text className={`text-sm font-lato-bold ${uploadModes[activeType.id] !== 'bulk' ? 'text-[#4A43EC]' : 'text-gray-800'}`}>Manual</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            setUploadModes(prev => ({ ...prev, [activeType.id]: 'bulk' }));
-                                            setOpenUploadModeDropdown(false);
-                                        }}
-                                        className={`px-4 py-3 ${uploadModes[activeType.id] === 'bulk' ? 'bg-[#F4F7FF]' : ''}`}
-                                    >
-                                        <Text className={`text-sm font-lato-bold ${uploadModes[activeType.id] === 'bulk' ? 'text-[#4A43EC]' : 'text-gray-800'}`}>Bulk upload</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
-                        </View>
-
-                        {uploadModes[activeType.id] === 'bulk' ? (
-                            <View className="bg-[#4A43EC]/5 p-6 rounded-2xl border border-[#4A43EC]/10 items-center justify-center gap-5">
-                                <MaterialIcons name="cloud-upload" size={48} color="#4A43EC" opacity={0.5} />
-                                <Text className="text-center text-sm font-lato-medium text-gray-600 mb-2">
-                                    Download the format, fill in your {activeType.subType} details, and upload the CSV file.
-                                </Text>
-                                <View className="flex-row gap-3 w-full">
-                                    <TouchableOpacity 
-                                        onPress={() => handleBulkUpload(activeType)}
-                                        className="flex-1 bg-[#4A43EC] h-12 rounded-xl flex-row items-center justify-center gap-2"
-                                    >
-                                        <MaterialIcons name="file-upload" size={18} color="white" />
-                                        <Text className="text-white font-lato-bold text-[11px]">Upload CSV</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity 
-                                        onPress={() => handleDownloadFormat(activeType)}
-                                        className="flex-1 bg-white border border-gray-200 h-12 rounded-xl flex-row items-center justify-center gap-2"
-                                    >
-                                        <MaterialIcons name="file-download" size={18} color="#6B7280" />
-                                        <Text className="text-gray-500 font-lato-bold text-[11px]">Down format</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                {configs.length > 0 && (
-                                    <Text className="text-xs text-green-600 font-lato-bold mt-2">
-                                        ✓ {configs.length} units currently added.
-                                    </Text>
-                                )}
-                            </View>
-                        ) : (
-                            <View className="gap-4">
-                                <View className="bg-[#4A43EC]/5 p-4 rounded-2xl border border-[#4A43EC]/10">
-                                    <Text className="text-sm font-lato-bold text-black mb-2.5">How many units of this type?</Text>
-                                    <View className="bg-white border border-gray-200 rounded-xl px-4 h-14 justify-center">
-                                        <TextInput
-                                            className="text-base font-lato-medium text-black"
-                                            placeholder="eg. 2"
-                                            keyboardType="numeric"
-                                            value={configs.length.toString()}
-                                            onChangeText={(v) => updateQuantity(activeType.id, v)}
-                                            style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                        />
-                                    </View>
-                                </View>
-
-                                {configs.map((unit, idx) => (
-                                    <View key={`${activeType.id}-${idx}`} className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm">
-                                        <Text className="font-lato-bold text-black text-base mb-5">Unit {idx + 1} Details</Text>
-                                        
-                                        {activeType.subType === 'apartment' && (
-                                    <View className="flex-row gap-4 mb-5">
-                                        <View className="flex-1">
-                                            <Text className="text-xs font-lato-bold text-gray-500 mb-2">Tower</Text>
-                                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                                <TextInput
-                                                    className="text-sm text-gray-800 font-lato-medium"
-                                                    placeholder="A"
-                                                    value={unit.tower}
-                                                    onChangeText={v => updateUnitDetail(activeType.id, idx, 'tower', v)}
-                                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                                />
-                                            </View>
-                                        </View>
-                                        <View className="flex-1">
-                                            <Text className="text-xs font-lato-bold text-gray-500 mb-2">Floor</Text>
-                                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                                <TextInput
-                                                    className="text-sm text-gray-800 font-lato-medium"
-                                                    placeholder="5"
-                                                    value={unit.floor}
-                                                    onChangeText={v => updateUnitDetail(activeType.id, idx, 'floor', v)}
-                                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                                />
-                                            </View>
-                                        </View>
-                                    </View>
-                                )}
-
-                                {(activeType.subType === 'villa' || activeType.subType === 'rowhouse' || activeType.subType === 'apartment') && (
-                                    <View className="mb-5">
-                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">BHK Type</Text>
-                                        <View className="flex-row flex-wrap gap-2.5">
-                                            {bhkOptions.map((opt) => (
-                                                <TouchableOpacity
-                                                    key={opt}
-                                                    onPress={() => updateUnitDetail(activeType.id, idx, 'bhk', opt)}
-                                                    className={`px-4 py-2 rounded-xl border ${unit.bhk === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
-                                                >
-                                                    <Text className={`text-xs font-lato-bold ${unit.bhk === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    </View>
-                                )}
-
-                                {activeType.subType === 'office' && (
-                                    <View className="mb-5">
-                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Office Type</Text>
-                                        <View className="flex-row flex-wrap gap-2.5">
-                                            {officeTypes.map((opt) => (
-                                                <TouchableOpacity
-                                                    key={opt}
-                                                    onPress={() => updateUnitDetail(activeType.id, idx, 'officeType', opt)}
-                                                    className={`px-4 py-2 rounded-xl border ${unit.officeType === opt ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
-                                                >
-                                                    <Text className={`text-xs font-lato-bold ${unit.officeType === opt ? 'text-white' : 'text-gray-500'}`}>{opt}</Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    </View>
-                                )}
-
-                                <View className="flex-row gap-4 mb-5">
-                                    <View className="flex-[3]">
-                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2">Area ({unit.areaUnit})</Text>
-                                        <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                            <TextInput
-                                                className="text-sm text-gray-800 font-lato-medium"
-                                                placeholder="1200"
-                                                keyboardType="numeric"
-                                                value={unit.area}
-                                                onChangeText={v => updateUnitDetail(activeType.id, idx, 'area', v)}
-                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                            />
-                                        </View>
-                                    </View>
-                                    <View className="flex-[2]">
-                                        <Text className="text-xs font-lato-bold text-gray-500 mb-2">Property No.</Text>
-                                        <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                            <TextInput
-                                                className="text-sm text-gray-800 font-lato-medium"
-                                                placeholder="A-101"
-                                                value={unit.propertyNumber}
-                                                onChangeText={v => updateUnitDetail(activeType.id, idx, 'propertyNumber', v)}
-                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                            />
-                                        </View>
-                                    </View>
-                                </View>
-
-                                {activeType.subType === 'apartment' && (
-                                    <TouchableOpacity 
-                                        onPress={() => updateUnitDetail(activeType.id, idx, 'hasShop', !unit.hasShop)}
-                                        className="flex-row items-center gap-3 mb-5 py-1"
-                                    >
-                                        <View className={`w-5 h-5 rounded-md border items-center justify-center ${unit.hasShop ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-300'}`}>
-                                            {unit.hasShop && <Ionicons name="checkmark" size={14} color="white" />}
-                                        </View>
-                                        <Text className="text-[13px] font-lato-medium text-gray-700">Has shop at ground floor?</Text>
-                                    </TouchableOpacity>
-                                )}
-
-                                {/* Per-Unit Area Unit Dropdown */}
-                                <View className="mb-5 z-[50]">
-                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Area Unit</Text>
-                                    <TouchableOpacity
-                                        onPress={() => setOpenAreaDropdown(openAreaDropdown === `${activeType.id}-${idx}` ? null : `${activeType.id}-${idx}`)}
-                                        className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
-                                    >
-                                        <Text className="text-sm font-lato-medium text-black">{unit.areaUnit}</Text>
-                                        <Ionicons name={openAreaDropdown === `${activeType.id}-${idx}` ? "chevron-up" : "chevron-down"} size={18} color="#666" />
-                                    </TouchableOpacity>
-
-                                    {openAreaDropdown === `${activeType.id}-${idx}` && (
-                                        <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[51] overflow-hidden">
-                                            <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }}>
-                                                {areaUnits.map((u) => (
-                                                    <TouchableOpacity
-                                                        key={u}
-                                                        onPress={() => {
-                                                            updateUnitDetail(activeType.id, idx, 'areaUnit', u);
-                                                            setOpenAreaDropdown(null);
-                                                        }}
-                                                        className={`px-4 py-3 border-b border-gray-50 ${unit.areaUnit === u ? 'bg-[#F4F7FF]' : ''}`}
-                                                    >
-                                                        <Text className={`text-sm font-lato-bold ${unit.areaUnit === u ? 'text-[#4A43EC]' : 'text-gray-800'}`}>
-                                                            {u}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </ScrollView>
-                                        </View>
-                                    )}
-                                </View>
-
-                                {/* Per-Unit Amenities */}
-                                <View className="mb-5">
-                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Unit Amenities</Text>
-                                    {unit.amenities?.map((amenity, aIdx) => (
-                                        <View key={aIdx} className="flex-row gap-3 mb-3">
-                                            <View className="flex-1 bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                                <TextInput
-                                                    className="text-sm text-gray-800 font-lato-medium"
-                                                    placeholder="eg. Garden Facing"
-                                                    value={amenity}
-                                                    onChangeText={v => {
-                                                        const newAmenities = [...unit.amenities];
-                                                        newAmenities[aIdx] = v;
-                                                        updateUnitDetail(activeType.id, idx, 'amenities', newAmenities);
-                                                    }}
-                                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                                />
-                                            </View>
-                                            {unit.amenities.length > 1 && (
-                                                <TouchableOpacity 
-                                                    onPress={() => {
-                                                        const newAmenities = unit.amenities.filter((_, i) => i !== aIdx);
-                                                        updateUnitDetail(activeType.id, idx, 'amenities', newAmenities);
-                                                    }}
-                                                    className="w-12 h-12 bg-red-50 rounded-xl items-center justify-center border border-red-100"
-                                                >
-                                                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                                                </TouchableOpacity>
-                                            )}
-                                        </View>
-                                    ))}
-                                    <TouchableOpacity 
-                                        onPress={() => updateUnitDetail(activeType.id, idx, 'amenities', [...(unit.amenities || []), ''])}
-                                        className="flex-row items-center py-1"
-                                    >
-                                        <Ionicons name="add-circle-outline" size={18} color="#4A43EC" />
-                                        <Text className="text-xs font-lato-bold text-[#4A43EC] ml-2">Add More Amenity</Text>
-                                    </TouchableOpacity>
-                                </View>
-
-                                {/* Per-Unit Extra Charges */}
-                                <View>
-                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2.5">Unit Specific Charges</Text>
-                                    {unit.extraCharges?.map((charge, cIdx) => (
-                                        <View key={cIdx} className="flex-row gap-3 mb-3">
-                                            <View className="flex-[2] bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                                <TextInput
-                                                    className="text-sm text-gray-800 font-lato-medium"
-                                                    placeholder="Charge Title"
-                                                    value={charge.title}
-                                                    onChangeText={v => {
-                                                        const newCharges = [...unit.extraCharges];
-                                                        newCharges[cIdx] = { ...newCharges[cIdx], title: v };
-                                                        updateUnitDetail(activeType.id, idx, 'extraCharges', newCharges);
-                                                    }}
-                                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                                />
-                                            </View>
-                                            <View className="flex-1 bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                                <TextInput
-                                                    className="text-sm text-gray-800 font-lato-medium"
-                                                    placeholder="Amount"
-                                                    keyboardType="numeric"
-                                                    value={charge.amount}
-                                                    onChangeText={v => {
-                                                        const newCharges = [...unit.extraCharges];
-                                                        newCharges[cIdx] = { ...newCharges[cIdx], amount: v };
-                                                        updateUnitDetail(activeType.id, idx, 'extraCharges', newCharges);
-                                                    }}
-                                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                                />
-                                            </View>
-                                            {unit.extraCharges.length > 1 && (
-                                                <TouchableOpacity 
-                                                    onPress={() => {
-                                                        const newCharges = unit.extraCharges.filter((_, i) => i !== cIdx);
-                                                        updateUnitDetail(activeType.id, idx, 'extraCharges', newCharges);
-                                                    }}
-                                                    className="w-12 h-12 bg-red-50 rounded-xl items-center justify-center border border-red-100"
-                                                >
-                                                    <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                                                </TouchableOpacity>
-                                            )}
-                                        </View>
-                                    ))}
-                                    <TouchableOpacity 
-                                        onPress={() => updateUnitDetail(activeType.id, idx, 'extraCharges', [...(unit.extraCharges || []), { title: '', amount: '' }])}
-                                        className="flex-row items-center py-1"
-                                    >
-                                        <Ionicons name="add-circle-outline" size={18} color="#4A43EC" />
-                                        <Text className="text-xs font-lato-bold text-[#4A43EC] ml-2">Add Extra Charge</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        ))}
+                        {openUploadModeDropdown && (
+                            <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[61] overflow-hidden">
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setUploadModes(prev => ({ ...prev, [activeType.id]: 'manual' }));
+                                        setOpenUploadModeDropdown(false);
+                                    }}
+                                    className={`px-4 py-3 border-b border-gray-50 ${uploadModes[activeType.id] !== 'bulk' ? 'bg-[#F4F7FF]' : ''}`}
+                                >
+                                    <Text className={`text-sm font-lato-bold ${uploadModes[activeType.id] !== 'bulk' ? 'text-[#4A43EC]' : 'text-gray-800'}`}>Visual Builder (Project Engine)</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        setUploadModes(prev => ({ ...prev, [activeType.id]: 'bulk' }));
+                                        setOpenUploadModeDropdown(false);
+                                    }}
+                                    className={`px-4 py-3 ${uploadModes[activeType.id] === 'bulk' ? 'bg-[#F4F7FF]' : ''}`}
+                                >
+                                    <Text className={`text-sm font-lato-bold ${uploadModes[activeType.id] === 'bulk' ? 'text-[#4A43EC]' : 'text-gray-800'}`}>Bulk upload (CSV)</Text>
+                                </TouchableOpacity>
                             </View>
                         )}
                     </View>
-                );
-            })()}
+
+                    {uploadModes[activeType.id] === 'bulk' ? (
+                        <View className="bg-[#4A43EC]/5 p-6 rounded-2xl border border-[#4A43EC]/10 items-center justify-center gap-5">
+                            <MaterialIcons name="cloud-upload" size={48} color="#4A43EC" opacity={0.5} />
+                            <Text className="text-center text-sm font-lato-medium text-gray-600 mb-2">
+                                Download the format, fill in your {activeType.subType} details, and upload the CSV file.
+                            </Text>
+                            <View className="flex-row gap-3 w-full">
+                                <TouchableOpacity 
+                                    onPress={() => handleBulkUpload(activeType)}
+                                    className="flex-1 bg-[#4A43EC] h-12 rounded-xl flex-row items-center justify-center gap-2"
+                                >
+                                    <MaterialIcons name="file-upload" size={18} color="white" />
+                                    <Text className="text-white font-lato-bold text-[11px]">Upload CSV</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity 
+                                    onPress={() => handleDownloadFormat(activeType)}
+                                    className="flex-1 bg-white border border-gray-200 h-12 rounded-xl flex-row items-center justify-center gap-2"
+                                >
+                                    <MaterialIcons name="file-download" size={18} color="#6B7280" />
+                                    <Text className="text-gray-500 font-lato-bold text-[11px]">Down format</Text>
+                                </TouchableOpacity>
+                            </View>
+                            {configsList.length > 0 && (
+                                <Text className="text-xs text-green-600 font-lato-bold mt-2">
+                                    ✓ {configsList.length} units currently added.
+                                </Text>
+                            )}
+                        </View>
+                    ) : (
+                        <View className="gap-6">
+                            {/* Section Management Header */}
+                            {builderState && activeSection && (
+                                <View className="gap-4">
+                                    <View className="flex-row items-center justify-between">
+                                        <Text className="text-sm font-lato-bold text-black">
+                                            {activeType.subType === 'plot' ? 'Sectors / Blocks' : (activeType.subType === 'apartment' ? 'Towers / Buildings' : 'Sections / Divisions')}
+                                        </Text>
+                                        <TouchableOpacity 
+                                            onPress={handleAddSection}
+                                            className="flex-row items-center bg-[#F4F7FF] border border-[#4A43EC]/30 px-3 py-1.5 rounded-full gap-1"
+                                        >
+                                            <Ionicons name="add-circle-outline" size={16} color="#4A43EC" />
+                                            <Text className="text-[#4A43EC] text-xs font-lato-bold">
+                                                Add {activeType.subType === 'plot' ? 'Sector' : (activeType.subType === 'apartment' ? 'Tower' : 'Section')}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+                                        {builderState.sections.map(sec => (
+                                            <TouchableOpacity
+                                                key={sec.id}
+                                                onPress={() => handleSetActiveSection(sec.id)}
+                                                className={`px-4 py-2 rounded-xl border flex-row items-center gap-2 mr-2 ${sec.id === builderState.activeSectionId ? 'bg-[#4A43EC] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
+                                            >
+                                                <Text className={`text-xs font-lato-bold ${sec.id === builderState.activeSectionId ? 'text-white' : 'text-gray-700'}`}>
+                                                    {sec.name}
+                                                </Text>
+                                                {builderState.sections.length > 1 && (
+                                                    <TouchableOpacity onPress={() => handleRemoveSection(sec.id)} className="p-0.5">
+                                                        <Ionicons name="close-circle" size={16} color={sec.id === builderState.activeSectionId ? "white" : "#9CA3AF"} />
+                                                    </TouchableOpacity>
+                                                )}
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+
+                                    {/* Active Section Settings Card */}
+                                    <View className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm gap-4">
+                                        <View>
+                                            <Text className="text-xs font-lato-bold text-gray-500 mb-2">
+                                                {activeType.subType === 'plot' ? 'Sector Name' : (activeType.subType === 'apartment' ? 'Tower Name' : 'Section Name')}
+                                            </Text>
+                                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                <TextInput
+                                                    className="text-sm text-gray-800 font-lato-medium"
+                                                    value={activeSection.name}
+                                                    onChangeText={handleUpdateSectionName}
+                                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                />
+                                            </View>
+                                        </View>
+
+                                        <View className="flex-row gap-4">
+                                            <View className="flex-1">
+                                                <Text className="text-xs font-lato-bold text-gray-500 mb-2">
+                                                    {activeType.subType === 'plot' ? 'Number of Rows' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'Number of Lanes' : 'Number of Floors')}
+                                                </Text>
+                                                <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                    <TextInput
+                                                        className="text-sm text-gray-800 font-lato-medium"
+                                                        keyboardType="numeric"
+                                                        value={(activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 0).toString()}
+                                                        onChangeText={v => handleUpdateDimensions(activeType.subType === 'plot' ? 'rows' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'lanes' : 'floors'), v)}
+                                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                    />
+                                                </View>
+                                            </View>
+                                            <View className="flex-1">
+                                                <Text className="text-xs font-lato-bold text-gray-500 mb-2">
+                                                    {activeType.subType === 'plot' ? 'Plots per Row' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'Villas per Lane' : 'Units per Floor')}
+                                                </Text>
+                                                <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                    <TextInput
+                                                        className="text-sm text-gray-800 font-lato-medium"
+                                                        keyboardType="numeric"
+                                                        value={(activeSection.unitsPerFloor ?? activeSection.plotsPerRow ?? activeSection.villasPerLane ?? 0).toString()}
+                                                        onChangeText={v => handleUpdateDimensions(activeType.subType === 'plot' ? 'plotsPerRow' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'villasPerLane' : 'unitsPerFloor'), v)}
+                                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                    />
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </View>
+
+                                    {/* Variant Configs Section */}
+                                    <View className="gap-4 mt-2">
+                                        <View className="flex-row items-center justify-between">
+                                            <Text className="text-sm font-lato-bold text-black">Define Variant Types & Pricing</Text>
+                                            <TouchableOpacity 
+                                                onPress={handleAddConfig}
+                                                className="flex-row items-center bg-[#F4F7FF] border border-[#4A43EC]/30 px-3 py-1.5 rounded-full gap-1"
+                                            >
+                                                <Ionicons name="add-circle-outline" size={16} color="#4A43EC" />
+                                                <Text className="text-[#4A43EC] text-xs font-lato-bold">Add Variant</Text>
+                                            </TouchableOpacity>
+                                        </View>
+
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+                                            {activeSection.configs?.length === 0 && (
+                                                <View className="bg-gray-50 border border-dashed border-gray-300 rounded-2xl p-4 mr-3 w-48 opacity-60">
+                                                    <View className="flex-row items-center gap-1.5 mb-2">
+                                                        <View className="w-3 h-3 rounded-full bg-gray-400" />
+                                                        <Text className="text-xs font-lato-bold text-gray-500">Example: 2 BHK</Text>
+                                                    </View>
+                                                    <Text className="text-[11px] text-gray-400 font-lato-medium mb-2">Standard</Text>
+                                                    <View className="flex-row items-center justify-between border-t border-gray-200 pt-2 mt-1">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-400">1150 {activeType.subType === 'plot' ? 'sqyd' : 'sqft'}</Text>
+                                                        <Text className="text-[11px] font-lato-bold text-gray-400">₹65,00,000</Text>
+                                                    </View>
+                                                </View>
+                                            )}
+
+                                            {activeSection.configs?.map(cfg => (
+                                                <TouchableOpacity
+                                                    key={cfg.id}
+                                                    onPress={() => handleSetActiveConfig(cfg.id)}
+                                                    className={`bg-white border rounded-xl p-3 mb-1 mr-3 w-40 shadow-xs ${cfg.id === builderState.activeConfigId ? 'border-[#4A43EC] bg-[#F4F7FF]/50' : 'border-gray-200'}`}
+                                                >
+                                                    <View className="flex-row items-center justify-between mb-1.5">
+                                                        <View className="flex-row items-center gap-1.5 flex-1 mr-1">
+                                                            <View className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cfg.color || '#3B82F6' }} />
+                                                            <Text className="text-xs font-lato-bold text-gray-800" numberOfLines={1}>
+                                                                {cfg.type || (activeType.subType === 'office' ? 'New Office' : (activeType.subType === 'plot' ? 'New Plot' : 'New Variant'))}
+                                                            </Text>
+                                                        </View>
+                                                        <View className="flex-row items-center gap-1">
+                                                            {cfg.id === builderState.activeConfigId && (
+                                                                <View className="bg-[#4A43EC] rounded-full p-0.5">
+                                                                    <Ionicons name="checkmark" size={10} color="white" />
+                                                                </View>
+                                                            )}
+                                                            <TouchableOpacity onPress={() => handleRemoveConfig(cfg.id)} className="p-0.5">
+                                                                <Ionicons name="close-circle" size={16} color="#EF4444" />
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    </View>
+                                                    <Text className="text-[10px] text-gray-500 font-lato-medium mb-1.5" numberOfLines={1}>{cfg.name || 'Unnamed'}</Text>
+                                                    <View className="flex-row items-center justify-between border-t border-gray-100 pt-1.5 mt-0.5">
+                                                        <Text className="text-[10px] font-lato-bold text-gray-700">{cfg.area ? `${cfg.area} ${activeType.subType === 'plot' ? 'sqyd' : 'sqft'}` : '0 sqft'}</Text>
+                                                        <Text className="text-[10px] font-lato-bold text-[#4A43EC]">{cfg.price ? `₹${cfg.price}` : '₹0'}</Text>
+                                                    </View>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </ScrollView>
+
+                                        {/* Edit Active Config Form */}
+                                        {activeConfig && (
+                                            <View className="bg-[#F4F7FF]/40 border border-[#4A43EC]/20 rounded-3xl p-5 gap-4">
+                                                <Text className="text-xs font-lato-bold text-[#4A43EC]">
+                                                    Edit Active Variant: {activeConfig.type || 'New Variant'}
+                                                </Text>
+                                                <View className="flex-row gap-4">
+                                                    <View className="flex-1">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Category / Type</Text>
+                                                        <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                                            <TextInput
+                                                                className="text-xs text-gray-800 font-lato-medium"
+                                                                placeholder={activeType.subType === 'office' ? 'eg. Co-working' : (activeType.subType === 'plot' ? 'eg. Standard Plot' : 'eg. 2 BHK')}
+                                                                placeholderTextColor="#9CA3AF"
+                                                                value={activeConfig.type}
+                                                                onChangeText={v => handleUpdateConfigField(activeConfig.id, 'type', v)}
+                                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                            />
+                                                        </View>
+                                                    </View>
+                                                    <View className="flex-1">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Variant Name</Text>
+                                                        <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                                            <TextInput
+                                                                className="text-xs text-gray-800 font-lato-medium"
+                                                                placeholder="eg. Standard / Premium"
+                                                                placeholderTextColor="#9CA3AF"
+                                                                value={activeConfig.name}
+                                                                onChangeText={v => handleUpdateConfigField(activeConfig.id, 'name', v)}
+                                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                            />
+                                                        </View>
+                                                    </View>
+                                                </View>
+
+                                                <View className="flex-row gap-4">
+                                                    <View className="flex-1">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Area ({activeType.subType === 'plot' ? 'sqyd' : 'sqft'})</Text>
+                                                        <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                                            <TextInput
+                                                                className="text-xs text-gray-800 font-lato-medium"
+                                                                placeholder={activeType.subType === 'plot' ? 'eg. 150' : 'eg. 1150'}
+                                                                placeholderTextColor="#9CA3AF"
+                                                                keyboardType="numeric"
+                                                                value={activeConfig.area}
+                                                                onChangeText={v => handleUpdateConfigField(activeConfig.id, 'area', v)}
+                                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                            />
+                                                        </View>
+                                                    </View>
+                                                    <View className="flex-1">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Selling Price (₹)</Text>
+                                                        <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                                            <TextInput
+                                                                className="text-xs text-gray-800 font-lato-medium"
+                                                                placeholder="eg. 6500000"
+                                                                placeholderTextColor="#9CA3AF"
+                                                                keyboardType="numeric"
+                                                                value={activeConfig.price}
+                                                                onChangeText={v => handleUpdateConfigField(activeConfig.id, 'price', v)}
+                                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                            />
+                                                        </View>
+                                                    </View>
+                                                </View>
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    {/* Grid Mode Switcher & Visual Grid */}
+                                    <View className="gap-4 mt-2">
+                                        <View className="flex-row items-center justify-between z-40">
+                                            <View className="flex-1 mr-4">
+                                                <Text className="text-xs font-lato-bold text-gray-700 mb-1">Matrix Interaction Mode</Text>
+                                                <Text className="text-[11px] font-lato text-gray-400">Choose whether to paint variants or edit individual unit overrides</Text>
+                                            </View>
+                                            
+                                            <View className="relative w-48">
+                                                <TouchableOpacity
+                                                    onPress={() => setOpenGridModeDropdown(!openGridModeDropdown)}
+                                                    className="flex-row items-center justify-between bg-white border border-gray-200 rounded-xl px-3 py-2.5 shadow-sm"
+                                                >
+                                                    <View className="flex-row items-center gap-2">
+                                                        <Ionicons name={builderState.gridMode === 'paint' ? "color-palette-outline" : "create-outline"} size={16} color="#4A43EC" />
+                                                        <Text className="text-xs font-lato-bold text-[#4A43EC]">
+                                                            {builderState.gridMode === 'paint' ? 'Paint Grid' : 'Edit Overrides'}
+                                                        </Text>
+                                                    </View>
+                                                    <Ionicons name={openGridModeDropdown ? "chevron-up" : "chevron-down"} size={16} color="#4A43EC" />
+                                                </TouchableOpacity>
+
+                                                {openGridModeDropdown && (
+                                                    <View className="absolute top-12 left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg shadow-gray-200 py-1.5 z-50">
+                                                        <TouchableOpacity
+                                                            onPress={() => {
+                                                                handleUpdateBuilder(prev => ({ ...prev, gridMode: 'paint', selectedUnitKey: null }));
+                                                                setOpenGridModeDropdown(false);
+                                                            }}
+                                                            className="px-4 py-2.5 hover:bg-gray-50 flex-row items-center justify-between"
+                                                        >
+                                                            <View className="flex-row items-center gap-2">
+                                                                <Ionicons name="color-palette-outline" size={16} color="#4A43EC" />
+                                                                <Text className="text-xs font-lato-medium text-gray-800">Paint Grid</Text>
+                                                            </View>
+                                                            {builderState.gridMode === 'paint' && <Ionicons name="checkmark-circle" size={16} color="#4A43EC" />}
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity
+                                                            onPress={() => {
+                                                                handleUpdateBuilder(prev => ({ ...prev, gridMode: 'edit' }));
+                                                                setOpenGridModeDropdown(false);
+                                                            }}
+                                                            className="px-4 py-2.5 hover:bg-gray-50 flex-row items-center justify-between border-t border-gray-50"
+                                                        >
+                                                            <View className="flex-row items-center gap-2">
+                                                                <Ionicons name="create-outline" size={16} color="#4A43EC" />
+                                                                <Text className="text-xs font-lato-medium text-gray-800">Edit Overrides</Text>
+                                                            </View>
+                                                            {builderState.gridMode === 'edit' && <Ionicons name="checkmark-circle" size={16} color="#4A43EC" />}
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        </View>
+
+                                        {builderState.gridMode === 'paint' ? (
+                                            <View className="gap-3">
+                                                <View className="flex-row items-center justify-between px-1">
+                                                    <Text className="text-xs font-lato-bold text-gray-500">
+                                                        Click units below to assign: <Text className="text-[#4A43EC]">{activeConfig?.type}</Text>
+                                                    </Text>
+                                                    <View className="flex-row gap-2">
+                                                        <TouchableOpacity onPress={handleSelectAll} className="px-3 py-1 bg-[#F4F7FF] border border-[#4A43EC]/20 rounded-lg">
+                                                            <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Select All</Text>
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity onPress={handleClearAll} className="px-3 py-1 bg-red-50 border border-red-100 rounded-lg">
+                                                            <Text className="text-[10px] font-lato-bold text-red-500">Clear All</Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                </View>
+
+                                                <View className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm gap-4 overflow-hidden">
+                                                    {/* Top Banner */}
+                                                    <View className="bg-[#1E293B] py-3.5 rounded-2xl items-center justify-center shadow-sm mb-2">
+                                                        <Text className="text-xs font-lato-bold text-white uppercase tracking-wider">
+                                                            {activeSection.name} Rooftop
+                                                        </Text>
+                                                    </View>
+
+                                                    {(() => {
+                                                        const rows = activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 1;
+                                                        const cols = activeSection.unitsPerFloor ?? activeSection.plotsPerRow ?? activeSection.villasPerLane ?? 1;
+                                                        const rowsArr = Array.from({ length: rows }, (_, i) => activeType.subType === 'plot' ? i + 1 : rows - i);
+                                                        const colsArr = Array.from({ length: cols }, (_, i) => i + 1);
+
+                                                        return rowsArr.map(r => (
+                                                            <View key={r} className="flex-row items-center gap-3">
+                                                                {/* Floor Label Box */}
+                                                                <View className="w-16 h-16 bg-[#F8FAFC] border border-gray-200 rounded-2xl items-center justify-center shadow-xs">
+                                                                    <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
+                                                                        {activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`)}
+                                                                    </Text>
+                                                                </View>
+
+                                                                {/* Unit Boxes Row */}
+                                                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
+                                                                    {colsArr.map(c => {
+                                                                        const key = `${r}_${c}`;
+                                                                        const assignedCfgId = activeSection.unitMap?.[key];
+                                                                        const assignedCfg = activeSection.configs?.find(cfg => cfg.id === assignedCfgId);
+                                                                        const override = activeSection.unitOverrides?.[key] || {};
+                                                                        const displayNum = `${r}${c.toString().padStart(2, '0')}`;
+                                                                        const label = override.customName || displayNum;
+                                                                        const hasOverride = override.customName || override.customArea || override.customPrice;
+
+                                                                        return (
+                                                                            <TouchableOpacity
+                                                                                key={key}
+                                                                                onPress={() => handleCellClick(key)}
+                                                                                style={{
+                                                                                    backgroundColor: assignedCfg ? assignedCfg.color : '#FFFFFF',
+                                                                                    borderColor: assignedCfg ? assignedCfg.color : '#CBD5E1',
+                                                                                    borderWidth: assignedCfg ? 0 : 1.5,
+                                                                                    borderStyle: assignedCfg ? 'solid' : 'dashed'
+                                                                                }}
+                                                                                className="w-28 h-16 rounded-2xl items-center justify-center mr-3 relative overflow-hidden shadow-xs"
+                                                                            >
+                                                                                <Text className={`text-xs font-lato-bold ${assignedCfg ? 'text-white' : 'text-gray-400'}`} numberOfLines={1}>
+                                                                                    {label}
+                                                                                </Text>
+                                                                                {assignedCfg ? (
+                                                                                    <>
+                                                                                        <Text className="text-[10px] font-lato-bold text-white/95 mt-0.5" numberOfLines={1}>
+                                                                                            {assignedCfg.type}
+                                                                                        </Text>
+                                                                                        <Text className="text-[9px] font-lato-bold text-white/85 uppercase tracking-wider mt-0.5" numberOfLines={1}>
+                                                                                            {assignedCfg.name}
+                                                                                        </Text>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <Text className="text-[9px] font-lato text-gray-300 mt-1 uppercase" numberOfLines={1}>
+                                                                                        Unassigned
+                                                                                    </Text>
+                                                                                )}
+
+                                                                                {hasOverride && (
+                                                                                    <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
+                                                                                        <Ionicons name="star" size={9} color="white" />
+                                                                                    </View>
+                                                                                )}
+                                                                            </TouchableOpacity>
+                                                                        );
+                                                                    })}
+                                                                </ScrollView>
+                                                            </View>
+                                                        ));
+                                                    })()}
+
+                                                    {/* Bottom Foundation Bar */}
+                                                    <View className="bg-[#E2E8F0] h-6 rounded-xl mt-2 border border-gray-300 shadow-xs" />
+                                                </View>
+                                            </View>
+                                        ) : (
+                                            <View className="gap-4">
+                                                <Text className="text-xs font-lato-bold text-gray-500 px-1">
+                                                    Click any unit on the grid below to customize its specific price, area, or property number.
+                                                </Text>
+
+                                                <View className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm gap-4 overflow-hidden">
+                                                    {/* Top Banner */}
+                                                    <View className="bg-[#1E293B] py-3.5 rounded-2xl items-center justify-center shadow-sm mb-2">
+                                                        <Text className="text-xs font-lato-bold text-white uppercase tracking-wider">
+                                                            {activeSection.name} Rooftop (Select Unit to Override)
+                                                        </Text>
+                                                    </View>
+
+                                                    {(() => {
+                                                        const rows = activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 1;
+                                                        const cols = activeSection.unitsPerFloor ?? activeSection.plotsPerRow ?? activeSection.villasPerLane ?? 1;
+                                                        const rowsArr = Array.from({ length: rows }, (_, i) => activeType.subType === 'plot' ? i + 1 : rows - i);
+                                                        const colsArr = Array.from({ length: cols }, (_, i) => i + 1);
+
+                                                        return rowsArr.map(r => (
+                                                            <View key={r} className="flex-row items-center gap-3">
+                                                                {/* Floor Label Box */}
+                                                                <View className="w-16 h-16 bg-[#F8FAFC] border border-gray-200 rounded-2xl items-center justify-center shadow-xs">
+                                                                    <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
+                                                                        {activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`)}
+                                                                    </Text>
+                                                                </View>
+
+                                                                {/* Unit Boxes Row */}
+                                                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
+                                                                    {colsArr.map(c => {
+                                                                        const key = `${r}_${c}`;
+                                                                        const isSelected = builderState.selectedUnitKey === key;
+                                                                        const assignedCfgId = activeSection.unitMap?.[key];
+                                                                        const assignedCfg = activeSection.configs?.find(cfg => cfg.id === assignedCfgId);
+                                                                        const override = activeSection.unitOverrides?.[key] || {};
+                                                                        const displayNum = `${r}${c.toString().padStart(2, '0')}`;
+                                                                        const label = override.customName || displayNum;
+                                                                        const hasOverride = override.customName || override.customArea || override.customPrice;
+
+                                                                        return (
+                                                                            <TouchableOpacity
+                                                                                key={key}
+                                                                                onPress={() => handleCellClick(key)}
+                                                                                style={{
+                                                                                    backgroundColor: isSelected ? '#4A43EC' : (assignedCfg ? assignedCfg.color : '#FFFFFF'),
+                                                                                    borderColor: isSelected ? '#000000' : (assignedCfg ? assignedCfg.color : '#CBD5E1'),
+                                                                                    borderWidth: isSelected ? 3 : (assignedCfg ? 0 : 1.5),
+                                                                                    borderStyle: assignedCfg || isSelected ? 'solid' : 'dashed'
+                                                                                }}
+                                                                                className="w-28 h-16 rounded-2xl items-center justify-center mr-3 relative overflow-hidden shadow-xs"
+                                                                            >
+                                                                                <Text className={`text-xs font-lato-bold ${assignedCfg || isSelected ? 'text-white' : 'text-gray-400'}`} numberOfLines={1}>
+                                                                                    {label}
+                                                                                </Text>
+                                                                                {assignedCfg ? (
+                                                                                    <>
+                                                                                        <Text className="text-[10px] font-lato-bold text-white/95 mt-0.5" numberOfLines={1}>
+                                                                                            {assignedCfg.type}
+                                                                                        </Text>
+                                                                                        <Text className="text-[9px] font-lato-bold text-white/90 uppercase tracking-wider mt-0.5" numberOfLines={1}>
+                                                                                            {override.customPrice ? `₹${override.customPrice}` : `₹${assignedCfg.price}`}
+                                                                                        </Text>
+                                                                                    </>
+                                                                                ) : (
+                                                                                    <Text className="text-[9px] font-lato text-gray-300 mt-1 uppercase" numberOfLines={1}>
+                                                                                        Unassigned
+                                                                                    </Text>
+                                                                                )}
+
+                                                                                {hasOverride && (
+                                                                                    <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
+                                                                                        <Ionicons name="star" size={9} color="white" />
+                                                                                    </View>
+                                                                                )}
+                                                                            </TouchableOpacity>
+                                                                        );
+                                                                    })}
+                                                                </ScrollView>
+                                                            </View>
+                                                        ));
+                                                    })()}
+
+                                                    {/* Bottom Foundation Bar */}
+                                                    <View className="bg-[#E2E8F0] h-6 rounded-xl mt-2 border border-gray-300 shadow-xs" />
+                                                </View>
+
+                                                {/* Selected Unit Override Card */}
+                                                {builderState.selectedUnitKey && (() => {
+                                                    const key = builderState.selectedUnitKey;
+                                                    const [r, c] = key.split('_');
+                                                    const assignedCfgId = activeSection.unitMap?.[key];
+                                                    const assignedCfg = activeSection.configs?.find(cfg => cfg.id === assignedCfgId) || {};
+                                                    const override = activeSection.unitOverrides?.[key] || {};
+                                                    const displayNum = `${r}${c.padStart(2, '0')}`;
+                                                    const defaultPropNum = displayNum;
+
+                                                    return (
+                                                        <View className="bg-white border border-[#4A43EC] rounded-3xl p-6 shadow-md gap-4">
+                                                            <View className="flex-row items-center justify-between border-b border-gray-100 pb-3">
+                                                                <View>
+                                                                    <Text className="text-sm font-lato-bold text-black">Customize Unit: {override.customName || defaultPropNum}</Text>
+                                                                    <Text className="text-xs text-gray-500 font-lato mt-0.5">Base Variant: {assignedCfg.type || 'Unassigned'}</Text>
+                                                                </View>
+                                                                <TouchableOpacity onPress={() => handleUpdateBuilder(prev => ({ ...prev, selectedUnitKey: null }))}>
+                                                                    <Ionicons name="close-circle" size={24} color="#9CA3AF" />
+                                                                </TouchableOpacity>
+                                                            </View>
+
+                                                            <View className="gap-4">
+                                                                <View>
+                                                                    <Text className="text-xs font-lato-bold text-gray-500 mb-1.5">Custom Property Number</Text>
+                                                                    <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                                        <TextInput
+                                                                            className="text-sm text-gray-800 font-lato-medium"
+                                                                            placeholder={defaultPropNum}
+                                                                            value={override.customName || ''}
+                                                                            onChangeText={v => handleUpdateOverride(key, 'customName', v)}
+                                                                            style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                                        />
+                                                                    </View>
+                                                                </View>
+
+                                                                <View className="flex-row gap-4">
+                                                                    <View className="flex-1">
+                                                                        <Text className="text-xs font-lato-bold text-gray-500 mb-1.5">Custom Area</Text>
+                                                                        <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                                            <TextInput
+                                                                                className="text-sm text-gray-800 font-lato-medium"
+                                                                                placeholder={assignedCfg.area || '0'}
+                                                                                keyboardType="numeric"
+                                                                                value={override.customArea || ''}
+                                                                                onChangeText={v => handleUpdateOverride(key, 'customArea', v)}
+                                                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                                            />
+                                                                        </View>
+                                                                    </View>
+                                                                    <View className="flex-1">
+                                                                        <Text className="text-xs font-lato-bold text-gray-500 mb-1.5">Custom Price (₹)</Text>
+                                                                        <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                                            <TextInput
+                                                                                className="text-sm text-gray-800 font-lato-medium"
+                                                                                placeholder={assignedCfg.price || '0'}
+                                                                                keyboardType="numeric"
+                                                                                value={override.customPrice || ''}
+                                                                                onChangeText={v => handleUpdateOverride(key, 'customPrice', v)}
+                                                                                style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                                            />
+                                                                        </View>
+                                                                    </View>
+                                                                </View>
+                                                            </View>
+                                                        </View>
+                                                    );
+                                                })()}
+                                            </View>
+                                        )}
+                                    </View>
+
+                                    {/* Summary Banner at Bottom */}
+                                    <View className="bg-green-50 border border-green-200 rounded-2xl p-4 flex-row items-center gap-3 mt-4">
+                                        <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                                        <View className="flex-1">
+                                            <Text className="text-xs font-lato-bold text-green-800">
+                                                ✓ {configsList.length} units successfully generated & synced.
+                                            </Text>
+                                            <Text className="text-[10px] text-green-600 font-lato mt-0.5">
+                                                Project Engine automatically maintains data structure for Step 4.
+                                            </Text>
+                                        </View>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    )}
+                </View>
+            )}
         </View>
     );
 }
