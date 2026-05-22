@@ -112,7 +112,8 @@ const projectSlice = createSlice({
                 const cols = section.unitsPerFloor ?? section.plotsPerRow ?? section.villasPerLane ?? 1;
 
                 for (let r = 1; r <= rows; r++) {
-                    for (let c = 1; c <= cols; c++) {
+                    const rowCols = section.rowUnitCounts?.[r] ?? cols;
+                    for (let c = 1; c <= rowCols; c++) {
                         const key = `${r}_${c}`;
                         if (section.unitMap && section.unitMap[key]) {
                             const configId = section.unitMap[key];
@@ -121,8 +122,14 @@ const projectSlice = createSlice({
 
                             const displayNum = `${r}${c.toString().padStart(2, '0')}`;
                             const propertyNumber = override.customName || displayNum;
+                            const unitId = `${typeId}-${section.id}-${key}`;
 
                             const unitConfig = {
+                                unitId,
+                                sectionId: section.id,
+                                gridKey: key,
+                                row: r,
+                                column: c,
                                 tower: section.name,
                                 floor: r.toString(),
                                 bhk: subType === 'office' ? (config.type || 'Co-working') : (config.type || '2 BHK'),
@@ -138,7 +145,6 @@ const projectSlice = createSlice({
                             newUnitConfigs.push(unitConfig);
 
                             const unitIndex = newUnitConfigs.length - 1;
-                            const unitId = `${typeId}-${unitIndex}`;
                             const sellingPrice = (override.customPrice || config.price || '').toString().replace(/,/g, '');
 
                             const existing = state.step4.unitData[unitId] || {};

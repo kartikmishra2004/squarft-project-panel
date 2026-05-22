@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
     View,
     Text,
@@ -116,7 +116,7 @@ export default function AddProject() {
                     ...type,
                     units: step3.unitConfigs[type.id]?.map((unit, idx) => ({
                         ...unit,
-                        ...step4.unitData[`${type.id}-${idx}`]
+                        ...step4.unitData[unit.unitId || `${type.id}-${idx}`]
                     })) || []
                 })),
                 createdAt: new Date().toISOString(),
@@ -839,6 +839,7 @@ const getDefaultBuilderState = (subType) => {
                 villasPerLane: cCount,
                 configs: [], // No variants by default
                 unitMap: {}, // No units assigned by default
+                rowUnitCounts: {},
                 unitOverrides: {}
             }
         ],
@@ -920,6 +921,7 @@ function Step3() {
                 villasPerLane: prev.sections[0]?.villasPerLane ?? 4,
                 configs: prev.sections[0]?.configs ? JSON.parse(JSON.stringify(prev.sections[0].configs)) : [],
                 unitMap: {},
+                rowUnitCounts: prev.sections[0]?.rowUnitCounts ? JSON.parse(JSON.stringify(prev.sections[0].rowUnitCounts)) : {},
                 unitOverrides: {}
             };
             
@@ -1085,7 +1087,8 @@ function Step3() {
             const cols = activeSec.unitsPerFloor ?? activeSec.plotsPerRow ?? activeSec.villasPerLane ?? 1;
             const newMap = {};
             for (let r = 1; r <= rows; r++) {
-                for (let c = 1; c <= cols; c++) {
+                const rowCols = activeSec.rowUnitCounts?.[r] ?? cols;
+                for (let c = 1; c <= rowCols; c++) {
                     newMap[`${r}_${c}`] = prev.activeConfigId;
                 }
             }
@@ -1101,6 +1104,56 @@ function Step3() {
             ...prev,
             sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitMap: {} } : sec)
         }));
+    };
+
+    const handleAdjustRowUnits = (rowNumber, delta) => {
+        handleUpdateBuilder(prev => {
+            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+            if (!activeSec) return prev;
+
+            const defaultCount = activeSec.unitsPerFloor ?? activeSec.plotsPerRow ?? activeSec.villasPerLane ?? 1;
+            const currentCount = activeSec.rowUnitCounts?.[rowNumber] ?? defaultCount;
+            const nextCount = Math.max(1, currentCount + delta);
+            if (nextCount === currentCount) return prev;
+
+            const nextRowUnitCounts = { ...(activeSec.rowUnitCounts || {}) };
+            if (nextCount === defaultCount) {
+                delete nextRowUnitCounts[rowNumber];
+            } else {
+                nextRowUnitCounts[rowNumber] = nextCount;
+            }
+
+            const nextUnitMap = { ...(activeSec.unitMap || {}) };
+            const nextOverrides = { ...(activeSec.unitOverrides || {}) };
+            Object.keys(nextUnitMap).forEach(key => {
+                const [rowValue, colValue] = key.split('_').map(Number);
+                if (rowValue === rowNumber && colValue > nextCount) {
+                    delete nextUnitMap[key];
+                }
+            });
+            Object.keys(nextOverrides).forEach(key => {
+                const [rowValue, colValue] = key.split('_').map(Number);
+                if (rowValue === rowNumber && colValue > nextCount) {
+                    delete nextOverrides[key];
+                }
+            });
+
+            const selectedUnitKey = prev.selectedUnitKey && (() => {
+                const [rowValue, colValue] = prev.selectedUnitKey.split('_').map(Number);
+                return rowValue === rowNumber && colValue > nextCount ? null : prev.selectedUnitKey;
+            })();
+
+            return {
+                ...prev,
+                selectedUnitKey,
+                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? {
+                    ...sec,
+                    rowUnitCounts: nextRowUnitCounts,
+                    unitMap: nextUnitMap,
+                    unitOverrides: nextOverrides,
+                } : sec)
+            };
+        });
     };
 
     const handleUpdateOverride = (key, field, value) => {
@@ -1226,6 +1279,7 @@ function Step3() {
     const activeSection = builderState?.sections?.find(s => s.id === builderState.activeSectionId) || builderState?.sections?.[0];
     const activeConfig = activeSection?.configs?.find(c => c.id === builderState?.activeConfigId) || activeSection?.configs?.[0];
     const configsList = step3.unitConfigs[activeType?.id] || [];
+    const getRowUnitCount = (section, rowNumber) => section?.rowUnitCounts?.[rowNumber] ?? (section?.unitsPerFloor ?? section?.plotsPerRow ?? section?.villasPerLane ?? 1);
 
     return (
         <View className="gap-6">
@@ -1625,9 +1679,7 @@ function Step3() {
 
                                                     {(() => {
                                                         const rows = activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 1;
-                                                        const cols = activeSection.unitsPerFloor ?? activeSection.plotsPerRow ?? activeSection.villasPerLane ?? 1;
                                                         const rowsArr = Array.from({ length: rows }, (_, i) => activeType.subType === 'plot' ? i + 1 : rows - i);
-                                                        const colsArr = Array.from({ length: cols }, (_, i) => i + 1);
 
                                                         return rowsArr.map(r => (
                                                             <View key={r} className="flex-row items-center gap-3">
@@ -1636,11 +1688,29 @@ function Step3() {
                                                                     <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
                                                                         {activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`)}
                                                                     </Text>
+                                                                    <Text className="text-[9px] font-lato-bold text-gray-400 mt-1">
+                                                                        {getRowUnitCount(activeSection, r)} units
+                                                                    </Text>
+                                                                </View>
+
+                                                                <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs">
+                                                                    <TouchableOpacity
+                                                                        onPress={() => handleAdjustRowUnits(r, 1)}
+                                                                        className="w-10 h-8 items-center justify-center border-b border-gray-100"
+                                                                    >
+                                                                        <Ionicons name="add" size={16} color="#4A43EC" />
+                                                                    </TouchableOpacity>
+                                                                    <TouchableOpacity
+                                                                        onPress={() => handleAdjustRowUnits(r, -1)}
+                                                                        className="w-10 h-8 items-center justify-center"
+                                                                    >
+                                                                        <Ionicons name="remove" size={16} color="#EF4444" />
+                                                                    </TouchableOpacity>
                                                                 </View>
 
                                                                 {/* Unit Boxes Row */}
                                                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
-                                                                    {colsArr.map(c => {
+                                                                    {Array.from({ length: getRowUnitCount(activeSection, r) }, (_, i) => i + 1).map(c => {
                                                                         const key = `${r}_${c}`;
                                                                         const assignedCfgId = activeSection.unitMap?.[key];
                                                                         const assignedCfg = activeSection.configs?.find(cfg => cfg.id === assignedCfgId);
@@ -1712,9 +1782,7 @@ function Step3() {
 
                                                     {(() => {
                                                         const rows = activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 1;
-                                                        const cols = activeSection.unitsPerFloor ?? activeSection.plotsPerRow ?? activeSection.villasPerLane ?? 1;
                                                         const rowsArr = Array.from({ length: rows }, (_, i) => activeType.subType === 'plot' ? i + 1 : rows - i);
-                                                        const colsArr = Array.from({ length: cols }, (_, i) => i + 1);
 
                                                         return rowsArr.map(r => (
                                                             <View key={r} className="flex-row items-center gap-3">
@@ -1723,11 +1791,29 @@ function Step3() {
                                                                     <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
                                                                         {activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`)}
                                                                     </Text>
+                                                                    <Text className="text-[9px] font-lato-bold text-gray-400 mt-1">
+                                                                        {getRowUnitCount(activeSection, r)} units
+                                                                    </Text>
+                                                                </View>
+
+                                                                <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs">
+                                                                    <TouchableOpacity
+                                                                        onPress={() => handleAdjustRowUnits(r, 1)}
+                                                                        className="w-10 h-8 items-center justify-center border-b border-gray-100"
+                                                                    >
+                                                                        <Ionicons name="add" size={16} color="#4A43EC" />
+                                                                    </TouchableOpacity>
+                                                                    <TouchableOpacity
+                                                                        onPress={() => handleAdjustRowUnits(r, -1)}
+                                                                        className="w-10 h-8 items-center justify-center"
+                                                                    >
+                                                                        <Ionicons name="remove" size={16} color="#EF4444" />
+                                                                    </TouchableOpacity>
                                                                 </View>
 
                                                                 {/* Unit Boxes Row */}
                                                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
-                                                                    {colsArr.map(c => {
+                                                                    {Array.from({ length: getRowUnitCount(activeSection, r) }, (_, i) => i + 1).map(c => {
                                                                         const key = `${r}_${c}`;
                                                                         const isSelected = builderState.selectedUnitKey === key;
                                                                         const assignedCfgId = activeSection.unitMap?.[key];
@@ -1892,10 +1978,10 @@ function Step4() {
             const configs = step3.unitConfigs[type.id] || [];
             configs.forEach((unit, idx) => {
                 units.push({
-                    id: `${type.id}-${idx}`,
+                    id: unit.unitId || `${type.id}-${idx}`,
                     typeId: type.id,
                     unitIndex: idx,
-                    label: `${unit.propertyNumber || 'N/A'} - Unit ${idx + 1} (${type.subType.toUpperCase()})`,
+                    label: `${unit.propertyNumber || 'N/A'} - ${unit.gridKey || `Unit ${idx + 1}`} (${type.subType.toUpperCase()})`,
                     subType: type.subType,
                     mainType: type.mainType,
                     bhk: unit.bhk || unit.officeType || 'Standard'
@@ -1907,7 +1993,9 @@ function Step4() {
 
     // Initialize first unit if none selected
     useEffect(() => {
-        if (!step4.currentSelectedUnitId && allUnits.length > 0) {
+        if (allUnits.length === 0) return;
+        const selectedExists = allUnits.some(unit => unit.id === step4.currentSelectedUnitId);
+        if (!selectedExists) {
             dispatch(updateStep4({ currentSelectedUnitId: allUnits[0].id }));
         }
     }, [allUnits, step4.currentSelectedUnitId]);
