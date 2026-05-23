@@ -17,6 +17,7 @@
         "backgroundColor": "#E6F4FE"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false,
       "package": "com.kartik2611mishra.squarftprojectpanel"
     },

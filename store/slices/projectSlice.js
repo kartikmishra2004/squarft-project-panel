@@ -136,7 +136,8 @@ const projectSlice = createSlice({
                                 officeType: subType === 'office' ? (config.type || 'Co-working') : '',
                                 area: (override.customArea || config.area || '0').toString(),
                                 areaUnit: subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
-                                amenities: [config.name || 'Standard'],
+                                images: config.images || [],
+                                amenities: (config.amenities || []).filter(Boolean).length > 0 ? (config.amenities || []).filter(Boolean) : [config.name || 'Standard'],
                                 propertyNumber: propertyNumber,
                                 hasShop: false,
                                 extraCharges: [{ title: 'Maintenance', amount: '0' }]

@@ -206,6 +206,7 @@ export default function AddProject() {
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : "height"}
                 className="flex-1"
+                keyboardVerticalOffset={Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0}
             >
                 <View className="flex-1 bg-[#F8F9FE]">
                     <StatusBar barStyle="light-content" />
@@ -262,7 +263,7 @@ export default function AddProject() {
                             ref={scrollRef}
                             className="flex-1 px-5 pt-6"
                             showsVerticalScrollIndicator={false}
-                            contentContainerStyle={{ paddingBottom: 100 }}
+                            contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}
                             keyboardShouldPersistTaps="handled"
                         >
                             <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
@@ -1000,7 +1001,9 @@ function Step3() {
                 name: '',
                 area: '',
                 price: '',
-                color: nextColor
+                color: nextColor,
+                images: [],
+                amenities: ['']
             };
             return {
                 ...prev,
@@ -1043,6 +1046,58 @@ function Step3() {
                 configs: sec.configs.map(c => c.id === cfgId ? { ...c, [field]: value } : c)
             } : sec)
         }));
+    };
+
+    const handleAddAmenity = (cfgId) => {
+        const config = activeSection?.configs?.find(c => c.id === cfgId);
+        if (!config) return;
+        handleUpdateConfigField(cfgId, 'amenities', [...(config.amenities || ['']), '']);
+    };
+
+    const handleUpdateAmenity = (cfgId, index, value) => {
+        const config = activeSection?.configs?.find(c => c.id === cfgId);
+        if (!config) return;
+        const amenities = [...(config.amenities || [''])];
+        amenities[index] = value;
+        handleUpdateConfigField(cfgId, 'amenities', amenities);
+    };
+
+    const handleRemoveAmenity = (cfgId, index) => {
+        const config = activeSection?.configs?.find(c => c.id === cfgId);
+        if (!config) return;
+        const amenities = [...(config.amenities || [''])];
+        amenities.splice(index, 1);
+        handleUpdateConfigField(cfgId, 'amenities', amenities.length > 0 ? amenities : ['']);
+    };
+
+    const handlePickVariantImages = async (cfgId) => {
+        const config = activeSection?.configs?.find(c => c.id === cfgId);
+        if (!config) return;
+
+        const currentImages = config.images || [];
+        if (currentImages.length >= 5) {
+            alert('You can add up to 5 images for each variant.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsMultipleSelection: true,
+            selectionLimit: 5 - currentImages.length,
+            quality: 0.8,
+        });
+
+        if (!result.canceled) {
+            const nextImages = [...currentImages, ...result.assets.map(asset => asset.uri)].slice(0, 5);
+            handleUpdateConfigField(cfgId, 'images', nextImages);
+        }
+    };
+
+    const handleRemoveVariantImage = (cfgId, imageUri) => {
+        const config = activeSection?.configs?.find(c => c.id === cfgId);
+        if (!config) return;
+        const nextImages = (config.images || []).filter(uri => uri !== imageUri);
+        handleUpdateConfigField(cfgId, 'images', nextImages);
     };
 
     const handleCellClick = (key) => {
@@ -1562,6 +1617,82 @@ function Step3() {
                                                             />
                                                         </View>
                                                     </View>
+                                                </View>
+
+                                                <View className="gap-3">
+                                                    <View className="flex-row items-center justify-between">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-500">Variant Images</Text>
+                                                        <TouchableOpacity
+                                                            onPress={() => handlePickVariantImages(activeConfig.id)}
+                                                            className="px-3 py-1.5 rounded-full bg-white border border-[#4A43EC]/20"
+                                                        >
+                                                            <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Add Images</Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+
+                                                    <Text className="text-[10px] text-gray-500 font-lato-medium px-1">
+                                                        Add up to 5 images for this variant.
+                                                    </Text>
+
+                                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+                                                        {(activeConfig.images || []).map((uri) => (
+                                                            <View key={uri} className="mr-2 relative">
+                                                                <View className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
+                                                                    <Image source={{ uri }} className="w-full h-full" resizeMode="cover" />
+                                                                </View>
+                                                                <TouchableOpacity
+                                                                    onPress={() => handleRemoveVariantImage(activeConfig.id, uri)}
+                                                                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 items-center justify-center"
+                                                                >
+                                                                    <Ionicons name="close" size={12} color="white" />
+                                                                </TouchableOpacity>
+                                                            </View>
+                                                        ))}
+
+                                                        {(activeConfig.images || []).length < 5 && (
+                                                            <TouchableOpacity
+                                                                onPress={() => handlePickVariantImages(activeConfig.id)}
+                                                                className="w-20 h-20 rounded-2xl border border-dashed border-[#4A43EC]/40 bg-[#F4F7FF] items-center justify-center mr-2"
+                                                            >
+                                                                <Ionicons name="add" size={22} color="#4A43EC" />
+                                                                <Text className="text-[9px] font-lato-bold text-[#4A43EC] mt-1">Add</Text>
+                                                            </TouchableOpacity>
+                                                        )}
+                                                    </ScrollView>
+                                                </View>
+
+                                                <View className="gap-3">
+                                                    <View className="flex-row items-center justify-between">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-500">Amenities</Text>
+                                                        <TouchableOpacity
+                                                            onPress={() => handleAddAmenity(activeConfig.id)}
+                                                            className="px-3 py-1.5 rounded-full bg-white border border-[#4A43EC]/20"
+                                                        >
+                                                            <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Add Amenity</Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+
+                                                    {(activeConfig.amenities || ['']).map((amenity, index) => (
+                                                        <View key={`${activeConfig.id}-amenity-${index}`} className="flex-row items-center gap-2">
+                                                            <View className="flex-1 bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                                                <TextInput
+                                                                    className="text-xs text-gray-800 font-lato-medium"
+                                                                    placeholder="Add amenity"
+                                                                    value={amenity}
+                                                                    onChangeText={(v) => handleUpdateAmenity(activeConfig.id, index, v)}
+                                                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                                />
+                                                            </View>
+                                                            {(activeConfig.amenities || ['']).length > 1 && (
+                                                                <TouchableOpacity
+                                                                    onPress={() => handleRemoveAmenity(activeConfig.id, index)}
+                                                                    className="w-10 h-11 rounded-xl bg-red-50 border border-red-100 items-center justify-center"
+                                                                >
+                                                                    <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                                                                </TouchableOpacity>
+                                                            )}
+                                                        </View>
+                                                    ))}
                                                 </View>
 
                                                 <View className="flex-row gap-4">

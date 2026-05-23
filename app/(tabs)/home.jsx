@@ -1,9 +1,10 @@
-import { Text, View, ScrollView, Image, TouchableOpacity } from "react-native";
+import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
+import { useRouter } from "expo-router";
 import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
 
@@ -11,17 +12,22 @@ const projectImg = require("../../assets/images/project_main.png");
 const profileImg = require("../../assets/images/user_profile.png");
 
 export default function Home() {
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState("Overview");
 
+    const [projectsData, setProjectsData] = useState(mockData.projects);
     const [selectedProjectId, setSelectedProjectId] = useState(mockData.projects[0]?.id ?? "");
     const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
     const [isProjectDetailVisible, setIsProjectDetailVisible] = useState(false);
     const [selectedDeal, setSelectedDeal] = useState(null);
+    const [isInventoryEditVisible, setIsInventoryEditVisible] = useState(false);
+    const [inventoryEditTarget, setInventoryEditTarget] = useState(null);
+    const [editPrice, setEditPrice] = useState("");
+    const [editArea, setEditArea] = useState("");
     const [inventoryType, setInventoryType] = useState("apartment");
     const [selectedTower, setSelectedTower] = useState("tower-a");
     const [selectedPlotStack, setSelectedPlotStack] = useState("stack-a");
     const [selectedPlotUnit, setSelectedPlotUnit] = useState("A-1202");
-    const [selectedUnits, setSelectedUnits] = useState(new Set());
     const tabs = ["Overview", "Inventory", "Visits", "Deals"];
     const inventoryTabs = [
         { key: "apartment", label: "Apartment" },
@@ -31,29 +37,6 @@ export default function Home() {
         { key: "shop", label: "Shop" }
     ];
     const insets = useSafeAreaInsets();
-
-    const isSelectable = (status) => status === "Available" || status === "Booked";
-
-    const toggleUnit = (unitId, status) => {
-        if (!isSelectable(status)) return;
-        setSelectedUnits((prev) => {
-            const next = new Set(prev);
-            next.has(unitId) ? next.delete(unitId) : next.add(unitId);
-            return next;
-        });
-    };
-
-    const getStatusColor = (status, unitId) => {
-        const selected = selectedUnits.has(unitId);
-        if (selected) return "#1D4ED8";
-        switch (status) {
-            case "Available": return "#2563EB";
-            case "Booked": return "#10B981";
-            case "Tokened": return "#C7C7CD";
-            case "Sold": return "#92370B";
-            default: return "#F3F4F6";
-        }
-    };
 
     const getBadgeStyle = (status) => {
         switch (status) {
@@ -65,9 +48,136 @@ export default function Home() {
                 return "bg-slate-100 text-slate-500";
             case "Sold":
                 return "bg-rose-100 text-rose-500";
+            case "Blocked":
+                return "bg-red-100 text-red-600";
             default:
                 return "bg-gray-100 text-gray-500";
         }
+    };
+
+    const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
+
+    const updateInventoryUnit = (target, updater) => {
+        setProjectsData((currentProjects) => currentProjects.map((project) => {
+            if (project.id !== selectedProjectId) return project;
+
+            const inventory = project.inventory || {};
+
+            if (target.inventoryType === "apartment") {
+                return {
+                    ...project,
+                    inventory: {
+                        ...inventory,
+                        apartment: {
+                            ...inventory.apartment,
+                            towers: inventory.apartment?.towers?.map((tower) => {
+                                if (tower.key !== target.towerKey) return tower;
+
+                                return {
+                                    ...tower,
+                                    sections: tower.sections.map((section, sectionIndex) => {
+                                        if (sectionIndex !== target.sectionIndex) return section;
+
+                                        return {
+                                            ...section,
+                                            units: section.units.map((unit, unitIndex) => {
+                                                if (unitIndex !== target.unitIndex) return unit;
+                                                return updater(unit);
+                                            }),
+                                        };
+                                    }),
+                                };
+                            }),
+                        },
+                    },
+                };
+            }
+
+            if (target.inventoryType === "villa" || target.inventoryType === "rowhouse" || target.inventoryType === "shop") {
+                return {
+                    ...project,
+                    inventory: {
+                        ...inventory,
+                        [target.inventoryType]: {
+                            ...inventory[target.inventoryType],
+                            sections: inventory[target.inventoryType]?.sections?.map((section, sectionIndex) => {
+                                if (sectionIndex !== target.sectionIndex) return section;
+
+                                return {
+                                    ...section,
+                                    units: section.units.map((unit, unitIndex) => {
+                                        if (unitIndex !== target.unitIndex) return unit;
+                                        return updater(unit);
+                                    }),
+                                };
+                            }),
+                        },
+                    },
+                };
+            }
+
+            if (target.inventoryType === "plot") {
+                return {
+                    ...project,
+                    inventory: {
+                        ...inventory,
+                        plot: {
+                            ...inventory.plot,
+                            stacks: inventory.plot?.stacks?.map((stack) => {
+                                if (stack.key !== target.stackKey) return stack;
+
+                                return {
+                                    ...stack,
+                                    levels: stack.levels.map((level, levelIndex) => {
+                                        if (levelIndex !== target.levelIndex) return level;
+
+                                        return {
+                                            ...level,
+                                            cards: level.cards.map((card, cardIndex) => {
+                                                if (cardIndex !== target.cardIndex) return card;
+                                                return updater(card);
+                                            }),
+                                        };
+                                    }),
+                                };
+                            }),
+                        },
+                    },
+                };
+            }
+
+            return project;
+        }));
+    };
+
+    const openInventoryEdit = (unit, target) => {
+        setInventoryEditTarget(target);
+        setEditPrice(unit.price || unit.dealValue || unit.amount || "");
+        setEditArea(unit.area || "");
+        setIsInventoryEditVisible(true);
+    };
+
+    const saveInventoryEdit = () => {
+        if (!inventoryEditTarget) return;
+
+        updateInventoryUnit(inventoryEditTarget, (unit) => ({
+            ...unit,
+            price: editPrice.trim(),
+            area: editArea.trim(),
+        }));
+        setIsInventoryEditVisible(false);
+        setInventoryEditTarget(null);
+    };
+
+    const blockInventoryUnit = (target) => {
+        updateInventoryUnit(target, (unit) => ({
+            ...unit,
+            status: "Blocked",
+            ctaLabel: "BLOCKED",
+            ctaVariant: "disabled",
+            actionIcon: "lock-closed",
+            dimmed: true,
+        }));
     };
 
     const getActionButtonStyle = (variant) => {
@@ -122,8 +232,27 @@ export default function Home() {
         }
     };
 
-    const projectOptions = mockData.projects;
-    const selectedProject = projectOptions.find((project) => project.id === selectedProjectId) || projectOptions[0] || { inventory: {} };
+    const openInventoryDetail = (unit, context = {}) => {
+        const sectionLabel = context.sectionLabel || context.towerLabel || context.stackLabel || selectedProject.title;
+        const unitLabel = unit.id || unit.unit || unit.title || "Property";
+
+        setSelectedDeal({
+            ...unit,
+            title: `${sectionLabel} • ${unitLabel}`,
+            propertyType: unit.title || unit.meta || context.inventoryLabel || "Property",
+            topStatus: unit.status,
+            dealStatus: unit.status,
+            footerStatus: unit.ctaLabel === "DETAILS" ? "View Details" : unit.status,
+            footerTotal: unit.price || unit.area || selectedProject.avgPrice,
+            avgPricePerSqft: unit.avgPricePerSqft || selectedProject.avgPrice,
+            possession: unit.possession || selectedProject.possession,
+            amenities: unit.amenities || selectedProject.amenities,
+            progress: unit.progress ?? 0,
+        });
+        setIsProjectDetailVisible(true);
+    };
+
+    const projectOptions = projectsData;
     const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
     const dealsData = selectedProject.deals || [];
     const selectedInventory = selectedProject.inventory?.[inventoryType] || { sections: [] };
@@ -150,6 +279,35 @@ export default function Home() {
         if (!activePlotUnit?.unit) return;
         setSelectedPlotUnit(activePlotUnit.unit);
     }, [inventoryType, selectedPlotData, activePlotUnit]);
+
+    useEffect(() => {
+        if (!isInventoryEditVisible) return;
+
+        if (!inventoryEditTarget) return;
+
+        const latestProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0];
+        if (!latestProject) return;
+
+        const latestInventory = latestProject.inventory?.[inventoryEditTarget.inventoryType];
+        if (!latestInventory) return;
+
+        let targetUnit = null;
+
+        if (inventoryEditTarget.inventoryType === "apartment") {
+            targetUnit = latestInventory.towers?.find((tower) => tower.key === inventoryEditTarget.towerKey)
+                ?.sections?.[inventoryEditTarget.sectionIndex]?.units?.[inventoryEditTarget.unitIndex] || null;
+        } else if (inventoryEditTarget.inventoryType === "villa" || inventoryEditTarget.inventoryType === "rowhouse" || inventoryEditTarget.inventoryType === "shop") {
+            targetUnit = latestInventory.sections?.[inventoryEditTarget.sectionIndex]?.units?.[inventoryEditTarget.unitIndex] || null;
+        } else if (inventoryEditTarget.inventoryType === "plot") {
+            targetUnit = latestInventory.stacks?.find((stack) => stack.key === inventoryEditTarget.stackKey)
+                ?.levels?.[inventoryEditTarget.levelIndex]?.cards?.[inventoryEditTarget.cardIndex] || null;
+        }
+
+        if (targetUnit) {
+            setEditPrice(targetUnit.price || targetUnit.dealValue || targetUnit.amount || "");
+            setEditArea(targetUnit.area || "");
+        }
+    }, [isInventoryEditVisible, inventoryEditTarget, projectsData, selectedProjectId]);
 
     return (
         <View className="flex-1 bg-white">
@@ -233,7 +391,10 @@ export default function Home() {
                                     </View>
                                 ) : null}
                             </View>
-                            <TouchableOpacity className="h-9 px-3 rounded-xl flex-row items-center border border-white/50">
+                            <TouchableOpacity
+                                className="h-9 px-3 rounded-xl flex-row items-center border border-white/50"
+                                onPress={() => router.push("/add-project")}
+                            >
                                 <View className="w-[18px] h-[18px] rounded-full bg-white items-center justify-center">
                                     <Ionicons name="add" size={14} color="#4A43EC" />
                                 </View>
@@ -520,7 +681,10 @@ export default function Home() {
                                                     return (
                                                         <TouchableOpacity
                                                             key={card.unit}
-                                                            onPress={() => setSelectedPlotUnit(card.unit)}
+                                                            onPress={() => {
+                                                                setSelectedPlotUnit(card.unit);
+                                                                openInventoryDetail(card, { stackLabel: selectedPlotData.label, sectionLabel: `Level ${level.level}`, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label });
+                                                            }}
                                                             activeOpacity={0.85}
                                                             className={`w-[210px] h-[82px] rounded-2xl border px-3.5 py-3 justify-between mr-2.5 ${isPlotActive ? "bg-[#2F55F0] border-[#1847E6]" : card.disabled ? "bg-white border-[#D7D9EA]" : "bg-[#F6F5FD] border-[#D7D9EA]"}`}
                                                         >
@@ -569,25 +733,30 @@ export default function Home() {
 
                                     <View className="flex-row flex-wrap justify-between">
                                         {section.units.map((unit) => {
-                                            const isSelected = selectedUnits.has(unit.id);
-                                            const selectable = isSelectable(unit.status);
+                                            const unitTarget = {
+                                                inventoryType,
+                                                towerKey: selectedTowerData?.key,
+                                                sectionIndex: idx,
+                                                unitIndex: section.units.indexOf(unit),
+                                            };
+                                            const canBlock = unit.ctaLabel === "BLOCK" && unit.status !== "Blocked";
 
                                             return (
                                                 <TouchableOpacity
                                                     key={unit.id}
-                                                    onPress={() => toggleUnit(unit.id, unit.status)}
-                                                    activeOpacity={selectable ? 0.8 : 1}
+                                                    onPress={() => openInventoryDetail(unit, { towerLabel: selectedTowerData?.label, sectionLabel: section.rowLabel, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label })}
+                                                    activeOpacity={0.9}
                                                     className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-3.5 overflow-hidden"
                                                     style={{
                                                         width: "48%",
                                                         minHeight: 166,
                                                         opacity: unit.dimmed ? 0.72 : 1,
-                                                        borderColor: isSelected ? "#4A43EC" : "#E5E7EB",
-                                                        shadowColor: isSelected ? "#4A43EC" : "#000",
+                                                        borderColor: "#E5E7EB",
+                                                        shadowColor: "#000",
                                                         shadowOffset: { width: 0, height: 6 },
-                                                        shadowOpacity: isSelected ? 0.16 : 0.05,
+                                                        shadowOpacity: 0.05,
                                                         shadowRadius: 10,
-                                                        elevation: isSelected ? 6 : 2,
+                                                        elevation: 2,
                                                     }}
                                                 >
                                                     <View className="p-3.5 flex-1 justify-between">
@@ -605,22 +774,36 @@ export default function Home() {
                                                             >
                                                                 {unit.title}
                                                             </Text>
+                                                            <Text className="mt-0.5 text-[13px] font-lato-bold text-[#4A43EC]" numberOfLines={1}>
+                                                                {unit.price || selectedProject.avgPrice}
+                                                            </Text>
                                                             <Text className="text-[#7C8698] text-[12px] font-lato mt-0.5">{unit.area}</Text>
                                                         </View>
 
                                                         <View className="flex-row items-center gap-2">
                                                             <TouchableOpacity
-                                                                activeOpacity={selectable ? 0.8 : 1}
+                                                                activeOpacity={0.9}
                                                                 className={`flex-1 rounded-xl border py-2 items-center ${getActionButtonStyle(unit.ctaVariant)}`}
-                                                                onPress={() => toggleUnit(unit.id, unit.status)}
+                                                                onPress={() => {
+                                                                    if (canBlock) {
+                                                                        blockInventoryUnit(unitTarget);
+                                                                        return;
+                                                                    }
+
+                                                                    openInventoryDetail(unit, { towerLabel: selectedTowerData?.label, sectionLabel: section.rowLabel, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label });
+                                                                }}
                                                             >
                                                                 <Text className={`font-lato-bold text-[11px] ${unit.ctaVariant === "primary" ? "text-white" : unit.ctaVariant === "disabled" ? "text-gray-400" : "text-[#64748B]"}`}>
                                                                     {unit.ctaLabel}
                                                                 </Text>
                                                             </TouchableOpacity>
-                                                            <View className="w-9 h-9 rounded-xl bg-gray-100 items-center justify-center">
-                                                                <Feather name={unit.actionIcon} size={16} color="#94A3B8" />
-                                                            </View>
+                                                            <TouchableOpacity
+                                                                activeOpacity={0.9}
+                                                                onPress={() => openInventoryEdit(unit, unitTarget)}
+                                                                className="w-9 h-9 rounded-xl bg-gray-100 items-center justify-center"
+                                                            >
+                                                                <Feather name={unit.actionIcon === "edit" ? "edit-3" : unit.actionIcon === "eye" ? "eye" : "lock"} size={16} color="#94A3B8" />
+                                                            </TouchableOpacity>
                                                         </View>
                                                     </View>
                                                 </TouchableOpacity>
@@ -647,42 +830,6 @@ export default function Home() {
                                     <Text className="mt-1 text-[10px] font-lato-bold text-[#22C55E]">↑ {metric.delta.replace("+", "")}</Text>
                                 </View>
                             ))}
-                        </View>
-
-                        <View className="rounded-[18px] border border-[#D9D7FF] bg-[#F7F6FF] px-3 pt-3 pb-3.5 mb-5">
-                            <View className="flex-row items-center justify-between mb-3.5">
-                                <View className="flex-row items-center">
-                                    <Ionicons name="funnel-outline" size={15} color="#4A43EC" />
-                                    <Text className="ml-2 text-[16px] font-lato-bold text-[#1F2937]">{visitsData.pipeline.title}</Text>
-                                </View>
-                                <TouchableOpacity>
-                                    <Text className="text-[12px] font-lato text-[#4A43EC]">{visitsData.pipeline.action}</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            <View className="h-[88px] relative justify-center">
-                                <View className="absolute left-4 right-4 top-[27px] h-[1px] bg-[#E5E7F2]" />
-                                <View className="flex-row items-start justify-between px-1">
-                                    {visitsData.pipeline.stages.map((stage, index) => {
-                                        const palette = ["#7B73F8", "#8B86FF", "#6C7CFF", "#4FA8FF", "#F2BE4B", "#B8B0F2", "#D6F2DE"];
-                                        const circleColor = palette[index % palette.length];
-
-                                        return (
-                                            <View key={stage.label} className="flex-1 items-center">
-                                                <View
-                                                    className="w-8 h-8 rounded-full items-center justify-center border border-white"
-                                                    style={{ backgroundColor: circleColor }}
-                                                >
-                                                    <Text className="text-white text-[10px] font-lato-bold">{stage.value}</Text>
-                                                </View>
-                                                <Text className="mt-2 text-[10px] font-lato text-[#718096] text-center leading-3" numberOfLines={2}>
-                                                    {stage.label}
-                                                </Text>
-                                            </View>
-                                        );
-                                    })}
-                                </View>
-                            </View>
                         </View>
 
                         <View className="flex-row items-center justify-between mb-3">
@@ -838,6 +985,68 @@ export default function Home() {
                 project={selectedProject}
                 variant={selectedDeal}
             />
+
+            <Modal
+                visible={isInventoryEditVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsInventoryEditVisible(false)}
+            >
+                <KeyboardAvoidingView
+                    className="flex-1"
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                >
+                    <View className="flex-1 bg-black/45 justify-end">
+                        <TouchableOpacity
+                            activeOpacity={1}
+                            className="flex-1"
+                            onPress={() => setIsInventoryEditVisible(false)}
+                        />
+
+                        <View className="bg-white rounded-t-[28px] px-5 pt-4 pb-6">
+                            <View className="items-center mb-4">
+                                <View className="w-14 h-1.5 rounded-full bg-gray-300" />
+                            </View>
+
+                            <Text className="text-[18px] font-lato-bold text-[#1A1A1A]">Edit Property</Text>
+                            <Text className="mt-1 text-[12px] font-lato text-[#6B7280]">Only price and area can be updated here.</Text>
+
+                            <View className="mt-5">
+                                <Text className="text-[11px] font-lato-bold text-[#6B7280] uppercase mb-2">Price</Text>
+                                <TextInput
+                                    value={editPrice}
+                                    onChangeText={setEditPrice}
+                                    placeholder="Enter price"
+                                    placeholderTextColor="#94A3B8"
+                                    className="h-12 rounded-2xl border border-gray-200 px-4 text-[14px] font-lato text-[#111827] bg-white"
+                                />
+                            </View>
+
+                            <View className="mt-4">
+                                <Text className="text-[11px] font-lato-bold text-[#6B7280] uppercase mb-2">Area</Text>
+                                <View className="h-12 rounded-2xl border border-gray-200 px-4 justify-center bg-gray-50">
+                                    <Text className="text-[14px] font-lato text-[#6B7280]">{editArea || "-"}</Text>
+                                </View>
+                            </View>
+
+                            <View className="flex-row gap-3 mt-6">
+                                <TouchableOpacity
+                                    onPress={() => setIsInventoryEditVisible(false)}
+                                    className="flex-1 h-12 rounded-2xl border border-gray-200 items-center justify-center bg-white"
+                                >
+                                    <Text className="text-[13px] font-lato-bold text-[#64748B]">Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={saveInventoryEdit}
+                                    className="flex-1 h-12 rounded-2xl items-center justify-center bg-[#4A43EC]"
+                                >
+                                    <Text className="text-[13px] font-lato-bold text-white">Save</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
         </View>
     );
 }
