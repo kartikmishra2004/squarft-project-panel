@@ -8,7 +8,6 @@ import {
     Image,
     Dimensions,
     TextInput,
-    KeyboardAvoidingView,
     Platform,
     Pressable,
     Keyboard,
@@ -35,6 +34,7 @@ import {
 import { addProject } from "../../store/slices/projectsSlice";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 
 const { width } = Dimensions.get("window");
 
@@ -80,13 +80,21 @@ const steps = [
     { id: 4, title: "Image & Price" },
 ];
 
+const ANDROID_KEYBOARD_EXTRA_SCROLL = 72;
+const ANDROID_KEYBOARD_EXTRA_HEIGHT = 240;
+const IOS_KEYBOARD_EXTRA_SCROLL = 40;
+const IOS_KEYBOARD_EXTRA_HEIGHT = 66;
+const ANDROID_CONTENT_BOTTOM_PADDING = 180;
+const IOS_CONTENT_BOTTOM_PADDING = 140;
+
 export default function AddProject() {
     const dispatch = useDispatch();
     const { currentStep, step1, step2, step3, step4 } = useSelector((state) => state.project);
     const scrollRef = useRef(null);
 
     useEffect(() => {
-        scrollRef.current?.scrollTo({ y: 0, animated: false });
+        scrollRef.current?.scrollToPosition?.(0, 0, false);
+        scrollRef.current?.scrollTo?.({ y: 0, animated: false });
     }, [currentStep]);
 
     const handleNext = () => {
@@ -202,14 +210,8 @@ export default function AddProject() {
     };
 
     return (
-        <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-            <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                className="flex-1"
-                keyboardVerticalOffset={Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0}
-            >
-                <View className="flex-1 bg-[#F8F9FE]">
-                    <StatusBar barStyle="light-content" />
+        <View className="flex-1 bg-[#F8F9FE]">
+                <StatusBar barStyle="light-content" />
 
                     {/* Header Section */}
                     <View className="bg-[#4A43EC] pt-12 pb-8 px-5 relative overflow-hidden">
@@ -259,40 +261,50 @@ export default function AddProject() {
 
                     {/* Content Section */}
                     <View className="flex-1 bg-white -mt-5 rounded-t-[20px] overflow-hidden">
-                        <ScrollView
-                            ref={scrollRef}
+                        <KeyboardAwareScrollView
+                            innerRef={(ref) => {
+                                scrollRef.current = ref;
+                            }}
                             className="flex-1 px-5 pt-6"
                             showsVerticalScrollIndicator={false}
-                            contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}
+                            contentContainerStyle={{
+                                paddingBottom: Platform.OS === "android" ? ANDROID_CONTENT_BOTTOM_PADDING : IOS_CONTENT_BOTTOM_PADDING,
+                                flexGrow: 1,
+                            }}
                             keyboardShouldPersistTaps="handled"
+                            keyboardDismissMode="on-drag"
+                            enableOnAndroid
+                            extraScrollHeight={Platform.OS === "android" ? ANDROID_KEYBOARD_EXTRA_SCROLL : IOS_KEYBOARD_EXTRA_SCROLL}
+                            extraHeight={Platform.OS === "android" ? ANDROID_KEYBOARD_EXTRA_HEIGHT : IOS_KEYBOARD_EXTRA_HEIGHT}
+                            viewIsInsideTabBar={Platform.OS === "android"}
+                            enableAutomaticScroll
+                            keyboardOpeningTime={250}
+                            enableResetScrollToCoords={false}
+                            nestedScrollEnabled={Platform.OS === "android"}
                         >
-                            <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-                                <View className="flex-1">
-                                    {currentStep === 1 && <Step1 />}
-                                    {currentStep === 2 && <Step2 />}
-                                    {currentStep === 3 && <Step3 />}
-                                    {currentStep === 4 && <Step4 />}
+                            <View>
+                                {currentStep === 1 && <Step1 />}
+                                {currentStep === 2 && <Step2 />}
+                                {currentStep === 3 && <Step3 />}
+                                {currentStep === 4 && <Step4 />}
 
-                                    {/* Next Button */}
-                                    <View className="mt-8 mb-4">
-                                        <TouchableOpacity
-                                            className={`py-4 rounded-xl items-center ${isNextDisabled() ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
-                                            activeOpacity={0.8}
-                                            onPress={handleNext}
-                                            disabled={isNextDisabled()}
-                                        >
-                                            <Text className="text-white text-sm font-lato-bold">
-                                                {currentStep === 4 ? "Submit" : "Next"}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    </View>
+                                {/* Next Button */}
+                                <View className="mt-8 mb-4">
+                                    <TouchableOpacity
+                                        className={`py-4 rounded-xl items-center ${isNextDisabled() ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
+                                        activeOpacity={0.8}
+                                        onPress={handleNext}
+                                        disabled={isNextDisabled()}
+                                    >
+                                        <Text className="text-white text-sm font-lato-bold">
+                                            {currentStep === 4 ? "Submit" : "Next"}
+                                        </Text>
+                                    </TouchableOpacity>
                                 </View>
-                            </TouchableWithoutFeedback>
-                        </ScrollView>
+                            </View>
+                        </KeyboardAwareScrollView>
                     </View>
                 </View>
-            </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
     );
 }
 
