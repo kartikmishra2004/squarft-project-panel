@@ -199,6 +199,11 @@ const projectSlice = createSlice({
         },
         bulkUploadSubtype: (state, action) => {
             const { typeId, unitConfigs, unitData } = action.payload;
+            Object.keys(state.step4.unitData).forEach(id => {
+                if (id.startsWith(`${typeId}-`)) {
+                    delete state.step4.unitData[id];
+                }
+            });
             state.step3.unitConfigs[typeId] = unitConfigs;
             Object.assign(state.step4.unitData, unitData);
         },

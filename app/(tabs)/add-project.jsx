@@ -86,6 +86,7 @@ const IOS_KEYBOARD_EXTRA_SCROLL = 40;
 const IOS_KEYBOARD_EXTRA_HEIGHT = 66;
 const ANDROID_CONTENT_BOTTOM_PADDING = 180;
 const IOS_CONTENT_BOTTOM_PADDING = 140;
+const RANGE_BASED_SUB_TYPES = new Set(["plot", "villa", "rowhouse"]);
 
 export default function AddProject() {
     const dispatch = useDispatch();
@@ -874,6 +875,8 @@ function Step3() {
     const [uploadModes, setUploadModes] = useState({}); // { [typeId]: 'manual' | 'bulk' }
     const [openUploadModeDropdown, setOpenUploadModeDropdown] = useState(false);
     const [openGridModeDropdown, setOpenGridModeDropdown] = useState(false);
+    const [propertyRanges, setPropertyRanges] = useState({});
+    const [selectedRangeUnitIndex, setSelectedRangeUnitIndex] = useState(0);
 
     // Keep active tab valid if types are removed
     useEffect(() => {
@@ -883,6 +886,129 @@ function Step3() {
     }, [step2.selectedTypes, activeTypeTab]);
 
     const activeType = step2.selectedTypes.find(t => t.id === activeTypeTab) || step2.selectedTypes[0];
+    const isRangeBasedType = !!activeType && RANGE_BASED_SUB_TYPES.has(activeType.subType);
+
+    const currentRange = propertyRanges[activeType?.id] || { start: '', end: '' };
+    const currentRangeUnits = activeType ? (step3.unitConfigs[activeType.id] || []) : [];
+    const selectedRangeUnit = currentRangeUnits[selectedRangeUnitIndex] || currentRangeUnits[0] || null;
+
+    useEffect(() => {
+        setSelectedRangeUnitIndex(0);
+    }, [activeType?.id]);
+
+    const handleRangeChange = (field, value) => {
+        if (!activeType) return;
+        setPropertyRanges(prev => ({
+            ...prev,
+            [activeType.id]: {
+                ...(prev[activeType.id] || { start: '', end: '' }),
+                [field]: value,
+            }
+        }));
+    };
+
+    const handleApplyPropertyRange = () => {
+        if (!activeType) return;
+
+        const start = parseInt(currentRange.start, 10);
+        const end = parseInt(currentRange.end, 10);
+
+        if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
+            alert("Please enter a valid property number range.");
+            return;
+        }
+
+        const unitConfigs = Array.from({ length: end - start + 1 }, (_, index) => ({
+            type: '',
+            name: '',
+            propertyNumber: String(start + index),
+            tower: '',
+            floor: '',
+            bhk: '',
+            officeType: '',
+            area: '',
+            areaUnit: activeType.subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
+            price: '',
+            images: [],
+            amenities: [''],
+            hasShop: false,
+            extraCharges: [{ title: '', amount: '' }],
+        }));
+
+        const unitData = {};
+        unitConfigs.forEach((_, index) => {
+            unitData[`${activeType.id}-${index}`] = {
+                images: [],
+                documents: [],
+                sellingPrice: '',
+                priceNegotiable: false,
+                taxExclude: false,
+                paymentMode: 'full',
+                agreed: false,
+            };
+        });
+
+        dispatch(bulkUploadSubtype({ typeId: activeType.id, unitConfigs, unitData }));
+        setSelectedRangeUnitIndex(0);
+    };
+
+    const handleUpdateRangeUnitField = (unitIndex, field, value) => {
+        if (!activeType) return;
+        dispatch(updateStep3({ typeId: activeType.id, unitIndex, data: { [field]: value } }));
+    };
+
+    const handlePickRangeUnitImages = async (unitIndex) => {
+        if (!activeType) return;
+        const unit = currentRangeUnits[unitIndex];
+        if (!unit) return;
+
+        const currentImages = unit.images || [];
+        if (currentImages.length >= 5) {
+            alert('You can add up to 5 images for each unit.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsMultipleSelection: true,
+            selectionLimit: 5 - currentImages.length,
+            quality: 0.8,
+        });
+
+        if (!result.canceled) {
+            const nextImages = [...currentImages, ...result.assets.map(asset => asset.uri)].slice(0, 5);
+            handleUpdateRangeUnitField(unitIndex, 'images', nextImages);
+        }
+    };
+
+    const handleRemoveRangeUnitImage = (unitIndex, imageUri) => {
+        const unit = currentRangeUnits[unitIndex];
+        if (!unit) return;
+        const nextImages = (unit.images || []).filter(uri => uri !== imageUri);
+        handleUpdateRangeUnitField(unitIndex, 'images', nextImages);
+    };
+
+    const handleAddRangeAmenity = (unitIndex) => {
+        const unit = currentRangeUnits[unitIndex];
+        if (!unit) return;
+        handleUpdateRangeUnitField(unitIndex, 'amenities', [...(unit.amenities || ['']), '']);
+    };
+
+    const handleUpdateRangeAmenity = (unitIndex, amenityIndex, value) => {
+        const unit = currentRangeUnits[unitIndex];
+        if (!unit) return;
+        const amenities = [...(unit.amenities || [''])];
+        amenities[amenityIndex] = value;
+        handleUpdateRangeUnitField(unitIndex, 'amenities', amenities);
+    };
+
+    const handleRemoveRangeAmenity = (unitIndex, amenityIndex) => {
+        const unit = currentRangeUnits[unitIndex];
+        if (!unit) return;
+        const amenities = [...(unit.amenities || [''])];
+        amenities.splice(amenityIndex, 1);
+        handleUpdateRangeUnitField(unitIndex, 'amenities', amenities.length > 0 ? amenities : ['']);
+    };
 
     // Initialize builder data if not present
     useEffect(() => {
@@ -1339,6 +1465,259 @@ function Step3() {
         return (
             <View className="items-center py-10">
                 <Text className="text-gray-400 font-lato">No property types selected in Step 2.</Text>
+            </View>
+        );
+    }
+
+    if (activeType && isRangeBasedType) {
+        const rangeUnits = currentRangeUnits;
+        const selectedIndex = Math.min(selectedRangeUnitIndex, Math.max(rangeUnits.length - 1, 0));
+        const selectedUnit = rangeUnits[selectedIndex] || null;
+
+        return (
+            <View className="gap-6">
+                <Text className="text-base font-lato-bold text-black">Configure Units</Text>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+                    {step2.selectedTypes.map((type) => {
+                        const typeIcon = subTypesData[type.mainType]?.find(t => t.id === type.subType)?.image;
+                        const isActive = activeTypeTab === type.id;
+                        return (
+                            <TouchableOpacity
+                                key={type.id}
+                                onPress={() => setActiveTypeTab(type.id)}
+                                className={`bg-white border rounded-lg px-3 py-2 mb-1 flex-row items-center mr-3 ${isActive ? 'border-[#4A43EC]' : 'border-gray-100'}`}
+                            >
+                                <View className="w-8 h-8 bg-[#F4F7FF] rounded-md items-center justify-center mr-2">
+                                    <Image source={typeIcon} className="w-5 h-5" resizeMode="contain" />
+                                </View>
+                                <View className="justify-center">
+                                    <Text className={`font-lato-bold text-[11px] leading-tight ${isActive ? 'text-[#4A43EC]' : 'text-black'}`}>
+                                        {type.subType.toUpperCase()}
+                                    </Text>
+                                    <Text className={`text-[9px] font-lato-bold uppercase mt-0.5 leading-tight ${isActive ? 'text-[#4A43EC]/80' : 'text-gray-500'}`}>
+                                        {type.mainType}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+
+                <View className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm gap-4">
+                    <View className="gap-1">
+                        <Text className="text-sm font-lato-bold text-black">
+                            Property Number Range for {activeType.subType}
+                        </Text>
+                        <Text className="text-[11px] text-gray-500 font-lato">
+                            Enter a start and end property number. The app will create one simple box for each number in the range.
+                        </Text>
+                    </View>
+
+                    <View className="flex-row gap-3">
+                        <View className="flex-1">
+                            <Text className="text-xs font-lato-bold text-gray-500 mb-1.5">From</Text>
+                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                <TextInput
+                                    className="text-sm text-gray-800 font-lato-medium"
+                                    placeholder="1001"
+                                    placeholderTextColor="#9CA3AF"
+                                    keyboardType="number-pad"
+                                    value={currentRange.start}
+                                    onChangeText={(value) => handleRangeChange('start', value)}
+                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                />
+                            </View>
+                        </View>
+                        <View className="flex-1">
+                            <Text className="text-xs font-lato-bold text-gray-500 mb-1.5">To</Text>
+                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                <TextInput
+                                    className="text-sm text-gray-800 font-lato-medium"
+                                    placeholder="1006"
+                                    placeholderTextColor="#9CA3AF"
+                                    keyboardType="number-pad"
+                                    value={currentRange.end}
+                                    onChangeText={(value) => handleRangeChange('end', value)}
+                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                />
+                            </View>
+                        </View>
+                    </View>
+
+                    <TouchableOpacity
+                        onPress={handleApplyPropertyRange}
+                        className="bg-[#4A43EC] py-3.5 rounded-xl items-center"
+                    >
+                        <Text className="text-white text-[13px] font-lato-bold">Generate Boxes</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <View className="gap-3">
+                    <View className="flex-row items-center justify-between">
+                        <Text className="text-sm font-lato-bold text-black">Generated Boxes</Text>
+                        <Text className="text-xs text-gray-500 font-lato">{rangeUnits.length} units</Text>
+                    </View>
+
+                    <View className="flex-row flex-wrap gap-3">
+                        {rangeUnits.map((unit, index) => (
+                            <View
+                                key={`${activeType.id}-${index}`}
+                                className={`w-[31%] min-h-20 rounded-2xl border bg-white px-3 py-3 items-center justify-center ${selectedIndex === index ? 'border-[#4A43EC] bg-[#F4F7FF]' : 'border-gray-200'}`}
+                            >
+                                <TouchableOpacity
+                                    className="absolute inset-0"
+                                    onPress={() => setSelectedRangeUnitIndex(index)}
+                                    activeOpacity={0.8}
+                                />
+                                <Text className="text-sm font-lato-bold text-[#4A43EC]" numberOfLines={1}>
+                                    {unit.propertyNumber || `Unit ${index + 1}`}
+                                </Text>
+                                <Text className="text-[10px] text-gray-500 font-lato mt-1">Simple Box</Text>
+                            </View>
+                        ))}
+                    </View>
+                </View>
+
+                {selectedUnit && (
+                    <View className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm gap-4">
+                        <Text className="text-sm font-lato-bold text-black">
+                            Edit Unit: {selectedUnit.propertyNumber}
+                        </Text>
+
+                        <View className="flex-row gap-4">
+                            <View className="flex-1">
+                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Category / Type</Text>
+                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                    <TextInput
+                                        className="text-xs text-gray-800 font-lato-medium"
+                                        placeholder={activeType.subType === 'plot' ? 'eg. Standard Plot' : 'eg. 2 BHK'}
+                                        placeholderTextColor="#9CA3AF"
+                                        value={selectedUnit.type}
+                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'type', value)}
+                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                    />
+                                </View>
+                            </View>
+                            <View className="flex-1">
+                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Variant Name</Text>
+                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                    <TextInput
+                                        className="text-xs text-gray-800 font-lato-medium"
+                                        placeholder="eg. Standard / Premium"
+                                        placeholderTextColor="#9CA3AF"
+                                        value={selectedUnit.name}
+                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'name', value)}
+                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                    />
+                                </View>
+                            </View>
+                        </View>
+
+                        <View className="gap-3">
+                            <View className="flex-row items-center justify-between">
+                                <Text className="text-[11px] font-lato-bold text-gray-500">Images</Text>
+                                <TouchableOpacity
+                                    onPress={() => handlePickRangeUnitImages(selectedIndex)}
+                                    className="px-3 py-1.5 rounded-full bg-white border border-[#4A43EC]/20"
+                                >
+                                    <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Add Images</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+                                {(selectedUnit.images || []).map((uri) => (
+                                    <View key={uri} className="mr-2 relative">
+                                        <View className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
+                                            <Image source={{ uri }} className="w-full h-full" resizeMode="cover" />
+                                        </View>
+                                        <TouchableOpacity
+                                            onPress={() => handleRemoveRangeUnitImage(selectedIndex, uri)}
+                                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 items-center justify-center"
+                                        >
+                                            <Ionicons name="close" size={12} color="white" />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+
+                                {(selectedUnit.images || []).length < 5 && (
+                                    <TouchableOpacity
+                                        onPress={() => handlePickRangeUnitImages(selectedIndex)}
+                                        className="w-20 h-20 rounded-2xl border border-dashed border-[#4A43EC]/40 bg-[#F4F7FF] items-center justify-center mr-2"
+                                    >
+                                        <Ionicons name="add" size={22} color="#4A43EC" />
+                                        <Text className="text-[9px] font-lato-bold text-[#4A43EC] mt-1">Add</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </ScrollView>
+                        </View>
+
+                        <View className="gap-3">
+                            <View className="flex-row items-center justify-between">
+                                <Text className="text-[11px] font-lato-bold text-gray-500">Amenities</Text>
+                                <TouchableOpacity
+                                    onPress={() => handleAddRangeAmenity(selectedIndex)}
+                                    className="px-3 py-1.5 rounded-full bg-white border border-[#4A43EC]/20"
+                                >
+                                    <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Add Amenity</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {(selectedUnit.amenities || ['']).map((amenity, amenityIndex) => (
+                                <View key={`${selectedUnit.propertyNumber}-amenity-${amenityIndex}`} className="flex-row items-center gap-2">
+                                    <View className="flex-1 bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                        <TextInput
+                                            className="text-xs text-gray-800 font-lato-medium"
+                                            placeholder="Add amenity"
+                                            value={amenity}
+                                            onChangeText={(value) => handleUpdateRangeAmenity(selectedIndex, amenityIndex, value)}
+                                            style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                        />
+                                    </View>
+                                    {(selectedUnit.amenities || ['']).length > 1 && (
+                                        <TouchableOpacity
+                                            onPress={() => handleRemoveRangeAmenity(selectedIndex, amenityIndex)}
+                                            className="w-10 h-11 rounded-xl bg-red-50 border border-red-100 items-center justify-center"
+                                        >
+                                            <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            ))}
+                        </View>
+
+                        <View className="flex-row gap-4">
+                            <View className="flex-1">
+                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Area ({activeType.subType === 'plot' ? 'sqyd' : 'sqft'})</Text>
+                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                    <TextInput
+                                        className="text-xs text-gray-800 font-lato-medium"
+                                        placeholder={activeType.subType === 'plot' ? 'eg. 150' : 'eg. 1150'}
+                                        placeholderTextColor="#9CA3AF"
+                                        keyboardType="numeric"
+                                        value={selectedUnit.area}
+                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'area', value)}
+                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                    />
+                                </View>
+                            </View>
+                            <View className="flex-1">
+                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Selling Price (₹)</Text>
+                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
+                                    <TextInput
+                                        className="text-xs text-gray-800 font-lato-medium"
+                                        placeholder="eg. 6500000"
+                                        placeholderTextColor="#9CA3AF"
+                                        keyboardType="numeric"
+                                        value={selectedUnit.price}
+                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'price', value)}
+                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                    />
+                                </View>
+                            </View>
+                        </View>
+                    </View>
+                )}
             </View>
         );
     }
@@ -2127,7 +2506,10 @@ function Step4() {
                     label: `${unit.propertyNumber || 'N/A'} - ${unit.gridKey || `Unit ${idx + 1}`} (${type.subType.toUpperCase()})`,
                     subType: type.subType,
                     mainType: type.mainType,
-                    bhk: unit.bhk || unit.officeType || 'Standard'
+                    bhk: unit.bhk || unit.officeType || 'Standard',
+                    price: unit.price || '',
+                    images: unit.images || [],
+                    area: unit.area || '',
                 });
             });
         });
@@ -2144,10 +2526,11 @@ function Step4() {
     }, [allUnits, step4.currentSelectedUnitId]);
 
     const currentUnitId = step4.currentSelectedUnitId;
+    const currentSelectedUnit = allUnits.find(unit => unit.id === currentUnitId);
     const currentData = step4.unitData[currentUnitId] || {
-        images: [],
+        images: currentSelectedUnit?.images || [],
         documents: [],
-        sellingPrice: '',
+        sellingPrice: currentSelectedUnit?.price || '',
         priceNegotiable: false,
         taxExclude: false,
         paymentMode: 'full',
