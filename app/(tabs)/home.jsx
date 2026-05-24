@@ -232,6 +232,235 @@ export default function Home() {
         }
     };
 
+    const renderApartmentInventory = () => {
+        if (!selectedTowerData?.sections?.length) return null;
+
+        return (
+            <View>
+                <View className="mb-5 rounded-2xl bg-[#E8EDF6] p-1 flex-row">
+                    {selectedInventory.towers.map((tower) => {
+                        const isActiveTower = selectedTowerData?.key === tower.key;
+
+                        return (
+                            <TouchableOpacity
+                                key={tower.key}
+                                onPress={() => setSelectedTower(tower.key)}
+                                className={`flex-1 items-center rounded-[16px] py-3 ${isActiveTower ? "bg-white" : "bg-transparent"}`}
+                                style={{
+                                    shadowColor: isActiveTower ? "#000" : "transparent",
+                                    shadowOpacity: isActiveTower ? 0.06 : 0,
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowRadius: 6,
+                                    elevation: isActiveTower ? 2 : 0,
+                                }}
+                            >
+                                <Text className={`text-[15px] font-lato-bold ${isActiveTower ? "text-[#4A43EC]" : "text-[#718096]"}`}>
+                                    {tower.label}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+
+                {selectedTowerData.sections.map((section, sectionIndex) => {
+                    if (!section.units?.length) return null;
+
+                    return (
+                        <View key={section.rowLabel || sectionIndex} className="mb-2.5">
+                            <View className="flex-row items-center justify-between mb-3 mx-1">
+                                <Text className="text-gray-400 text-[10px] font-lato-bold uppercase tracking-[2px]">Floor</Text>
+                                <Text className="text-[#1A1A1A] text-[10px] font-lato-bold uppercase tracking-[2px]">{section.rowLabel}</Text>
+                            </View>
+
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 4 }}>
+                                <View className="flex-row">
+                                    {section.units.map((unit, unitIndex) => {
+                                        const unitTarget = {
+                                            inventoryType: "apartment",
+                                            towerKey: selectedTowerData?.key,
+                                            sectionIndex,
+                                            unitIndex,
+                                        };
+                                        const canBlock = unit.ctaLabel === "BLOCK" && unit.status !== "Blocked";
+
+                                        return (
+                                            <TouchableOpacity
+                                                key={unit.id}
+                                                onPress={() => openInventoryDetail(unit, { towerLabel: selectedTowerData?.label, sectionLabel: section.rowLabel, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label })}
+                                                activeOpacity={0.9}
+                                                className={`w-[210px] h-[82px] rounded-2xl border px-3.5 py-3 justify-between mr-2.5 ${unit.dimmed ? "bg-white border-[#D7D9EA]" : "bg-[#F6F5FD] border-[#D7D9EA]"}`}
+                                            >
+                                                <View className="flex-row items-start justify-between">
+                                                    <View>
+                                                        <Text className={`text-[14px] font-lato-bold ${unit.dimmed ? "text-[#6B7280]" : "text-[#5C2EF7]"}`}>
+                                                            {unit.id}
+                                                        </Text>
+                                                        <Text className={`mt-0.5 text-[10px] font-lato ${unit.dimmed ? "text-[#8A92A6]" : "text-[#6B5FD9]"}`} numberOfLines={1}>
+                                                            {unit.title}
+                                                        </Text>
+                                                    </View>
+                                                    {unit.actionIcon ? (
+                                                        <TouchableOpacity
+                                                            activeOpacity={0.85}
+                                                            onPress={() => openInventoryEdit(unit, unitTarget)}
+                                                            className="w-5 h-5 rounded-full items-center justify-center bg-white"
+                                                        >
+                                                            <Feather name={unit.actionIcon === "edit" ? "edit-3" : unit.actionIcon === "eye" ? "eye" : "lock"} size={12} color="#5C2EF7" />
+                                                        </TouchableOpacity>
+                                                    ) : null}
+                                                </View>
+
+                                                <View className="flex-row items-center justify-between mt-2.5">
+                                                    <Text className={`text-[15px] font-lato-bold ${unit.dimmed ? "text-[#A3AEC1]" : "text-[#2F55F0]"}`}>
+                                                        {unit.price || selectedProject.avgPrice}
+                                                    </Text>
+                                                    <TouchableOpacity
+                                                        activeOpacity={0.9}
+                                                        className={`px-2 py-0.5 rounded-full border ${getActionButtonStyle(unit.ctaVariant)}`}
+                                                        onPress={() => {
+                                                            if (canBlock) {
+                                                                blockInventoryUnit(unitTarget);
+                                                                return;
+                                                            }
+
+                                                            openInventoryDetail(unit, { towerLabel: selectedTowerData?.label, sectionLabel: section.rowLabel, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label });
+                                                        }}
+                                                    >
+                                                        <Text className={`text-[8px] font-lato-bold uppercase ${unit.ctaVariant === "primary" ? "text-white" : unit.ctaVariant === "disabled" ? "text-gray-400" : "text-[#64748B]"}`}>
+                                                            {unit.ctaLabel || "DETAILS"}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            </ScrollView>
+                        </View>
+                    );
+                })}
+            </View>
+        );
+    };
+
+    const renderPlotInventory = () => {
+        const simpleUnits = selectedInventory.stacks
+            ?.flatMap((stack) => stack.levels?.flatMap((level) => (level.cards || []).map((card) => ({
+                key: card.unit,
+                unit: card.unit,
+                label: card.meta || stack.label,
+                price: card.price,
+                status: card.status,
+                active: card.active,
+                icon: card.icon,
+                context: { stackLabel: stack.label, sectionLabel: `Level ${level.level}`, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label },
+                raw: card,
+            })))
+            ) || [];
+
+        if (!simpleUnits.length) return null;
+
+        return (
+            <View>
+                <View className="flex-row flex-wrap gap-3">
+                    {simpleUnits.map((item, index) => {
+                        const isActive = selectedPlotUnit === item.unit || item.active;
+
+                        return (
+                            <TouchableOpacity
+                                key={item.key || index}
+                                onPress={() => {
+                                    setSelectedPlotUnit(item.unit);
+                                    openInventoryDetail(item.raw, item.context);
+                                }}
+                                activeOpacity={0.9}
+                                className={`w-[31%] min-h-20 rounded-2xl border bg-white px-3 py-3 items-center justify-center ${isActive ? "border-[#4A43EC] bg-[#F4F7FF]" : "border-gray-200"}`}
+                            >
+                                <Text className="text-sm font-lato-bold text-[#4A43EC]" numberOfLines={1}>
+                                    {item.unit || `Unit ${index + 1}`}
+                                </Text>
+                                <Text className="text-[10px] text-gray-500 font-lato mt-1" numberOfLines={1}>
+                                    Simple Box
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            </View>
+        );
+    };
+
+    const renderSimpleBoxInventory = () => {
+        const simpleUnits = inventoryType === "plot"
+            ? (selectedInventory.stacks || []).flatMap((stack) => (stack.levels || []).flatMap((level) => (level.cards || []).map((card, cardIndex) => ({
+                key: card.unit || `${stack.key}-${level.level}-${cardIndex}`,
+                unit: card.unit,
+                label: card.meta || stack.label,
+                price: card.price || selectedProject.avgPrice,
+                status: card.status,
+                active: card.active,
+                context: { stackLabel: stack.label, sectionLabel: `Level ${level.level}`, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label },
+                raw: card,
+            }))))
+            : (selectedInventory.sections || []).flatMap((section) => (section.units || []).map((unit, unitIndex) => ({
+                key: unit.id || `${section.rowLabel}-${unitIndex}`,
+                unit: unit.id,
+                label: unit.title || section.rowLabel,
+                price: unit.price || selectedProject.avgPrice,
+                status: unit.status,
+                active: unit.status === "Available",
+                context: { towerLabel: selectedTowerData?.label, sectionLabel: section.rowLabel, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label },
+                raw: unit,
+            })));
+
+        if (!simpleUnits.length) return null;
+
+        return (
+            <View>
+                <View className="flex-row flex-wrap gap-3">
+                    {simpleUnits.map((item, index) => {
+                        const isActive = item.active;
+                        const statusTone = item.status === "Available"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : item.status === "Booked"
+                                ? "bg-amber-100 text-amber-700"
+                                : item.status === "Tokened"
+                                    ? "bg-slate-100 text-slate-600"
+                                    : item.status === "Sold"
+                                        ? "bg-rose-100 text-rose-600"
+                                        : item.status === "Reserved"
+                                            ? "bg-violet-100 text-violet-700"
+                                            : "bg-gray-100 text-gray-500";
+
+                        return (
+                            <TouchableOpacity
+                                key={item.key || index}
+                                onPress={() => openInventoryDetail(item.raw, item.context)}
+                                activeOpacity={0.9}
+                                className={`w-[31%] min-h-20 rounded-2xl border bg-white px-3 py-3 items-center justify-center ${isActive ? "border-[#4A43EC] bg-[#F4F7FF]" : "border-gray-200"}`}
+                            >
+                                <Text className="text-sm font-lato-bold text-[#4A43EC]" numberOfLines={1}>
+                                    {item.unit || item.label || `Unit ${index + 1}`}
+                                </Text>
+                                <Text className="mt-1 text-[10px] text-gray-500 font-lato text-center" numberOfLines={2}>
+                                    {item.label || item.context.sectionLabel}
+                                </Text>
+                                <Text className="mt-1 text-[11px] font-lato-bold text-[#1A1A1A]" numberOfLines={1}>
+                                    {item.price || "-"}
+                                </Text>
+                                <View className={`mt-1 px-2 py-0.5 rounded-full ${statusTone}`}>
+                                    <Text className="text-[8px] font-lato-bold uppercase" numberOfLines={1}>
+                                        {item.status || "Available"}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+            </View>
+        );
+    };
+
     const openInventoryDetail = (unit, context = {}) => {
         const sectionLabel = context.sectionLabel || context.towerLabel || context.stackLabel || selectedProject.title;
         const unitLabel = unit.id || unit.unit || unit.title || "Property";
@@ -596,132 +825,7 @@ export default function Home() {
                             ))}
                         </ScrollView>
 
-                        {inventoryType === "apartment" && selectedInventory.towers?.length ? (
-                            <View className="mb-5 rounded-2xl bg-[#E8EDF6] p-1 flex-row">
-                                {selectedInventory.towers.map((tower) => {
-                                    const isActiveTower = selectedTowerData?.key === tower.key;
-
-                                    return (
-                                        <TouchableOpacity
-                                            key={tower.key}
-                                            onPress={() => setSelectedTower(tower.key)}
-                                            className={`flex-1 items-center rounded-[16px] py-3 ${isActiveTower ? "bg-white" : "bg-transparent"}`}
-                                            style={{
-                                                shadowColor: isActiveTower ? "#000" : "transparent",
-                                                shadowOpacity: isActiveTower ? 0.06 : 0,
-                                                shadowOffset: { width: 0, height: 2 },
-                                                shadowRadius: 6,
-                                                elevation: isActiveTower ? 2 : 0,
-                                            }}
-                                        >
-                                            <Text className={`text-[15px] font-lato-bold ${isActiveTower ? "text-[#4A43EC]" : "text-[#718096]"}`}>
-                                                {tower.label}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </View>
-                        ) : null}
-
-                        {inventoryType === "plot" && selectedPlotData ? (
-                            <View>
-                                <View className="flex-row items-center justify-between mb-3 mx-1">
-                                    <Text className="text-gray-400 text-[10px] font-lato-bold uppercase tracking-[2px] mx-4">Floor</Text>
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                        {selectedInventory.stacks.map((stack) => {
-                                            const isActiveStack = selectedPlotData.key === stack.key;
-
-                                            return (
-                                                <TouchableOpacity
-                                                    key={stack.key}
-                                                    onPress={() => setSelectedPlotStack(stack.key)}
-                                                    className={`min-w-[112px] px-3.5 py-1.5 rounded-xl mr-2.5 items-center ${isActiveStack ? "bg-[#E8E7FA]" : "bg-[#E8EDF6]"}`}
-                                                    style={{
-                                                        shadowColor: isActiveStack ? "#000" : "transparent",
-                                                        shadowOpacity: isActiveStack ? 0.05 : 0,
-                                                        shadowOffset: { width: 0, height: 2 },
-                                                        shadowRadius: 4,
-                                                        elevation: isActiveStack ? 1 : 0,
-                                                    }}
-                                                >
-                                                    <Text className={`text-[12px] font-lato-bold ${isActiveStack ? "text-[#2F2BEA]" : "text-[#718096]"}`}>
-                                                        {stack.label}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            );
-                                        })}
-                                    </ScrollView>
-                                </View>
-
-                                {selectedPlotData.levels.map((level) => {
-                                    if (!level.cards || level.cards.length === 0) return null;
-
-                                    return (
-                                    <View key={level.level} className="flex-row mb-2.5">
-                                        <View className="w-[82px] h-[82px] rounded-2xl bg-[#E8E8F5] border border-[#CFCFE7] items-center justify-center mr-2.5">
-                                            <Text className="text-[#7E8096] text-[9px] font-lato-bold uppercase">Level</Text>
-                                            <Text className="text-[#1F2330] text-[20px] font-lato-bold leading-6">{level.level}</Text>
-                                        </View>
-
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 4 }}>
-                                            <View className="flex-row">
-                                                {level.cards.map((card, cardIndex) => {
-                                                    if (!card.unit) {
-                                                        return (
-                                                            <View
-                                                                key={`empty-${level.level}-${cardIndex}`}
-                                                                className="w-[210px] h-[82px] rounded-2xl border border-[#E6E8F2] bg-[#FBFBFE] mr-2.5"
-                                                            />
-                                                        );
-                                                    }
-
-                                                    const isPlotSelected = selectedPlotUnit === card.unit;
-                                                    const isPlotActive = isPlotSelected || card.active;
-
-                                                    return (
-                                                        <TouchableOpacity
-                                                            key={card.unit}
-                                                            onPress={() => {
-                                                                setSelectedPlotUnit(card.unit);
-                                                                openInventoryDetail(card, { stackLabel: selectedPlotData.label, sectionLabel: `Level ${level.level}`, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label });
-                                                            }}
-                                                            activeOpacity={0.85}
-                                                            className={`w-[210px] h-[82px] rounded-2xl border px-3.5 py-3 justify-between mr-2.5 ${isPlotActive ? "bg-[#2F55F0] border-[#1847E6]" : card.disabled ? "bg-white border-[#D7D9EA]" : "bg-[#F6F5FD] border-[#D7D9EA]"}`}
-                                                        >
-                                                            <View className="flex-row items-start justify-between">
-                                                                <View>
-                                                                    <Text className={`text-[14px] font-lato-bold ${isPlotActive ? "text-white" : card.disabled ? "text-[#6B7280]" : "text-[#5C2EF7]"}`}>
-                                                                        {card.unit}
-                                                                    </Text>
-                                                                    <Text className={`mt-0.5 text-[10px] font-lato ${isPlotActive ? "text-white/90" : card.disabled ? "text-[#8A92A6]" : "text-[#6B5FD9]"}`}>
-                                                                        {card.meta}
-                                                                    </Text>
-                                                                </View>
-                                                                {card.icon ? (
-                                                                    <View className={`w-5 h-5 rounded-full items-center justify-center ${isPlotActive ? "bg-white/15" : "bg-white"}`}>
-                                                                        <Ionicons name={card.icon} size={12} color={isPlotActive ? "white" : "#5C2EF7"} />
-                                                                    </View>
-                                                                ) : null}
-                                                            </View>
-
-                                                            <View className="flex-row items-center justify-between mt-2.5">
-                                                                <Text className={`text-[15px] font-lato-bold ${isPlotActive ? "text-white" : card.disabled ? "text-[#A3AEC1]" : "text-[#2F55F0]"}`}>
-                                                                    {card.price}
-                                                                </Text>
-                                                                <View className={`px-2 py-0.5 rounded-full ${getPlotStatusStyle(card.status)}`}>
-                                                                    <Text className="text-[8px] font-lato-bold uppercase">{card.status}</Text>
-                                                                </View>
-                                                            </View>
-                                                        </TouchableOpacity>
-                                                    );
-                                                })}
-                                            </View>
-                                        </ScrollView>
-                                    </View>
-                                    );
-                                })}
-                            </View>
-                        ) : (selectedTowerData?.sections || selectedInventory.sections).length === 0 ? null : (selectedTowerData?.sections || selectedInventory.sections).map((section, idx) => {
+                        {inventoryType === "apartment" ? renderApartmentInventory() : (inventoryType === "plot" || inventoryType === "villa" || inventoryType === "rowhouse") ? renderSimpleBoxInventory() : (selectedTowerData?.sections || selectedInventory.sections).length === 0 ? null : (selectedTowerData?.sections || selectedInventory.sections).map((section, idx) => {
                             if (section.units.length === 0) return null;
 
                             return (

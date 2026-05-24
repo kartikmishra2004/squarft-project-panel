@@ -168,9 +168,6 @@ export default function ProjectDetailModal({ visible, onClose, project, variant 
             handleIndicatorStyle={{ backgroundColor: "#CBD5E1" }}
         >
             <BottomSheetScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 18 }}>
-                <View className="items-center pt-2 pb-4">
-                    <View className="w-20 h-1.5 bg-gray-300 rounded-full" />
-                </View>
 
                 {sheetView === "property" ? (
                     <>
