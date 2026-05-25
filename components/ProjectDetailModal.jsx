@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Image, TouchableOpacity, Dimensions } from "react-native";
+import { View, Text, Image, TouchableOpacity, Dimensions, Modal as RNModal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -33,14 +33,80 @@ function AmenityItem({ label }) {
     );
 }
 
-export default function ProjectDetailModal({ visible, onClose, project, variant, showDealSummary = false, showFollowUps = false }) {
+const MILESTONE_ORDER = ["Token", "Booking Amount", "Agreement", "Registry"];
+
+const parseAmount = (value) => {
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const cleaned = String(value ?? "").replace(/[^\d.-]/g, "");
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatAmount = (value) => `₹${Math.round(value || 0).toLocaleString("en-IN")}`;
+
+const normalizeMilestone = (title, source, fallbackAmount, fallbackDetail) => {
+    const totalAmount = parseAmount(source?.totalAmount ?? source?.amount ?? fallbackAmount);
+    const collectedAmount = Math.min(
+        totalAmount,
+        parseAmount(source?.collectedAmount ?? source?.paidAmount ?? (source?.status === "Paid" ? source?.amount : 0))
+    );
+
+    return {
+        title,
+        totalAmount,
+        collectedAmount,
+        dueDetail: source?.dueDetail ?? source?.detail ?? fallbackDetail ?? "—",
+        receiptDetail: source?.receiptDetail ?? source?.detail ?? "—",
+    };
+};
+
+const buildPaymentPlan = (variant) => {
+    const schedule = variant?.paymentSchedule || [];
+    const scheduleMap = new Map(schedule.map((item) => [String(item?.title ?? "").toLowerCase(), item]));
+
+    return MILESTONE_ORDER.map((title, index) => {
+        const fallbackAmount = [variant?.tokenAmount, variant?.bookingAmount, variant?.agreementAmount, variant?.registryAmount][index];
+        const fallbackDetail = [variant?.bookingDate, variant?.bookingAmountDate, variant?.nextDue, variant?.registryDate || variant?.registryDue][index];
+        return normalizeMilestone(title, scheduleMap.get(title.toLowerCase()), fallbackAmount, fallbackDetail);
+    });
+};
+
+const derivePaymentSummary = (paymentPlan, variant) => {
+    const totalAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.totalAmount, 0) || parseAmount(variant?.dealValue);
+    const collectedAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.collectedAmount, 0);
+    const pendingAmount = Math.max(totalAmount - collectedAmount, 0);
+    const nextDueMilestone = paymentPlan.find((milestone) => milestone.collectedAmount < milestone.totalAmount);
+    const progress = totalAmount > 0 ? Math.min(100, Math.round((collectedAmount / totalAmount) * 100)) : 0;
+    const allPaid = pendingAmount === 0 && totalAmount > 0;
+
+    return {
+        totalAmount,
+        collectedAmount,
+        pendingAmount,
+        nextDueLabel: allPaid ? "Paid" : nextDueMilestone?.title || "Upcoming",
+        progress,
+        allPaid,
+    };
+};
+
+export default function ProjectDetailModal({ visible, onClose, project, variant, onVariantUpdate, showDealSummary = false, showFollowUps = false }) {
     const sheetRef = useRef(null);
     const [sheetView, setSheetView] = useState("property");
+    const [paymentPlan, setPaymentPlan] = useState(() => buildPaymentPlan(variant));
+    const [collectModalVisible, setCollectModalVisible] = useState(false);
+    const [activeMilestoneIndex, setActiveMilestoneIndex] = useState(null);
+    const [collectAmount, setCollectAmount] = useState("");
+    const [collectError, setCollectError] = useState("");
     const snapPoints = useMemo(() => ["88%"], []);
 
     useEffect(() => {
         if (visible) {
             setSheetView("property");
+            setPaymentPlan(buildPaymentPlan(variant));
+            setCollectModalVisible(false);
+            setActiveMilestoneIndex(null);
+            setCollectAmount("");
+            setCollectError("");
             sheetRef.current?.present();
             return;
         }
@@ -52,21 +118,89 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
 
     const goToSchedule = () => setSheetView("schedule");
     const goToProperty = () => setSheetView("property");
+    const paymentSummaryState = derivePaymentSummary(paymentPlan, variant);
+
+    const openCollectForm = (milestoneIndex) => {
+        const milestone = paymentPlan[milestoneIndex];
+        if (!milestone || milestone.collectedAmount >= milestone.totalAmount) return;
+        setActiveMilestoneIndex(milestoneIndex);
+        setCollectAmount(String(Math.max(1, Math.round(milestone.totalAmount - milestone.collectedAmount))));
+        setCollectError("");
+        setCollectModalVisible(true);
+    };
+
+    const closeCollectForm = () => {
+        setCollectModalVisible(false);
+        setActiveMilestoneIndex(null);
+        setCollectAmount("");
+        setCollectError("");
+    };
+
+    const handleSaveCollection = () => {
+        const amount = parseAmount(collectAmount);
+        const milestoneIndex = activeMilestoneIndex;
+
+        if (milestoneIndex === null || !paymentPlan[milestoneIndex]) return;
+        if (!Number.isFinite(amount) || amount <= 0) {
+            setCollectError("Enter a valid amount");
+            return;
+        }
+
+        const nextPlan = paymentPlan.map((milestone, index) => {
+            if (index !== milestoneIndex) return milestone;
+            return {
+                ...milestone,
+                collectedAmount: Math.min(milestone.totalAmount, milestone.collectedAmount + amount),
+            };
+        });
+
+        setPaymentPlan(nextPlan);
+
+        const summary = derivePaymentSummary(nextPlan, variant);
+        if (typeof onVariantUpdate === "function") {
+            onVariantUpdate({
+                ...variant,
+                paymentSchedule: nextPlan.map((milestone) => ({
+                    title: milestone.title,
+                    amount: formatAmount(milestone.totalAmount),
+                    totalAmount: milestone.totalAmount,
+                    collectedAmount: milestone.collectedAmount,
+                    status: milestone.collectedAmount >= milestone.totalAmount ? "Paid" : "Upcoming",
+                    tone: milestone.collectedAmount >= milestone.totalAmount ? "success" : "warning",
+                    detail: milestone.collectedAmount >= milestone.totalAmount
+                        ? `Collected: ${formatAmount(milestone.collectedAmount)}`
+                        : `Due: ${milestone.dueDetail}`,
+                })),
+                dealValue: formatAmount(summary.totalAmount),
+                received: formatAmount(summary.collectedAmount),
+                pending: formatAmount(summary.pendingAmount),
+                nextDue: summary.nextDueLabel,
+                progress: summary.progress,
+                topStatus: summary.allPaid ? "Paid" : "Upcoming",
+                footerStatus: summary.allPaid ? "Paid" : "Upcoming",
+                footerTotal: `${formatAmount(summary.totalAmount)} Total`,
+                footerDue: summary.allPaid ? "All Paid" : `Next Due: ${summary.nextDueLabel}`,
+                dealStatus: summary.allPaid ? "Paid" : "Upcoming",
+            });
+        }
+
+        closeCollectForm();
+    };
 
     const title = variant.type || variant.propertyType || variant.title || "Property";
-    const priceLabel = variant.priceRange || variant.footerTotal || project.avgPrice || "Contact for price";
+    const priceLabel = formatAmount(paymentSummaryState.totalAmount) || variant.priceRange || variant.footerTotal || project.avgPrice || "Contact for price";
     const possession = variant.possession || project.possession || "—";
     const avgPrice = variant.avgPricePerSqft || project.avgPrice || "—";
     const area = variant.area || project.area || "—";
     const bookedBy = variant.bookedBy || variant.contactName || variant.contactLine?.split("•")?.[0]?.trim() || "—";
     const mobile = variant.mobile || variant.contactLine?.split("•")?.[1]?.trim() || "—";
     const bookingDate = variant.bookingDate || variant.date || "—";
-    const tokenAmount = variant.tokenAmount || variant.amount || "—";
-    const dealValue = variant.dealValue || variant.footerTotal || priceLabel;
-    const received = variant.received || variant.receivedAmount || "—";
-    const pending = variant.pending || variant.pendingAmount || "—";
-    const nextDue = variant.nextDue || variant.footerDue || "—";
-    const dealStatus = variant.dealStatus || variant.topStatus || variant.footerStatus || "Agreement Pending";
+    const tokenAmount = formatAmount(paymentPlan[0]?.totalAmount || parseAmount(variant.tokenAmount || variant.amount));
+    const dealValue = formatAmount(paymentSummaryState.totalAmount);
+    const received = formatAmount(paymentSummaryState.collectedAmount);
+    const pending = formatAmount(paymentSummaryState.pendingAmount);
+    const nextDue = paymentSummaryState.nextDueLabel;
+    const dealStatus = paymentSummaryState.allPaid ? "Paid" : "Upcoming";
     const totalImages = variant.totalImages || project.totalImages || 1;
     const heroImage = project.imageMain || projectFallbackImage;
     const heroThumb = variant.image || project.imageThumb || heroImage;
@@ -79,8 +213,8 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const stats = [
         { label: "AREA", value: area },
         { label: "POSSESSION", value: possession },
-        { label: "STATUS", value: variant.topStatus || variant.footerStatus || "Active" },
-        { label: "PROGRESS", value: `${variant.progress ?? 0}%` },
+        { label: "STATUS", value: dealStatus },
+        { label: "PROGRESS", value: `${paymentSummaryState.progress}%` },
     ];
 
     const dealSummaryRows = [
@@ -96,45 +230,26 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
 
     const paymentSummary = [
         { label: "Total Value", value: dealValue, tone: "#5B5CE2", bg: "#EAEBFF" },
-        { label: "Received", value: received, tone: "#059669", bg: "#E6FBF3" },
-        { label: "Pending", value: pending, tone: "#D97706", bg: "#FFF1E6" },
-        { label: "Next Due", value: nextDue, tone: "#D97706", bg: "#FFF4DB" },
+        { label: "Collected", value: received, tone: "#059669", bg: "#E6FBF3" },
+        { label: "Remaining", value: pending, tone: "#D97706", bg: "#FFF1E6" },
+        { label: "Next Due", value: nextDue, tone: paymentSummaryState.allPaid ? "#059669" : "#D97706", bg: paymentSummaryState.allPaid ? "#E6FBF3" : "#FFF4DB" },
     ];
 
-    const paymentMilestones = variant.paymentSchedule?.length
-        ? variant.paymentSchedule
-        : [
-            {
-                title: "Token",
-                amount: tokenAmount,
-                detail: `${bookingDate} • Received by SquarFT`,
-                status: "Paid",
-                tone: "success",
-                actionLabel: "View Receipt",
-            },
-            {
-                title: "Booking Amount",
-                amount: variant.bookingAmount || "₹10,00,000",
-                detail: variant.bookingAmountDate || "30 May 2026",
-                status: "Paid",
-                tone: "success",
-                actionLabel: "View Receipt",
-            },
-            {
-                title: "Agreement",
-                amount: variant.agreementAmount || pending,
-                detail: `Due: ${nextDue}`,
-                status: "Upcoming",
-                tone: "warning",
-            },
-            {
-                title: "Registry",
-                amount: variant.registryAmount || pending,
-                detail: variant.registryDate || `Due: ${variant.registryDue || "—"}`,
-                status: "Pending",
-                tone: "danger",
-            },
-        ];
+    const paymentMilestones = paymentPlan.map((milestone) => {
+        const remainingAmount = Math.max(milestone.totalAmount - milestone.collectedAmount, 0);
+        const status = remainingAmount === 0 ? "Paid" : "Upcoming";
+
+        return {
+            ...milestone,
+            remainingAmount,
+            status,
+            tone: status === "Paid" ? "success" : "warning",
+            amount: formatAmount(milestone.totalAmount),
+            detail: status === "Paid"
+                ? `Collected: ${formatAmount(milestone.collectedAmount)}`
+                : `Due: ${milestone.dueDetail}`,
+        };
+    });
 
     const followUps = variant.followUps?.length
         ? variant.followUps
@@ -152,11 +267,6 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
             container: "border-[#F3D08A] bg-[#FFF7E9]",
             status: "text-[#D58A00]",
             amount: "text-[#D58A00]",
-        },
-        danger: {
-            container: "border-[#F1C0B7] bg-[#FFF3F1]",
-            status: "text-[#D45A3F]",
-            amount: "text-[#D45A3F]",
         },
     };
 
@@ -394,11 +504,21 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                             <Text className={`text-[13px] font-lato-bold ${tone.amount}`}>{milestone.amount}</Text>
                                             <Text className="mt-0.5 text-[9px] font-lato text-[#52607A]">{milestone.detail}</Text>
 
-                                            {milestone.actionLabel ? (
-                                                <TouchableOpacity activeOpacity={0.85} className="mt-1.5 self-start">
-                                                    <Text className="text-[9px] font-lato-bold text-[#4A43EC]">{milestone.actionLabel}</Text>
+                                            {milestone.remainingAmount > 0 ? (
+                                                <TouchableOpacity
+                                                    activeOpacity={0.9}
+                                                    onPress={() => openCollectForm(index)}
+                                                    className="mt-2 self-start flex-row items-center gap-1.5 rounded-full bg-[#4A43EC] px-3 py-1.5"
+                                                >
+                                                    <MaterialCommunityIcons name="cash-plus" size={12} color="#fff" />
+                                                    <Text className="text-[10px] font-lato-bold text-white">Collect</Text>
                                                 </TouchableOpacity>
-                                            ) : null}
+                                            ) : (
+                                                <View className="mt-2 self-start flex-row items-center gap-1.5 rounded-full bg-[#E6FBF3] px-3 py-1.5">
+                                                    <MaterialCommunityIcons name="check-circle-outline" size={12} color="#10B981" />
+                                                    <Text className="text-[10px] font-lato-bold text-[#10B981]">Paid</Text>
+                                                </View>
+                                            )}
 
                                             {!isLast ? <View className="mt-1.5 h-px bg-[#DDE6DD]" /> : null}
                                         </View>
@@ -431,6 +551,55 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                     )}
                 </View>
             </BottomSheetScrollView>
+
+            <RNModal transparent visible={collectModalVisible} animationType="fade" onRequestClose={closeCollectForm}>
+                <KeyboardAvoidingView
+                    className="flex-1"
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                >
+                    <View className="flex-1 bg-black/45 justify-end px-5 pb-6">
+                        <TouchableOpacity activeOpacity={1} className="absolute inset-0" onPress={closeCollectForm} />
+                        <View className="bg-white rounded-[24px] p-4">
+                            <Text className="text-[16px] font-lato-bold text-[#1F2937]">Collect Payment</Text>
+                            <Text className="mt-1 text-[11px] font-lato text-[#6B7280]">
+                                Enter the amount to collect for {paymentMilestones[activeMilestoneIndex]?.title || "this milestone"}.
+                            </Text>
+
+                            <View className="mt-4">
+                                <Text className="text-[10px] font-lato-bold text-[#6B7280] uppercase mb-1">Amount</Text>
+                                <TextInput
+                                    value={collectAmount}
+                                    onChangeText={(value) => {
+                                        setCollectAmount(value);
+                                        setCollectError("");
+                                    }}
+                                    keyboardType="numeric"
+                                    placeholder="Enter amount"
+                                    placeholderTextColor="#94A3B8"
+                                    className="h-12 rounded-2xl border border-gray-200 px-4 text-[14px] font-lato text-[#111827] bg-white"
+                                    returnKeyType="done"
+                                />
+                                {collectError ? <Text className="mt-1 text-[11px] text-red-500">{collectError}</Text> : null}
+                            </View>
+
+                            <View className="mt-4 flex-row gap-3">
+                                <TouchableOpacity
+                                    onPress={closeCollectForm}
+                                    className="flex-1 h-12 rounded-2xl items-center justify-center border border-gray-200"
+                                >
+                                    <Text className="text-[13px] font-lato-bold text-[#374151]">Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    onPress={handleSaveCollection}
+                                    className="flex-1 h-12 rounded-2xl items-center justify-center bg-[#4A43EC]"
+                                >
+                                    <Text className="text-[13px] font-lato-bold text-white">Save</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </RNModal>
         </BottomSheetModal>
     );
 }

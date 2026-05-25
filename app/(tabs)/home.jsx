@@ -534,6 +534,28 @@ export default function Home() {
         setIsProjectDetailVisible(true);
     };
 
+    const handleDealVariantUpdate = (updatedDeal) => {
+        setSelectedDeal(updatedDeal);
+
+        setProjectsData((currentProjects) => currentProjects.map((project) => {
+            if (project.id !== selectedProjectId || !Array.isArray(project.deals)) {
+                return project;
+            }
+
+            return {
+                ...project,
+                deals: project.deals.map((deal) => {
+                    const sameDeal =
+                        deal.title === updatedDeal?.title &&
+                        deal.bookedBy === updatedDeal?.bookedBy &&
+                        deal.mobile === updatedDeal?.mobile;
+
+                    return sameDeal ? { ...deal, ...updatedDeal } : deal;
+                }),
+            };
+        }));
+    };
+
     const projectOptions = projectsData;
     const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
     const dealsData = selectedProject.deals || [];
@@ -1022,6 +1044,7 @@ export default function Home() {
                 }}
                 project={selectedProject}
                 variant={selectedDeal}
+                onVariantUpdate={handleDealVariantUpdate}
                 showDealSummary={selectedDeal?.showDealSummary ?? true}
                 showFollowUps={selectedDeal?.showFollowUps ?? false}
             />
