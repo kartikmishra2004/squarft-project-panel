@@ -51,7 +51,7 @@ export const mockData = {
                 },
                 followUps: [
                     { initials: "RS", type: "Site Visit", time: "Today 4:30 PM", name: "Rahul Sharma", project: "Serenity Reserve • 3 BHK", salesperson: "Sales Officer: Amit Verma", tone: "indigo", action: "Update" },
-                    { initials: "PK", type: "Payment Disc.", time: "Tomorrow 11 AM", name: "Priya Kulkarni", project: "Serenity Reserve • 4 BHK", salesperson: "Sales Officer: Riya Joshi", tone: "orange", action: "Update" }
+                    { initials: "PK", type: "Meeting", time: "Tomorrow 11 AM", name: "Priya Kulkarni", project: "Serenity Reserve • 4 BHK", salesperson: "Sales Officer: Riya Joshi", tone: "orange", action: "Update" }
                 ]
             },
             deals: [
@@ -331,9 +331,9 @@ export const mockData = {
                                 {
                                     level: 11,
                                     cards: [
-                                        { unit: "A-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" },
-                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "In Process", status: "In Process", active: false, icon: "hourglass-outline" },
-                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" }
+                                        { unit: "A-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Tokened", active: false, icon: "lock-closed" },
+                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Booked", active: false, icon: "hourglass-outline" },
+                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Tokened", active: false, icon: "lock-closed" }
                                     ]
                                 },
                                 {
@@ -357,8 +357,8 @@ export const mockData = {
                                 {
                                     level: 11,
                                     cards: [
-                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "In Process", status: "In Process", active: false, icon: "hourglass-outline" },
-                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" },
+                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Booked", active: false, icon: "hourglass-outline" },
+                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Tokened", active: false, icon: "lock-closed" },
                                         { unit: "D-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Available", active: false, icon: "checkmark-circle" }
                                     ]
                                 },
@@ -383,9 +383,9 @@ export const mockData = {
                                 {
                                     level: 11,
                                     cards: [
-                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" },
-                                        { unit: "D-1101", meta: "3 BHK • 1450 sq.ft.", price: "In Process", status: "In Process", active: false, icon: "hourglass-outline" },
-                                        { unit: "E-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" }
+                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Tokened", active: false, icon: "lock-closed" },
+                                        { unit: "D-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Booked", active: false, icon: "hourglass-outline" },
+                                        { unit: "E-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Tokened", active: false, icon: "lock-closed" }
                                     ]
                                 },
                                 {
@@ -452,7 +452,7 @@ export const mockData = {
                     ]
                 },
                 followUps: [
-                    { initials: "AS", type: "Site Visit", time: "Today 2:00 PM", name: "Amit Sharma", project: "Royal Palms • 2 BHK", salesperson: "Sales Officer: Neha Rao", tone: "indigo", action: "Update" }
+                    { initials: "AS", type: "Meeting", time: "Today 2:00 PM", name: "Amit Sharma", project: "Royal Palms • 2 BHK", salesperson: "Sales Officer: Neha Rao", tone: "indigo", action: "Update" }
                 ]
             },
             deals: [
@@ -551,7 +551,7 @@ export const mockData = {
                                     level: 12,
                                     cards: [
                                         { unit: "A-1201", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Available", active: true, icon: "checkmark-circle" },
-                                        { unit: "A-1202", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Reserved", active: false, icon: "lock-closed" }
+                                        { unit: "A-1202", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Tokened", active: false, icon: "lock-closed" }
                                     ]
                                 }
                             ]
