@@ -414,6 +414,24 @@ export const mockData = {
                         }
                     ]
                 }
+                ,showroom: {
+                    sections: [
+                        {
+                            rowLabel: "SECTION 1",
+                            units: [
+                                { id: "SR-01", status: "Available", title: "Showroom", price: "₹1.48 Cr", area: "1,200 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                { id: "SR-02", status: "Booked", title: "Showroom", price: "₹1.62 Cr", area: "1,340 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                            ]
+                        },
+                        {
+                            rowLabel: "SECTION 2",
+                            units: [
+                                { id: "SR-03", status: "Sold", title: "Showroom", price: "₹1.74 Cr", area: "1,420 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                { id: "SR-04", status: "Available", title: "Showroom", price: "₹1.55 Cr", area: "1,280 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" }
+                            ]
+                        }
+                    ]
+                }
             }
         },
         {
@@ -565,6 +583,17 @@ export const mockData = {
                             units: [
                                 { id: "S-01", status: "Available", title: "Retail Shop", area: "900 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
                                 { id: "S-02", status: "Booked", title: "Cafe Space", area: "760 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                            ]
+                        }
+                    ]
+                }
+                ,showroom: {
+                    sections: [
+                        {
+                            rowLabel: "SECTION 1",
+                            units: [
+                                { id: "SR-01", status: "Available", title: "Showroom", area: "950 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                { id: "SR-02", status: "Booked", title: "Showroom", area: "1,040 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
                             ]
                         }
                     ]

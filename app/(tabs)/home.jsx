@@ -36,7 +36,8 @@ export default function Home() {
         { key: "villa", label: "Villa" },
         { key: "rowhouse", label: "Rowhouse" },
         { key: "plot", label: "Plot" },
-        { key: "shop", label: "Shop" }
+        { key: "shop", label: "Shop" },
+        { key: "showroom", label: "Showroom" }
     ];
     const statusOptions = ["Available", "Booked", "Sold"];
     const insets = useSafeAreaInsets();
@@ -55,6 +56,24 @@ export default function Home() {
     };
 
     const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
+
+    const getInventoryDealTemplate = (inventoryTypeValue, unit) => {
+        const deals = selectedProject.deals || [];
+        const propertyLabel = (unit?.title || unit?.meta || inventoryTypeValue || "").toLowerCase();
+
+        const exactMatch = deals.find((deal) => (deal.propertyType || "").toLowerCase().includes(propertyLabel) || propertyLabel.includes((deal.propertyType || "").toLowerCase()));
+        if (exactMatch) return exactMatch;
+
+        const typeMatchMap = {
+            apartment: deals.find((deal) => (deal.propertyType || "").toLowerCase().includes("apartment")),
+            villa: deals.find((deal) => (deal.propertyType || "").toLowerCase().includes("villa")),
+            rowhouse: deals.find((deal) => (deal.propertyType || "").toLowerCase().includes("rowhouse")),
+            plot: deals.find((deal) => (deal.propertyType || "").toLowerCase().includes("plot")),
+            shop: deals.find((deal) => (deal.propertyType || "").toLowerCase().includes("shop") || (deal.propertyType || "").toLowerCase().includes("retail")),
+        };
+
+        return typeMatchMap[inventoryTypeValue] || deals[0] || null;
+    };
 
     const updateInventoryUnit = (target, updater) => {
         setProjectsData((currentProjects) => currentProjects.map((project) => {
@@ -92,7 +111,7 @@ export default function Home() {
                 };
             }
 
-            if (target.inventoryType === "villa" || target.inventoryType === "rowhouse" || target.inventoryType === "shop") {
+            if (target.inventoryType === "villa" || target.inventoryType === "rowhouse" || target.inventoryType === "shop" || target.inventoryType === "showroom") {
                 return {
                     ...project,
                     inventory: {
@@ -185,7 +204,7 @@ export default function Home() {
     };
 
     const getPropertyDetailText = (inventoryTypeValue, item) => {
-        if (inventoryTypeValue === "plot" || inventoryTypeValue === "shop") {
+        if (inventoryTypeValue === "plot" || inventoryTypeValue === "shop" || inventoryTypeValue === "showroom") {
             return item.area || item.label || "-";
         }
 
@@ -224,119 +243,85 @@ export default function Home() {
         }
     };
 
-    const renderPlotInventory = () => {
-        const simpleUnits = selectedInventory.stacks
-            ?.flatMap((stack) => stack.levels?.flatMap((level) => (level.cards || []).map((card) => ({
-                key: card.unit,
-                unit: card.unit,
-                label: card.meta || stack.label,
-                price: card.price,
-                status: card.status,
-                active: card.active,
-                icon: card.icon,
-                context: { stackLabel: stack.label, sectionLabel: `Level ${level.level}`, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label },
-                raw: card,
-            })))
-            ) || [];
+    const getRangeLabel = (index, section) => section?.name || section?.label || `Range ${String.fromCharCode(65 + index)}`;
 
-        if (!simpleUnits.length) return null;
-
-        return (
-            <View>
-                <View className="flex-row flex-wrap gap-3">
-                    {simpleUnits.map((item, index) => {
-                        const isActive = selectedPlotUnit === item.unit || item.active;
-
-                        return (
-                            <TouchableOpacity
-                                key={item.key || index}
-                                onPress={() => {
-                                    setSelectedPlotUnit(item.unit);
-                                    openInventoryDetail(item.raw, item.context);
-                                }}
-                                activeOpacity={0.9}
-                                className={`w-[31%] min-h-20 rounded-2xl border bg-white px-3 py-3 items-center justify-center ${isActive ? "border-[#4A43EC] bg-[#F4F7FF]" : "border-gray-200"}`}
-                            >
-                                <Text className="text-sm font-lato-bold text-[#4A43EC]" numberOfLines={1}>
-                                    {item.unit || `Unit ${index + 1}`}
-                                </Text>
-                                <Text className="text-[10px] text-gray-500 font-lato mt-1" numberOfLines={1}>
-                                    Simple Box
-                                </Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </View>
-            </View>
-        );
+    const getSectionLabel = (index, inventoryTypeValue) => {
+        if (inventoryTypeValue === "apartment") return `Floor ${index + 1}`;
+        if (inventoryTypeValue === "shop" || inventoryTypeValue === "showroom") return `Section ${index + 1}`;
+        return `Range ${String.fromCharCode(65 + index)}`;
     };
 
-    const renderInventoryBoxes = () => {
-        const inventoryItems = inventoryType === "apartment"
-            ? (selectedTowerData?.sections || []).flatMap((section, sectionIndex) =>
-                (section.units || []).map((unit, unitIndex) => ({
-                    key: unit.id || `${selectedTowerData?.key}-${section.rowLabel}-${unitIndex}`,
-                    raw: unit,
-                    context: { towerLabel: selectedTowerData?.label, sectionLabel: section.rowLabel, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label },
-                    unitNumber: unit.id,
-                    detail: getPropertyDetailText(inventoryType, unit),
-                    price: unit.price || selectedProject.avgPrice,
-                    status: unit.status || "Available",
-                    isDimmed: unit.dimmed,
-                    target: {
-                        inventoryType: "apartment",
-                        towerKey: selectedTowerData?.key,
-                        sectionIndex,
-                        unitIndex,
-                    },
-                }))
-            )
-            : inventoryType === "plot"
-                ? (selectedInventory.stacks || []).flatMap((stack) =>
-                    (stack.levels || []).flatMap((level, levelIndex) =>
-                        (level.cards || []).map((card, cardIndex) => ({
-                            key: card.unit || `${stack.key}-${level.level}-${cardIndex}`,
-                            raw: card,
-                            context: { stackLabel: stack.label, sectionLabel: `Level ${level.level}`, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label },
-                            unitNumber: card.unit,
-                            detail: getPropertyDetailText(inventoryType, card),
-                            price: card.price || selectedProject.avgPrice,
-                            status: card.status || "Available",
-                            isDimmed: card.active === false && card.status === "Sold",
-                            target: {
-                                inventoryType: "plot",
-                                stackKey: stack.key,
-                                levelIndex,
-                                cardIndex,
-                            },
-                        }))
-                    )
-                )
-                : (selectedInventory.sections || []).flatMap((section, sectionIndex) =>
-                    (section.units || []).map((unit, unitIndex) => ({
-                        key: unit.id || `${section.rowLabel}-${unitIndex}`,
-                        raw: unit,
-                        context: { towerLabel: selectedTowerData?.label, sectionLabel: section.rowLabel, inventoryLabel: inventoryTabs.find((tab) => tab.key === inventoryType)?.label },
-                        unitNumber: unit.id,
-                        detail: getPropertyDetailText(inventoryType, unit),
-                        price: unit.price || selectedProject.avgPrice,
-                        status: unit.status || "Available",
-                        isDimmed: unit.dimmed,
-                        target: {
-                            inventoryType,
-                            sectionIndex,
-                            unitIndex,
-                        },
-                    }))
+    const renderCardGrid = (items, gridKey) => (
+        <View className="flex-row flex-wrap justify-between">
+            {items.map((item, index) => {
+                const statusStyle = getBadgeStyle(item.status);
+
+                return (
+                    <TouchableOpacity
+                        key={item.key || `${gridKey}-${index}`}
+                        onPress={() => openInventoryDetail(item.raw, item.context)}
+                        activeOpacity={0.9}
+                        className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-2.5 overflow-hidden"
+                        style={{
+                            width: "47%",
+                            minHeight: 132,
+                            opacity: item.isDimmed ? 0.72 : 1,
+                            borderColor: "#E5E7EB",
+                            shadowColor: "#000",
+                            shadowOffset: { width: 0, height: 6 },
+                            shadowOpacity: 0.05,
+                            shadowRadius: 10,
+                            elevation: 2,
+                        }}
+                    >
+                        <View className="p-2 flex-1 justify-between">
+                            <View className="flex-row items-start justify-between mb-0">
+                                <View className="flex-1 pr-2">
+                                    <Text className="text-[#9AA3B2] text-[9px] font-lato-bold" numberOfLines={1}>
+                                        {item.unitNumber}
+                                    </Text>
+                                    <Text className="mt-0.5 text-[10px] font-lato text-[#7C8698]" numberOfLines={1}>
+                                        {item.detail}
+                                    </Text>
+                                </View>
+                                <View className={`px-1.5 py-0.5 rounded-full ${statusStyle}`}>
+                                    <Text className="text-[7px] font-lato-bold uppercase">{item.status}</Text>
+                                </View>
+                            </View>
+
+                            <View className="mb-0.5">
+                                <Text className="text-[13px] font-lato-bold text-[#1A1A1A]" numberOfLines={1}>
+                                    {item.raw.title || item.raw.meta || item.detail}
+                                </Text>
+                                <Text className="mt-0.5 text-[10px] font-lato-bold text-[#4A43EC]" numberOfLines={1}>
+                                    {item.price}
+                                </Text>
+                            </View>
+
+                            <View className="flex-row items-center justify-end">
+                                <TouchableOpacity
+                                    activeOpacity={0.9}
+                                    onPress={() => openInventoryEdit(item.raw, item.target)}
+                                    className="w-10 h-10 rounded-xl bg-gray-100 items-center justify-center"
+                                >
+                                    <Feather name="edit-3" size={16} color="#94A3B8" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
                 );
+            })}
+        </View>
+    );
 
-        if (!inventoryItems.length) return null;
+    const renderInventoryBoxes = () => {
+        const inventoryLabel = inventoryTabs.find((tab) => tab.key === inventoryType)?.label || "Inventory";
 
-        const showTowerPicker = inventoryType === "apartment" && selectedInventory.towers?.length;
+        if (inventoryType === "apartment") {
+            if (!selectedInventory.towers?.length) return null;
 
-        return (
-            <View>
-                {showTowerPicker ? (
+            return (
+                <View>
                     <View className="mb-5 rounded-2xl bg-[#E8EDF6] p-1 flex-row">
                         {selectedInventory.towers.map((tower) => {
                             const isActiveTower = selectedTowerData?.key === tower.key;
@@ -361,68 +346,130 @@ export default function Home() {
                             );
                         })}
                     </View>
-                ) : null}
 
-                <View className="flex-row flex-wrap justify-between">
-                    {inventoryItems.map((item, index) => {
-                        const statusStyle = getBadgeStyle(item.status);
+                    <View>
+                        {(selectedTowerData?.sections || []).map((section, sectionIndex) => {
+                            const sectionLabel = section.rowLabel || `Floor ${sectionIndex + 1}`;
+                            const sectionUnits = (section.units || []).map((unit, unitIndex) => ({
+                                key: unit.id || `${selectedTowerData?.key}-${sectionLabel}-${unitIndex}`,
+                                raw: unit,
+                                context: { towerLabel: selectedTowerData?.label, sectionLabel, inventoryLabel, inventoryType },
+                                unitNumber: unit.id,
+                                detail: getPropertyDetailText(inventoryType, unit),
+                                price: unit.price || selectedProject.avgPrice,
+                                status: unit.status || "Available",
+                                isDimmed: unit.dimmed,
+                                target: {
+                                    inventoryType: "apartment",
+                                    towerKey: selectedTowerData?.key,
+                                    sectionIndex,
+                                    unitIndex,
+                                },
+                            }));
 
-                        return (
-                            <TouchableOpacity
-                                key={item.key || index}
-                                onPress={() => openInventoryDetail(item.raw, item.context)}
-                                activeOpacity={0.9}
-                                className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-3.5 overflow-hidden"
-                                style={{
-                                    width: "47%",
-                                    minHeight: 148,
-                                    opacity: item.isDimmed ? 0.72 : 1,
-                                    borderColor: "#E5E7EB",
-                                    shadowColor: "#000",
-                                    shadowOffset: { width: 0, height: 6 },
-                                    shadowOpacity: 0.05,
-                                    shadowRadius: 10,
-                                    elevation: 2,
-                                }}
-                            >
-                                <View className="p-2 flex-1 justify-between">
-                                    <View className="flex-row items-start justify-between mb-1">
-                                        <View className="flex-1 pr-2">
-                                            <Text className="text-[#9AA3B2] text-[9px] font-lato-bold" numberOfLines={1}>
-                                                {item.unitNumber}
-                                            </Text>
-                                            <Text className="mt-0.5 text-[10px] font-lato text-[#7C8698]" numberOfLines={1}>
-                                                {item.detail}
-                                            </Text>
-                                        </View>
-                                        <View className={`px-1.5 py-0.5 rounded-full ${statusStyle}`}>
-                                            <Text className="text-[7px] font-lato-bold uppercase">{item.status}</Text>
-                                        </View>
+                            if (!sectionUnits.length) return null;
+
+                            return (
+                                <View key={`${selectedTowerData?.key}-${sectionLabel}`} className="mb-4">
+                                    <View className="mb-2 flex-row items-center justify-between">
+                                        <Text className="text-[12px] font-lato-bold text-[#4A43EC]">{sectionLabel}</Text>
+                                        <Text className="text-[10px] font-lato text-gray-400">{selectedTowerData?.label}</Text>
                                     </View>
-
-                                    <View className="mb-1.5">
-                                        <Text className="text-[13px] font-lato-bold text-[#1A1A1A]" numberOfLines={1}>
-                                            {item.raw.title || item.raw.meta || item.detail}
-                                        </Text>
-                                        <Text className="mt-0.5 text-[10px] font-lato-bold text-[#4A43EC]" numberOfLines={1}>
-                                            {item.price}
-                                        </Text>
-                                    </View>
-
-                                    <View className="flex-row items-center justify-end">
-                                        <TouchableOpacity
-                                            activeOpacity={0.9}
-                                            onPress={() => openInventoryEdit(item.raw, item.target)}
-                                            className="w-10 h-10 rounded-xl bg-gray-100 items-center justify-center"
-                                        >
-                                            <Feather name="edit-3" size={16} color="#94A3B8" />
-                                        </TouchableOpacity>
-                                    </View>
+                                    {renderCardGrid(sectionUnits, `${selectedTowerData?.key}-${sectionLabel}`)}
                                 </View>
-                            </TouchableOpacity>
-                        );
-                    })}
+                            );
+                        })}
+                    </View>
                 </View>
+            );
+        }
+
+        if (inventoryType === "plot") {
+            const rangeGroups = (selectedInventory.stacks || []).map((stack, stackIndex) => ({
+                key: stack.key || `stack-${stackIndex}`,
+                label: getRangeLabel(stackIndex, stack),
+                rows: (stack.levels || []).map((level, levelIndex) => ({
+                    key: `${stack.key || stackIndex}-${level.level}`,
+                    label: `Level ${level.level}`,
+                    cards: (level.cards || []).map((card, cardIndex) => ({
+                        key: card.unit || `${stack.key}-${level.level}-${cardIndex}`,
+                        raw: card,
+                        context: { stackLabel: getRangeLabel(stackIndex, stack), sectionLabel: `Level ${level.level}`, inventoryLabel, inventoryType },
+                        unitNumber: card.unit,
+                        detail: getPropertyDetailText(inventoryType, card),
+                        price: card.price || selectedProject.avgPrice,
+                        status: card.status || "Available",
+                        isDimmed: card.active === false && card.status === "Sold",
+                        target: {
+                            inventoryType: "plot",
+                            stackKey: stack.key,
+                            levelIndex,
+                            cardIndex,
+                        },
+                    })),
+                })),
+            }));
+
+            if (!rangeGroups.length) return null;
+
+            return (
+                <View>
+                    {rangeGroups.map((rangeGroup) => (
+                        <View key={rangeGroup.key} className="mb-4">
+                            <View className="mb-2 flex-row items-center justify-between">
+                                <Text className="text-[12px] font-lato-bold text-[#4A43EC]">{rangeGroup.label}</Text>
+                                <Text className="text-[10px] font-lato text-gray-400">Range Wise</Text>
+                            </View>
+                            {rangeGroup.rows.map((row) => (
+                                <View key={row.key} className="mb-3">
+                                    <Text className="mb-2 text-[11px] font-lato-bold text-gray-500">{row.label}</Text>
+                                    {renderCardGrid(row.cards, row.key)}
+                                </View>
+                            ))}
+                        </View>
+                    ))}
+                </View>
+            );
+        }
+
+        const sectionGroups = (selectedInventory.sections || []).map((section, sectionIndex) => {
+            const sectionLabel = getSectionLabel(sectionIndex, inventoryType);
+            return {
+                key: section.id || `${inventoryType}-${sectionIndex}`,
+                label: sectionLabel,
+                units: (section.units || []).map((unit, unitIndex) => ({
+                    key: unit.id || `${sectionLabel}-${unitIndex}`,
+                    raw: unit,
+                    context: { towerLabel: selectedTowerData?.label, sectionLabel, inventoryLabel, inventoryType },
+                    unitNumber: unit.id,
+                    detail: getPropertyDetailText(inventoryType, unit),
+                    price: unit.price || selectedProject.avgPrice,
+                    status: unit.status || "Available",
+                    isDimmed: unit.dimmed,
+                    target: {
+                        inventoryType,
+                        sectionIndex,
+                        unitIndex,
+                    },
+                })),
+            };
+        });
+
+        if (!sectionGroups.length) return null;
+
+        return (
+            <View>
+                {sectionGroups.map((sectionGroup) => (
+                    <View key={sectionGroup.key} className="mb-4">
+                        <View className="mb-2 flex-row items-center justify-between">
+                            <Text className="text-[12px] font-lato-bold text-[#4A43EC]">{sectionGroup.label}</Text>
+                            <Text className="text-[10px] font-lato text-gray-400">
+                                {inventoryType === "shop" || inventoryType === "showroom" ? "Section Wise" : "Range Wise"}
+                            </Text>
+                        </View>
+                        {renderCardGrid(sectionGroup.units, sectionGroup.key)}
+                    </View>
+                ))}
             </View>
         );
     };
@@ -430,8 +477,11 @@ export default function Home() {
     const openInventoryDetail = (unit, context = {}) => {
         const sectionLabel = context.sectionLabel || context.towerLabel || context.stackLabel || selectedProject.title;
         const unitLabel = unit.id || unit.unit || unit.title || "Property";
+        const isBookedOrSoldUnit = unit.status === "Booked" || unit.status === "Sold";
+        const dealTemplate = isBookedOrSoldUnit ? getInventoryDealTemplate(context.inventoryType, unit) : null;
 
         setSelectedDeal({
+            ...(dealTemplate || {}),
             ...unit,
             title: `${sectionLabel} • ${unitLabel}`,
             propertyType: unit.title || unit.meta || context.inventoryLabel || "Property",
@@ -443,6 +493,9 @@ export default function Home() {
             possession: unit.possession || selectedProject.possession,
             amenities: unit.amenities || selectedProject.amenities,
             progress: unit.progress ?? 0,
+            followUps: selectedProject.visits?.followUps || [],
+            showDealSummary: isBookedOrSoldUnit,
+            showFollowUps: unit.status === "Available",
         });
         setIsProjectDetailVisible(true);
     };
@@ -767,10 +820,6 @@ export default function Home() {
                                         <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
                                         <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.booked}</Text>
                                     </View>
-                                    <View className="flex-1 bg-[#F2F0FF] border border-[#E3DDFF] rounded-lg py-1.5 items-center min-w-0">
-                                        <Text className="text-[#6D5EF8] text-[8px] font-lato-bold uppercase">Token</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.token}</Text>
-                                    </View>
                                 </View>
                             </View>
                         </View>
@@ -958,6 +1007,8 @@ export default function Home() {
                 }}
                 project={selectedProject}
                 variant={selectedDeal}
+                showDealSummary={selectedDeal?.showDealSummary ?? true}
+                showFollowUps={selectedDeal?.showFollowUps ?? false}
             />
 
             <Modal
@@ -983,7 +1034,7 @@ export default function Home() {
                             </View>
 
                             <Text className="text-[18px] font-lato-bold text-[#1A1A1A]">Edit Property</Text>
-                            <Text className="mt-1 text-[12px] font-lato text-[#6B7280]">You can update price, area, and status here.</Text>
+                            <Text className="mt-1 text-[12px] font-lato text-[#6B7280]">You can update price and status here.</Text>
 
                             <View className="mt-5">
                                 <Text className="text-[11px] font-lato-bold text-[#6B7280] uppercase mb-2">Price</Text>

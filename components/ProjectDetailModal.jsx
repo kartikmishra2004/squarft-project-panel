@@ -33,7 +33,7 @@ function AmenityItem({ label }) {
     );
 }
 
-export default function ProjectDetailModal({ visible, onClose, project, variant }) {
+export default function ProjectDetailModal({ visible, onClose, project, variant, showDealSummary = false, showFollowUps = false }) {
     const sheetRef = useRef(null);
     const [sheetView, setSheetView] = useState("property");
     const snapPoints = useMemo(() => ["88%"], []);
@@ -135,6 +135,12 @@ export default function ProjectDetailModal({ visible, onClose, project, variant 
                 tone: "danger",
             },
         ];
+
+    const followUps = variant.followUps?.length
+        ? variant.followUps
+        : project.visits?.followUps?.length
+            ? project.visits.followUps
+            : [];
 
     const statusToneClasses = {
         success: {
@@ -265,32 +271,78 @@ export default function ProjectDetailModal({ visible, onClose, project, variant 
                                     </View>
                                 </View>
 
-                                <View className="border border-[#CFC5FF] rounded-[18px] bg-[#F8F6FF] p-4 mt-2">
-                                    <View className="flex-row items-start justify-between mb-4">
-                                        <Text className="text-[18px] font-lato-bold text-[#4C3FE0]">Deal Summary</Text>
-                                        <Text className="text-[13px] font-lato text-[#6C63F0]">{dealStatus}</Text>
-                                    </View>
+                                {showDealSummary ? (
+                                    <View className="border border-[#CFC5FF] rounded-[16px] bg-[#F8F6FF] p-3 mt-2">
+                                        <View className="flex-row items-start justify-between mb-2.5">
+                                            <Text className="text-[16px] font-lato-bold text-[#4C3FE0]">Deal Summary</Text>
+                                            <Text className="text-[11px] font-lato text-[#6C63F0]">{dealStatus}</Text>
+                                        </View>
 
-                                    <View className="border-t border-[#D8D2F7]">
-                                        {dealSummaryRows.map((row) => (
-                                            <View key={row.label} className="flex-row items-center justify-between py-3 border-b border-[#D8D2F7]">
-                                                <Text className="text-[14px] font-lato text-[#4B5563]">{row.label}</Text>
-                                                <Text className="text-[14px] font-lato-bold" style={{ color: row.valueColor }} numberOfLines={1}>
-                                                    {row.value}
-                                                </Text>
-                                            </View>
-                                        ))}
-                                    </View>
+                                        <View className="border-t border-[#D8D2F7]">
+                                            {dealSummaryRows.map((row) => (
+                                                <View key={row.label} className="flex-row items-start justify-between py-2 border-b border-[#D8D2F7] gap-3">
+                                                    <Text className="text-[12px] font-lato text-[#4B5563] flex-1">{row.label}</Text>
+                                                    <Text className="text-[12px] font-lato-bold flex-1 text-right" style={{ color: row.valueColor }}>
+                                                        {row.value}
+                                                    </Text>
+                                                </View>
+                                            ))}
+                                        </View>
 
-                                    <TouchableOpacity
-                                        activeOpacity={0.9}
-                                        className="mt-4 rounded-[14px] py-4 items-center justify-center"
-                                        style={{ backgroundColor: "#6C5CE7" }}
-                                        onPress={goToSchedule}
-                                    >
-                                        <Text className="text-white text-[15px] font-lato-bold">View Payment Schedule</Text>
-                                    </TouchableOpacity>
-                                </View>
+                                        <TouchableOpacity
+                                            activeOpacity={0.9}
+                                            className="mt-3 rounded-[12px] py-3 items-center justify-center"
+                                            style={{ backgroundColor: "#6C5CE7" }}
+                                            onPress={goToSchedule}
+                                        >
+                                            <Text className="text-white text-[13px] font-lato-bold">View Payment Schedule</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                ) : null}
+
+                                {showFollowUps ? (
+                                    <View className="border border-[#CFC5FF] rounded-[16px] bg-[#F8F6FF] p-3 mt-2">
+                                        <View className="flex-row items-start justify-between mb-2.5">
+                                            <Text className="text-[16px] font-lato-bold text-[#4C3FE0]">Upcoming Follow-ups</Text>
+                                            <Text className="text-[11px] font-lato text-[#6C63F0]">Visits</Text>
+                                        </View>
+
+                                        <View className="space-y-2">
+                                            {followUps.map((item) => (
+                                                <View key={`${item.name}-${item.time}`} className="bg-white rounded-[14px] border border-[#E6E0FF] px-3 py-2.5 mb-2">
+                                                    <View className="flex-row items-start">
+                                                        <View className="w-8 h-8 rounded-full bg-[#E8ECFF] items-center justify-center mr-3 mt-0.5">
+                                                            <Text className="text-[10px] font-lato-bold text-[#4A43EC]">{item.initials}</Text>
+                                                        </View>
+
+                                                        <View className="flex-1 pr-2">
+                                                            <View className="flex-row items-start justify-between gap-2">
+                                                                <View className="flex-1 pr-1">
+                                                                    <Text className="text-[12px] font-lato-bold text-[#1F2937] leading-4">{item.name}</Text>
+                                                                    <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                                                        {item.project}
+                                                                    </Text>
+                                                                </View>
+                                                                <View className={`px-2 py-0.5 rounded-full ${item.tone === "indigo" ? "bg-[#E8ECFF]" : "bg-[#FFF2E5]"}`}>
+                                                                    <Text className={`text-[8px] font-lato-bold ${item.tone === "indigo" ? "text-[#4A43EC]" : "text-[#F97316]"}`}>
+                                                                        {item.tone === "indigo" ? "Hot" : "Warm"}
+                                                                    </Text>
+                                                                </View>
+                                                            </View>
+
+                                                            <Text className="mt-1 text-[10px] font-lato-bold text-[#6B7280]" numberOfLines={1}>
+                                                                {item.type} • {item.time}
+                                                            </Text>
+                                                            <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                                                {item.salesperson}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                </View>
+                                            ))}
+                                        </View>
+                                    </View>
+                                ) : null}
                             </View>
                         </View>
                     </>
