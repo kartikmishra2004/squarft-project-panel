@@ -1,4 +1,4 @@
-import { Text, View, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Link, router } from "expo-router";
 import { useState } from "react";
@@ -7,8 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { setMobile, setPassword, toggleRememberMe, setLoggedIn, setUser, setToken, setLoading, setError, clearError } from "../../store/slices/authSlice";
 import { authService } from "../../services/authService";
-
-const logo = require("../../assets/icons/app-icon.png");
+import AuthHeader from "../../components/AuthHeader";
 
 export default function Login() {
     const dispatch = useDispatch();
@@ -136,18 +135,12 @@ export default function Login() {
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
                 >
-                    <View className="bg-[#4A43EC] pt-12 pb-10 px-6">
-                        <View style={{ width: 60, height: 60, overflow: 'hidden' }} className="mb-6">
-                            <Image source={logo} style={{ width: 110, height: 110, margin: -20 }} resizeMode="contain" />
-                        </View>
-                        <Text className="text-white text-[36px] font-lato-bold mb-1">Login</Text>
-                        <View className="flex-row items-center">
-                            <Text className="text-white/80 text-[14px]">Don't have an account? </Text>
-                            <Link href="/register">
-                                <Text className="text-white text-[14px] font-lato-bold underline">Sign Up</Text>
-                            </Link>
-                        </View>
-                    </View>
+                    <AuthHeader
+                        title="Login"
+                        subtitle="Don't have an account? "
+                        actionLabel="Sign Up"
+                        actionHref="/register"
+                    />
 
                     <View className="flex-1 px-6 pt-8">
                         <Text className="text-gray-500 text-[13px] mb-1.5 font-lato">Mobile Number</Text>

@@ -1,6 +1,6 @@
-import { Text, View, TextInput, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { Link, router } from "expo-router";
+import { router } from "expo-router";
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,8 +23,7 @@ import {
     setToken
 } from "../../store/slices/authSlice";
 import { authService } from "../../services/authService";
-
-const logo = require("../../assets/icons/app-icon.png");
+import AuthHeader from "../../components/AuthHeader";
 
 export default function Register() {
     const dispatch = useDispatch();
@@ -243,18 +242,12 @@ export default function Register() {
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
                 >
-                    <View className="bg-[#4A43EC] pt-12 pb-8 px-7">
-                        <View style={{ width: 60, height: 60, overflow: 'hidden' }} className="mb-4 mt-2" >
-                            <Image source={logo} style={{ width: 110, height: 110, margin: -30 }} resizeMode="contain" />
-                        </View>
-                        <Text className="text-white text-[32px] font-lato-bold mb-1">Register</Text>
-                        <View className="flex-row items-center">
-                            <Text className="text-white/80 text-[14px]">Already have an account? </Text>
-                            <Link href="/login">
-                                <Text className="text-white text-[14px] font-lato-bold underline ">Log in</Text>
-                            </Link>
-                        </View>
-                    </View>
+                    <AuthHeader
+                        title="Register"
+                        subtitle="Already have an account? "
+                        actionLabel="Log in"
+                        actionHref="/login"
+                    />
 
                     <View className="px-6 pt-6">
                         {/* First Name */}
