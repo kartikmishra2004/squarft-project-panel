@@ -90,26 +90,62 @@ export default function AddProject() {
     const dispatch = useDispatch();
     const { currentStep, step1, step2, step3, step4 } = useSelector((state) => state.project);
     const scrollRef = useRef(null);
+    const [step1Errors, setStep1Errors] = useState({});
 
     useEffect(() => {
         scrollRef.current?.scrollToPosition?.(0, 0, false);
         scrollRef.current?.scrollTo?.({ y: 0, animated: false });
     }, [currentStep]);
 
+    const validateStep1Fields = (values) => {
+        const errors = {};
+
+        if (!values.projectName || values.projectName.trim().length < 3) {
+            errors.projectName = 'Project name must be at least 3 characters';
+        }
+
+        if (!values.location || values.location.trim().length === 0) {
+            errors.location = 'Location is required';
+        }
+
+        if (!values.city || values.city.trim().length === 0) {
+            errors.city = 'City is required';
+        }
+
+        if (!values.state || values.state.trim().length === 0) {
+            errors.state = 'State is required';
+        }
+
+        if (!values.pincode || !/^[0-9]{5,6}$/.test(values.pincode.trim())) {
+            errors.pincode = 'Enter a valid pincode (5-6 digits)';
+        }
+
+        const nameValidator = (v) => v && v.trim().length >= 2;
+        if (!nameValidator(values.salesOfficerName)) {
+            errors.salesOfficerName = 'Enter sales officer name';
+        }
+        if (!/^[0-9]{10}$/.test((values.salesOfficerContact || '').trim())) {
+            errors.salesOfficerContact = 'Enter a valid 10-digit contact number';
+        }
+
+        if (!nameValidator(values.responsiblePersonName)) {
+            errors.responsiblePersonName = 'Enter responsible person name';
+        }
+        if (!/^[0-9]{10}$/.test((values.responsiblePersonContact || '').trim())) {
+            errors.responsiblePersonContact = 'Enter a valid 10-digit contact number';
+        }
+
+        return { valid: Object.keys(errors).length === 0, errors };
+    };
+
     const handleNext = () => {
         if (currentStep === 1) {
-            const {
-                location, city, state, pincode,
-                salesOfficerName, salesOfficerContact, salesVerified,
-                responsiblePersonName, responsiblePersonContact, responsibleVerified
-            } = step1;
-
-            if (!location || !city || !state || !pincode ||
-                !salesOfficerName || !salesOfficerContact || !salesVerified ||
-                !responsiblePersonName || !responsiblePersonContact || !responsibleVerified) {
-                // You can add an alert here if you want
+            const { valid, errors } = validateStep1Fields(step1);
+            if (!valid) {
+                setStep1Errors(errors);
                 return;
             }
+            setStep1Errors({});
         }
 
         if (currentStep < 4) {
@@ -138,14 +174,7 @@ export default function AddProject() {
 
     const isNextDisabled = () => {
         if (currentStep === 1) {
-            const {
-                projectName, location, city, state, pincode,
-                salesOfficerName, salesOfficerContact, salesVerified,
-                responsiblePersonName, responsiblePersonContact, responsibleVerified
-            } = step1;
-            return !projectName || !location || !city || !state || !pincode ||
-                !salesOfficerName || !salesOfficerContact || !salesVerified ||
-                !responsiblePersonName || !responsiblePersonContact || !responsibleVerified;
+            return !validateStep1Fields(step1).valid;
         }
 
         if (currentStep === 2) {
@@ -282,7 +311,7 @@ export default function AddProject() {
                             nestedScrollEnabled={Platform.OS === "android"}
                         >
                             <View>
-                                {currentStep === 1 && <Step1 />}
+                                {currentStep === 1 && <Step1 errors={step1Errors} setErrors={setStep1Errors} />}
                                 {currentStep === 2 && <Step2 />}
                                 {currentStep === 3 && <Step3 />}
                                 {currentStep === 4 && <Step4 />}
@@ -308,16 +337,20 @@ export default function AddProject() {
 }
 
 // --- Step 1 Component ---
-function Step1() {
+function Step1({ errors = {}, setErrors }) {
     const dispatch = useDispatch();
     const { step1 } = useSelector((state) => state.project);
-
     const updateField = (field, value) => {
         dispatch(updateStep1({ [field]: value }));
+        if (setErrors) {
+            setErrors(prev => {
+                if (!prev) return {};
+                const copy = { ...prev };
+                delete copy[field];
+                return copy;
+            });
+        }
     };
-
-    const salesOtpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
-    const responsibleOtpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
     const projectNameRef = useRef(null);
     const locationRef = useRef(null);
     const cityRef = useRef(null);
@@ -328,42 +361,6 @@ function Step1() {
     const respNameRef = useRef(null);
     const respContactRef = useRef(null);
 
-    const verifyOtp = (type) => {
-        const field = type === 'sales' ? 'salesOfficerOtp' : 'responsiblePersonOtp';
-        const otpStr = step1[field].join('');
-
-        if (otpStr === "1234") {
-            dispatch(updateStep1({
-                [type === 'sales' ? 'salesVerified' : 'responsibleVerified']: true,
-                [type === 'sales' ? 'salesOtpError' : 'responsibleOtpError']: false
-            }));
-        } else {
-            dispatch(updateStep1({
-                [type === 'sales' ? 'salesVerified' : 'responsibleVerified']: false,
-                [type === 'sales' ? 'salesOtpError' : 'responsibleOtpError']: true
-            }));
-        }
-    };
-
-    const handleOtpChange = (index, value, type) => {
-        const field = type === 'sales' ? 'salesOfficerOtp' : 'responsiblePersonOtp';
-        const refs = type === 'sales' ? salesOtpRefs : responsibleOtpRefs;
-
-        const newOtp = [...step1[field]];
-        newOtp[index] = value;
-        updateField(field, newOtp);
-
-        if (value && index < 3) {
-            refs[index + 1].current?.focus();
-        }
-    };
-
-    const handleKeyPress = (e, index, type) => {
-        if (e.nativeEvent.key === 'Backspace' && !step1[type === 'sales' ? 'salesOfficerOtp' : 'responsiblePersonOtp'][index] && index > 0) {
-            const refs = type === 'sales' ? salesOtpRefs : responsibleOtpRefs;
-            refs[index - 1].current?.focus();
-        }
-    };
 
     return (
         <View className="gap-6">
@@ -381,6 +378,9 @@ function Step1() {
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
                 </Pressable>
+                {errors.projectName && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.projectName}</Text>
+                )}
             </View>
 
             {/* Location */}
@@ -400,6 +400,9 @@ function Step1() {
                         <Ionicons name="locate" size={16} color="#4A43EC" />
                     </View>
                 </Pressable>
+                {errors.location && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.location}</Text>
+                )}
             </View>
 
             {/* City, State, Pincode */}
@@ -417,6 +420,9 @@ function Step1() {
                             style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                         />
                     </Pressable>
+                    {errors.city && (
+                        <Text className="text-[11px] text-red-500 mt-1">{errors.city}</Text>
+                    )}
                 </View>
                 <View className="flex-1">
                     <Text className="text-xs font-lato-bold text-black mb-1.5">State</Text>
@@ -431,6 +437,9 @@ function Step1() {
                             style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                         />
                     </Pressable>
+                    {errors.state && (
+                        <Text className="text-[11px] text-red-500 mt-1">{errors.state}</Text>
+                    )}
                 </View>
                 <View className="flex-1">
                     <Text className="text-xs font-lato-bold text-black mb-1.5">Pincode</Text>
@@ -446,6 +455,9 @@ function Step1() {
                             style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                         />
                     </Pressable>
+                    {errors.pincode && (
+                        <Text className="text-[11px] text-red-500 mt-1">{errors.pincode}</Text>
+                    )}
                 </View>
             </View>
 
@@ -466,6 +478,9 @@ function Step1() {
                         <Ionicons name="person" size={16} color="#4A43EC" />
                     </View>
                 </Pressable>
+                {errors.salesOfficerName && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.salesOfficerName}</Text>
+                )}
             </View>
 
             <View>
@@ -481,62 +496,12 @@ function Step1() {
                         onChangeText={(v) => updateField('salesOfficerContact', v)}
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
-                    <TouchableOpacity onPress={() => updateField('salesOtpSent', true)}>
-                        <Text className="text-[10px] font-lato-bold text-[#4A43EC]">
-                            {step1.salesOtpSent ? "Resend OTP" : "Send OTP"}
-                        </Text>
-                    </TouchableOpacity>
                 </Pressable>
+                {errors.salesOfficerContact && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.salesOfficerContact}</Text>
+                )}
             </View>
-
-            {step1.salesOtpSent && (
-                <View>
-                    <View className="flex-row items-center gap-2 mb-4">
-                        <Text className="text-sm font-lato-bold text-black">Enter OTP</Text>
-                        {step1.salesVerified && (
-                            <View className="bg-green-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="checkmark-circle" size={10} color="#10B981" />
-                                <Text className="text-[8px] text-[#10B981] font-lato-bold ml-1">Verified</Text>
-                            </View>
-                        )}
-                        {step1.salesOtpError && !step1.salesVerified && (
-                            <View className="bg-red-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="alert-circle" size={10} color="#EF4444" />
-                                <Text className="text-[8px] text-[#EF4444] font-lato-bold ml-1">Invalid OTP</Text>
-                            </View>
-                        )}
-                    </View>
-                    <View className="flex-row gap-3">
-                        {[0, 1, 2, 3].map((i) => (
-                            <View
-                                key={i}
-                                className={`w-14 h-14 bg-white border rounded-xl items-center justify-center ${step1.salesVerified ? 'border-green-500 bg-green-50' : step1.salesOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
-                            >
-                                <TextInput
-                                    ref={salesOtpRefs[i]}
-                                    className="text-lg font-lato-bold text-black text-center w-full h-full"
-                                    maxLength={1}
-                                    keyboardType="number-pad"
-                                    value={step1.salesOfficerOtp[i]}
-                                    onChangeText={(v) => handleOtpChange(i, v, 'sales')}
-                                    onKeyPress={(e) => handleKeyPress(e, i, 'sales')}
-                                    editable={!step1.salesVerified}
-                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                />
-                            </View>
-                        ))}
-                    </View>
-
-                    {!step1.salesVerified && (
-                        <TouchableOpacity
-                            onPress={() => verifyOtp('sales')}
-                            className="bg-[#4A43EC] mt-3 py-3.5 rounded-xl items-center"
-                        >
-                            <Text className="text-white text-[13px] font-lato-bold">Verify OTP</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            )}
+            
 
             {/* Responsible Person Section */}
             <View>
@@ -552,6 +517,9 @@ function Step1() {
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
                 </Pressable>
+                {errors.responsiblePersonName && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.responsiblePersonName}</Text>
+                )}
             </View>
 
             <View>
@@ -567,62 +535,12 @@ function Step1() {
                         onChangeText={(v) => updateField('responsiblePersonContact', v)}
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
-                    <TouchableOpacity onPress={() => updateField('responsibleOtpSent', true)}>
-                        <Text className="text-[10px] font-lato-bold text-[#4A43EC]">
-                            {step1.responsibleOtpSent ? "Resend OTP" : "Send OTP"}
-                        </Text>
-                    </TouchableOpacity>
                 </Pressable>
+                {errors.responsiblePersonContact && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.responsiblePersonContact}</Text>
+                )}
             </View>
-
-            {step1.responsibleOtpSent && (
-                <View>
-                    <View className="flex-row items-center gap-2 mb-4">
-                        <Text className="text-sm font-lato-bold text-black">Enter OTP</Text>
-                        {step1.responsibleVerified && (
-                            <View className="bg-green-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="checkmark-circle" size={10} color="#10B981" />
-                                <Text className="text-[8px] text-[#10B981] font-lato-bold ml-1">Verified</Text>
-                            </View>
-                        )}
-                        {step1.responsibleOtpError && !step1.responsibleVerified && (
-                            <View className="bg-red-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="alert-circle" size={10} color="#EF4444" />
-                                <Text className="text-[8px] text-[#EF4444] font-lato-bold ml-1">Invalid OTP</Text>
-                            </View>
-                        )}
-                    </View>
-                    <View className="flex-row gap-3">
-                        {[0, 1, 2, 3].map((i) => (
-                            <View
-                                key={i}
-                                className={`w-14 h-14 bg-white border rounded-xl items-center justify-center ${step1.responsibleVerified ? 'border-green-500 bg-green-50' : step1.responsibleOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
-                            >
-                                <TextInput
-                                    ref={responsibleOtpRefs[i]}
-                                    className="text-lg font-lato-bold text-black text-center w-full h-full"
-                                    maxLength={1}
-                                    keyboardType="number-pad"
-                                    value={step1.responsiblePersonOtp[i]}
-                                    onChangeText={(v) => handleOtpChange(i, v, 'responsible')}
-                                    onKeyPress={(e) => handleKeyPress(e, i, 'responsible')}
-                                    editable={!step1.responsibleVerified}
-                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                />
-                            </View>
-                        ))}
-                    </View>
-
-                    {!step1.responsibleVerified && (
-                        <TouchableOpacity
-                            onPress={() => verifyOtp('responsible')}
-                            className="bg-[#4A43EC] mt-3 py-3.5 rounded-xl items-center"
-                        >
-                            <Text className="text-white text-[13px] font-lato-bold">Verify OTP</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            )}
+            
         </View>
     );
 }

@@ -10,16 +10,9 @@ const initialState = {
         pincode: '',
         salesOfficerName: '',
         salesOfficerContact: '',
-        salesOfficerOtp: ['', '', '', ''],
         responsiblePersonName: '',
         responsiblePersonContact: '',
-        responsiblePersonOtp: ['', '', '', ''],
-        salesVerified: false,
-        responsibleVerified: false,
-        salesOtpSent: false,
-        responsibleOtpSent: false,
-        salesOtpError: false,
-        responsibleOtpError: false,
+        // OTP fields removed: verification is no longer required for contacts
     },
     step2: {
         selectedTypes: [], // Array of objects matching the hierarchy
