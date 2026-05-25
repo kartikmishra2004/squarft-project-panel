@@ -26,6 +26,9 @@ import {
     updatePropertyType,
     updateBuilderData,
     updateStep4,
+    updateStep4Approval,
+    updateStep5,
+    updateStep6,
     bulkUploadSubtype,
     resetForm,
 } from "../../store/slices/projectSlice";
@@ -75,7 +78,9 @@ const steps = [
     { id: 1, title: "Basic Details" },
     { id: 2, title: "Property Type" },
     { id: 3, title: "Property Detail" },
-    { id: 4, title: "Image & Price" },
+    { id: 4, title: "Approvals" },
+    { id: 5, title: "Finance" },
+    { id: 6, title: "Image & Price" },
 ];
 
 const ANDROID_KEYBOARD_EXTRA_SCROLL = 72;
@@ -85,10 +90,40 @@ const IOS_KEYBOARD_EXTRA_HEIGHT = 66;
 const ANDROID_CONTENT_BOTTOM_PADDING = 180;
 const IOS_CONTENT_BOTTOM_PADDING = 140;
 const RANGE_BASED_SUB_TYPES = new Set(["plot", "villa", "rowhouse"]);
+const DEVELOPMENT_STAGE_OPTIONS = [
+    "Road work completed",
+    "Drainage work completed",
+    "Electricity work completed",
+    "Water line completed",
+    "Boundary wall completed",
+    "Garden / Park work completed",
+    "Street lights completed",
+    "Main gate completed",
+    "Clubhouse / Amenities work completed",
+    "Work in progress",
+    "Other",
+];
+const APPROVAL_STATUS_OPTIONS = ["Yes", "No"];
+const OPTIONAL_APPROVAL_STATUS_OPTIONS = ["Yes", "No", "Not Applicable"];
+const OVERALL_APPROVAL_STATUS_OPTIONS = [
+    "All approvals completed",
+    "Major approvals completed",
+    "Some approvals pending",
+    "Approvals under process",
+    "Not verified yet",
+];
+const GUIDELINE_VALUE_UNITS = ["Per Sq. Ft.", "Per Sq. Meter", "Per Acre", "Per Hectare"];
+const OWNERSHIP_TYPES = [
+    "Owned Project",
+    "Joint Venture Project",
+    "Development Agreement Project",
+    "Collaboration Project",
+    "Other",
+];
 
 export default function AddProject() {
     const dispatch = useDispatch();
-    const { currentStep, step1, step2, step3, step4 } = useSelector((state) => state.project);
+    const { currentStep, step1, step2, step3, step4, step5, step6 } = useSelector((state) => state.project);
     const scrollRef = useRef(null);
     const [step1Errors, setStep1Errors] = useState({});
 
@@ -148,7 +183,7 @@ export default function AddProject() {
             setStep1Errors({});
         }
 
-        if (currentStep < 4) {
+        if (currentStep < 6) {
             dispatch(setStep(currentStep + 1));
         } else {
             // Final Step (Submit)
@@ -159,9 +194,11 @@ export default function AddProject() {
                     ...type,
                     units: step3.unitConfigs[type.id]?.map((unit, idx) => ({
                         ...unit,
-                        ...step4.unitData[unit.unitId || `${type.id}-${idx}`]
+                        ...step6.unitData[unit.unitId || `${type.id}-${idx}`]
                     })) || []
                 })),
+                legalApprovalsAndStatus: step4,
+                financeGuidelineOwnership: step5,
                 createdAt: new Date().toISOString(),
                 status: 'Active'
             };
@@ -208,11 +245,31 @@ export default function AddProject() {
         }
 
         if (currentStep === 4) {
+            const percentage = Number(step4.developmentCompletionPercentage);
+            if (step4.possessionStatus === "Possession Pending" && !step4.expectedPossessionDate) return true;
+            if (step4.projectLaunchStatus === "Already Launched" && !step4.projectLaunchDate) return true;
+            if (step4.projectLaunchStatus === "Upcoming Launch" && !step4.expectedLaunchDate) return true;
+            if (step4.developmentCompletionPercentage !== '' && (Number.isNaN(percentage) || percentage < 0 || percentage > 100)) return true;
+            if (step4.approvals.rera.status === "Yes" && !step4.approvals.rera.registrationNumber) return true;
+            if (step4.approvals.buildingPermission.status === "No" && !step4.approvals.buildingPermission.expectedTime) return true;
+            if (step4.approvals.developmentPermission.status === "No" && !step4.approvals.developmentPermission.expectedTime) return true;
+            return false;
+        }
+
+        if (currentStep === 5) {
+            if (step5.guidelineValueAmount && !step5.guidelineValueUnit) return true;
+            if (step5.guidelineValueUnit && !step5.guidelineValueAmount) return true;
+            if (step5.loanAvailable === "Yes" && (!step5.bankTieUpAvailable || !step5.loanApprovalStatus || !(step5.tieUpBankName || step5.bankNameList))) return true;
+            if (step5.ownershipType === "Joint Venture Project" && (!step5.jvLandOwnerName || !step5.jvDeveloperBuilderName)) return true;
+            return false;
+        }
+
+        if (currentStep === 6) {
             const allUnits = [];
             step2.selectedTypes.forEach(type => {
                 const configs = step3.unitConfigs[type.id] || [];
-                configs.forEach((_, idx) => {
-                    allUnits.push(`${type.id}-${idx}`);
+                configs.forEach((unit, idx) => {
+                    allUnits.push(unit.unitId || `${type.id}-${idx}`);
                 });
             });
 
@@ -220,7 +277,7 @@ export default function AddProject() {
 
             // Check if all units have price, at least one image, and agreement
             return allUnits.some(unitId => {
-                const data = step4.unitData[unitId];
+                const data = step6.unitData[unitId];
                 if (!data) return true;
                 return !data.sellingPrice || data.images.length === 0 || !data.agreed;
             });
@@ -235,6 +292,11 @@ export default function AddProject() {
         } else {
             router.back();
         }
+    };
+
+    const handleStepPress = (stepId) => {
+        Keyboard.dismiss();
+        dispatch(setStep(stepId));
     };
 
     return (
@@ -268,7 +330,13 @@ export default function AddProject() {
                         {/* Step Indicator */}
                         <View className="flex-row justify-between items-start mt-8">
                             {steps.map((step) => (
-                                <View key={step.id} className="items-center" style={{ width: (width - 40) / 4 }}>
+                                <TouchableOpacity
+                                    key={step.id}
+                                    onPress={() => handleStepPress(step.id)}
+                                    activeOpacity={0.75}
+                                    className="items-center"
+                                    style={{ width: (width - 40) / 6 }}
+                                >
                                     <View
                                         className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${currentStep === step.id ? 'bg-white' : 'bg-transparent border border-white/40'
                                             }`}
@@ -282,7 +350,7 @@ export default function AddProject() {
                                         }`} numberOfLines={1}>
                                         {step.title}
                                     </Text>
-                                </View>
+                                </TouchableOpacity>
                             ))}
                         </View>
                     </View>
@@ -299,14 +367,14 @@ export default function AddProject() {
                                 paddingBottom: Platform.OS === "android" ? ANDROID_CONTENT_BOTTOM_PADDING : IOS_CONTENT_BOTTOM_PADDING,
                                 flexGrow: 1,
                             }}
-                            keyboardShouldPersistTaps="handled"
-                            keyboardDismissMode="on-drag"
+                            keyboardShouldPersistTaps="always"
+                            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                             enableOnAndroid
                             extraScrollHeight={Platform.OS === "android" ? ANDROID_KEYBOARD_EXTRA_SCROLL : IOS_KEYBOARD_EXTRA_SCROLL}
                             extraHeight={Platform.OS === "android" ? ANDROID_KEYBOARD_EXTRA_HEIGHT : IOS_KEYBOARD_EXTRA_HEIGHT}
                             viewIsInsideTabBar={Platform.OS === "android"}
                             enableAutomaticScroll
-                            keyboardOpeningTime={250}
+                            keyboardOpeningTime={Platform.OS === "android" ? 0 : 250}
                             enableResetScrollToCoords={false}
                             nestedScrollEnabled={Platform.OS === "android"}
                         >
@@ -315,6 +383,8 @@ export default function AddProject() {
                                 {currentStep === 2 && <Step2 />}
                                 {currentStep === 3 && <Step3 />}
                                 {currentStep === 4 && <Step4 />}
+                                {currentStep === 5 && <Step5 />}
+                                {currentStep === 6 && <Step6 />}
 
                                 {/* Next Button */}
                                 <View className="mt-8 mb-4">
@@ -325,7 +395,7 @@ export default function AddProject() {
                                         disabled={isNextDisabled()}
                                     >
                                         <Text className="text-white text-sm font-lato-bold">
-                                            {currentStep === 4 ? "Submit" : "Next"}
+                                            {currentStep === 6 ? "Submit" : "Next"}
                                         </Text>
                                     </TouchableOpacity>
                                 </View>
@@ -2171,10 +2241,474 @@ function Step3() {
     );
 }
 
-// --- Step 4 Component ---
+const FormSection = ({ title, children }) => (
+    <View className="bg-white border border-gray-100 rounded-2xl p-4 gap-4">
+        <Text className="text-sm font-lato-bold text-black">{title}</Text>
+        {children}
+    </View>
+);
+
+const OptionGroup = ({ label, options, value, onChange }) => (
+    <View>
+        {label ? <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text> : null}
+        <View className="flex-row flex-wrap gap-2">
+            {options.map(option => (
+                <TouchableOpacity
+                    key={option}
+                    onPress={() => onChange(option)}
+                    className={`px-3 py-2 rounded-full border ${value === option ? 'bg-[#EBEAFF] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
+                >
+                    <Text className={`text-[11px] font-lato-bold ${value === option ? 'text-[#4A43EC]' : 'text-gray-500'}`}>{option}</Text>
+                </TouchableOpacity>
+            ))}
+        </View>
+    </View>
+);
+
+const FieldInput = ({ label, value, onChangeText, placeholder, keyboardType = "default", multiline = false }) => {
+    const inputRef = useRef(null);
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+            <Pressable
+                onPress={() => inputRef.current?.focus()}
+                className={`bg-white border border-gray-200 rounded-xl px-4 ${multiline ? 'min-h-[88px] py-3' : 'h-12 justify-center'}`}
+            >
+                <TextInput
+                    ref={inputRef}
+                    className="text-[13px] text-gray-800 font-lato-medium"
+                    placeholder={placeholder}
+                    placeholderTextColor="#9CA3AF"
+                    value={value}
+                    keyboardType={keyboardType}
+                    multiline={multiline}
+                    scrollEnabled={false}
+                    returnKeyType={multiline ? "default" : "done"}
+                    blurOnSubmit={!multiline}
+                    onChangeText={onChangeText}
+                    style={{ paddingVertical: 0, textAlignVertical: multiline ? 'top' : 'center', includeFontPadding: false }}
+                />
+            </Pressable>
+        </View>
+    );
+};
+
+const MultiCheckboxGroup = ({ label, options, values, onChange }) => {
+    const toggle = (option) => {
+        const nextValues = values.includes(option)
+            ? values.filter(item => item !== option)
+            : [...values, option];
+        onChange(nextValues);
+    };
+
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text>
+            <View className="gap-2">
+                {options.map(option => {
+                    const selected = values.includes(option);
+                    return (
+                        <TouchableOpacity
+                            key={option}
+                            onPress={() => toggle(option)}
+                            className="flex-row items-center gap-3"
+                            activeOpacity={0.7}
+                        >
+                            <View
+                                className="w-5 h-5 rounded border items-center justify-center"
+                                style={{
+                                    borderColor: selected ? "#4A43EC" : "#D1D5DB",
+                                    backgroundColor: selected ? "#4A43EC" : "white"
+                                }}
+                            >
+                                {selected && <Ionicons name="checkmark" size={14} color="white" />}
+                            </View>
+                            <Text className="text-xs text-gray-600 font-lato-medium flex-1">{option}</Text>
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
+        </View>
+    );
+};
+
+const DocumentUploadButton = ({ label, documents, onDocumentsPicked }) => {
+    const pickDocuments = async () => {
+        const result = await DocumentPicker.getDocumentAsync({
+            type: "*/*",
+            multiple: true,
+        });
+
+        if (!result.canceled) {
+            onDocumentsPicked([...(documents || []), ...result.assets]);
+        }
+    };
+
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text>
+            <TouchableOpacity
+                onPress={pickDocuments}
+                className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-5 items-center justify-center"
+            >
+                <Ionicons name="document-attach-outline" size={20} color="#4A43EC" />
+                <Text className="text-xs font-lato-bold text-[#4A43EC] mt-2">
+                    {(documents || []).length > 0 ? `${documents.length} Document(s) Added` : "Upload Document"}
+                </Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
+
+function ApprovalBlock({ title, approvalKey, options = APPROVAL_STATUS_OPTIONS, fields }) {
+    const dispatch = useDispatch();
+    const approval = useSelector((state) => state.project.step4.approvals[approvalKey]);
+    const updateApproval = (data) => dispatch(updateStep4Approval({ approvalKey, data }));
+
+    return (
+        <View className="gap-4 border-t border-gray-100 pt-4">
+            <Text className="text-xs font-lato-bold text-gray-500">{title}</Text>
+            <OptionGroup
+                label={fields.statusLabel}
+                options={options}
+                value={approval.status}
+                onChange={(value) => updateApproval({ status: value })}
+            />
+
+            {approval.status === "Yes" && (
+                <View className="gap-4">
+                    {fields.yes.map(field => (
+                        <FieldInput
+                            key={field.key}
+                            label={field.label}
+                            placeholder={field.placeholder}
+                            value={approval[field.key]}
+                            keyboardType={field.keyboardType}
+                            onChangeText={(value) => updateApproval({ [field.key]: value })}
+                        />
+                    ))}
+                    <DocumentUploadButton
+                        label={fields.documentLabel}
+                        documents={approval.documents}
+                        onDocumentsPicked={(documents) => updateApproval({ documents })}
+                    />
+                </View>
+            )}
+
+            {approval.status === "No" && (
+                <View className="gap-4">
+                    {fields.no.map(field => (
+                        <FieldInput
+                            key={field.key}
+                            label={field.label}
+                            placeholder={field.placeholder}
+                            value={approval[field.key]}
+                            onChangeText={(value) => updateApproval({ [field.key]: value })}
+                        />
+                    ))}
+                </View>
+            )}
+        </View>
+    );
+}
+
 function Step4() {
     const dispatch = useDispatch();
-    const { step2, step3, step4 } = useSelector((state) => state.project);
+    const { step4 } = useSelector((state) => state.project);
+    const updateField = (field, value) => dispatch(updateStep4({ [field]: value }));
+
+    const normalizedApprovalStatuses = [
+        step4.approvals.diversion.status,
+        step4.approvals.tncp.status,
+        step4.approvals.developmentPermission.status,
+        step4.approvals.rera.status,
+        step4.approvals.buildingPermission.status,
+    ].filter(Boolean);
+    const allCompleted = normalizedApprovalStatuses.length === 5 && normalizedApprovalStatuses.every(status => status === "Yes" || status === "Not Applicable");
+    const somePending = normalizedApprovalStatuses.some(status => status === "No");
+    const suggestedStatus = allCompleted ? "All approvals completed" : somePending ? "Some approvals pending" : "Not verified yet";
+
+    useEffect(() => {
+        if (step4.overallApprovalStatus === "Not verified yet" && suggestedStatus !== step4.overallApprovalStatus) {
+            updateField("overallApprovalStatus", suggestedStatus);
+        }
+    }, [suggestedStatus, step4.overallApprovalStatus]);
+
+    return (
+        <View className="gap-5">
+            <Text className="text-base font-lato-bold text-black">Approvals, Permissions & Project Progress</Text>
+
+            <FormSection title="Possession Status">
+                <OptionGroup
+                    options={["Possession Completed", "Possession Pending"]}
+                    value={step4.possessionStatus}
+                    onChange={(value) => updateField("possessionStatus", value)}
+                />
+                {step4.possessionStatus === "Possession Pending" && (
+                    <FieldInput
+                        label="Expected Possession Date"
+                        placeholder="Select expected possession date"
+                        value={step4.expectedPossessionDate}
+                        onChangeText={(value) => updateField("expectedPossessionDate", value)}
+                    />
+                )}
+                <FieldInput
+                    label="Possession Remarks"
+                    placeholder="Example: Possession expected after completion of final development work"
+                    value={step4.possessionRemarks}
+                    multiline
+                    onChangeText={(value) => updateField("possessionRemarks", value)}
+                />
+            </FormSection>
+
+            <FormSection title="Project Launch Status">
+                <OptionGroup
+                    options={["Already Launched", "Upcoming Launch"]}
+                    value={step4.projectLaunchStatus}
+                    onChange={(value) => updateField("projectLaunchStatus", value)}
+                />
+                {step4.projectLaunchStatus === "Already Launched" && (
+                    <FieldInput
+                        label="Project Launch Date"
+                        placeholder="Select project launch date"
+                        value={step4.projectLaunchDate}
+                        onChangeText={(value) => updateField("projectLaunchDate", value)}
+                    />
+                )}
+                {step4.projectLaunchStatus === "Upcoming Launch" && (
+                    <FieldInput
+                        label="Expected Launch Date"
+                        placeholder="Select expected launch date"
+                        value={step4.expectedLaunchDate}
+                        onChangeText={(value) => updateField("expectedLaunchDate", value)}
+                    />
+                )}
+            </FormSection>
+
+            <FormSection title="Development Progress">
+                <FieldInput
+                    label="Development Completion Percentage"
+                    placeholder="Example: 65%"
+                    keyboardType="numeric"
+                    value={step4.developmentCompletionPercentage}
+                    onChangeText={(value) => updateField("developmentCompletionPercentage", value)}
+                />
+                <MultiCheckboxGroup
+                    label="Current Development Stage"
+                    options={DEVELOPMENT_STAGE_OPTIONS}
+                    values={step4.currentDevelopmentStage}
+                    onChange={(value) => updateField("currentDevelopmentStage", value)}
+                />
+                {step4.currentDevelopmentStage.includes("Other") && (
+                    <FieldInput
+                        label="Other Development Stage"
+                        placeholder="Mention current development stage"
+                        value={step4.otherDevelopmentStage}
+                        onChangeText={(value) => updateField("otherDevelopmentStage", value)}
+                    />
+                )}
+                <FieldInput
+                    label="Development Remarks"
+                    placeholder="Add current development status or important remarks"
+                    value={step4.developmentRemarks}
+                    multiline
+                    onChangeText={(value) => updateField("developmentRemarks", value)}
+                />
+            </FormSection>
+
+            <FormSection title="Approvals & Permissions">
+                <ApprovalBlock
+                    title="A. Diversion Approval"
+                    approvalKey="diversion"
+                    fields={{
+                        statusLabel: "Is Diversion Approved?",
+                        yes: [
+                            { key: "referenceNumber", label: "Diversion Order Number / Reference Number", placeholder: "Enter reference number" },
+                            { key: "approvalDate", label: "Diversion Approval Date", placeholder: "Select approval date" },
+                        ],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Diversion Approval", placeholder: "Number of months / expected date" }],
+                        documentLabel: "Upload Diversion Document",
+                    }}
+                />
+                <ApprovalBlock
+                    title="B. TNCP Approval"
+                    approvalKey="tncp"
+                    fields={{
+                        statusLabel: "Is TNCP Approved?",
+                        yes: [
+                            { key: "approvalNumber", label: "TNCP Approval Number", placeholder: "Enter approval number" },
+                            { key: "approvalDate", label: "TNCP Approval Date", placeholder: "Select approval date" },
+                        ],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive TNCP Approval", placeholder: "Number of months / expected date" }],
+                        documentLabel: "Upload TNCP Document",
+                    }}
+                />
+                <ApprovalBlock
+                    title="C. Development Permission"
+                    approvalKey="developmentPermission"
+                    fields={{
+                        statusLabel: "Is Development Permission Approved?",
+                        yes: [
+                            { key: "permissionNumber", label: "Development Permission Number", placeholder: "Enter permission number" },
+                            { key: "permissionDate", label: "Development Permission Date", placeholder: "Select permission date" },
+                        ],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Development Permission", placeholder: "Number of months / expected date" }],
+                        documentLabel: "Upload Development Permission Document",
+                    }}
+                />
+                <ApprovalBlock
+                    title="D. RERA Approval"
+                    approvalKey="rera"
+                    options={OPTIONAL_APPROVAL_STATUS_OPTIONS}
+                    fields={{
+                        statusLabel: "Is the Project RERA Approved?",
+                        yes: [
+                            { key: "registrationNumber", label: "RERA Registration Number", placeholder: "Enter RERA registration number" },
+                            { key: "registrationDate", label: "RERA Registration Date", placeholder: "Select registration date" },
+                        ],
+                        no: [
+                            { key: "reasonNotAvailable", label: "Reason for RERA Not Available", placeholder: "Mention reason" },
+                            { key: "expectedTime", label: "Expected Time to Receive RERA Approval, if applicable", placeholder: "Number of months / expected date" },
+                        ],
+                        documentLabel: "Upload RERA Certificate",
+                    }}
+                />
+                <ApprovalBlock
+                    title="E. Building Permission"
+                    approvalKey="buildingPermission"
+                    options={OPTIONAL_APPROVAL_STATUS_OPTIONS}
+                    fields={{
+                        statusLabel: "Is Building Permission Approved?",
+                        yes: [
+                            { key: "permissionNumber", label: "Building Permission Number", placeholder: "Enter permission number" },
+                            { key: "permissionDate", label: "Building Permission Date", placeholder: "Select permission date" },
+                        ],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Building Permission", placeholder: "Example: 3 months" }],
+                        documentLabel: "Upload Building Permission Document",
+                    }}
+                />
+            </FormSection>
+
+            <FormSection title="Approval Summary Status">
+                <OptionGroup
+                    label="Overall Approval Status"
+                    options={OVERALL_APPROVAL_STATUS_OPTIONS}
+                    value={step4.overallApprovalStatus}
+                    onChange={(value) => updateField("overallApprovalStatus", value)}
+                />
+            </FormSection>
+        </View>
+    );
+}
+
+function Step5() {
+    const dispatch = useDispatch();
+    const { step5 } = useSelector((state) => state.project);
+    const updateField = (field, value) => dispatch(updateStep5({ [field]: value }));
+
+    return (
+        <View className="gap-5">
+            <Text className="text-base font-lato-bold text-black">Financial, Guideline & Ownership Verification</Text>
+
+            <FormSection title="Government Guideline Value">
+                <FieldInput label="Guideline Value Amount" placeholder="Example: Rs. 3,500 per sq. ft." keyboardType="numeric" value={step5.guidelineValueAmount} onChangeText={(value) => updateField("guidelineValueAmount", value)} />
+                <OptionGroup label="Guideline Value Unit" options={GUIDELINE_VALUE_UNITS} value={step5.guidelineValueUnit} onChange={(value) => updateField("guidelineValueUnit", value)} />
+                <FieldInput label="Property Jurisdiction / Area" placeholder="Enter jurisdiction / area" value={step5.propertyJurisdictionArea} onChangeText={(value) => updateField("propertyJurisdictionArea", value)} />
+                <FieldInput label="Guideline Year" placeholder="Enter guideline year, if required" keyboardType="numeric" value={step5.guidelineYear} onChangeText={(value) => updateField("guidelineYear", value)} />
+                <DocumentUploadButton label="Upload Guideline Reference Document" documents={step5.guidelineReferenceDocuments} onDocumentsPicked={(documents) => updateField("guidelineReferenceDocuments", documents)} />
+            </FormSection>
+
+            <FormSection title="Registry & Stamp Duty Details">
+                <OptionGroup label="Registry Charges Available?" options={["Yes", "No"]} value={step5.registryChargesAvailable} onChange={(value) => updateField("registryChargesAvailable", value)} />
+                {step5.registryChargesAvailable === "Yes" && (
+                    <View className="gap-4">
+                        <FieldInput label="Registry Charges for Male Buyer" placeholder="Percentage / amount" value={step5.registryChargesMaleBuyer} onChangeText={(value) => updateField("registryChargesMaleBuyer", value)} />
+                        <FieldInput label="Registry Charges for Female Buyer" placeholder="Percentage / amount" value={step5.registryChargesFemaleBuyer} onChangeText={(value) => updateField("registryChargesFemaleBuyer", value)} />
+                        <FieldInput label="Other Government Charges, if applicable" placeholder="Percentage / amount" value={step5.otherGovernmentCharges} onChangeText={(value) => updateField("otherGovernmentCharges", value)} />
+                    </View>
+                )}
+            </FormSection>
+
+            <FormSection title="Loan Availability">
+                <OptionGroup label="Is Loan Available on this Project?" options={["Yes", "No"]} value={step5.loanAvailable} onChange={(value) => updateField("loanAvailable", value)} />
+                {step5.loanAvailable === "Yes" && (
+                    <View className="gap-4">
+                        <OptionGroup label="Bank Tie-up Available?" options={["Yes", "No"]} value={step5.bankTieUpAvailable} onChange={(value) => updateField("bankTieUpAvailable", value)} />
+                        <FieldInput label="Tie-up Bank Name" placeholder="Enter bank name" value={step5.tieUpBankName} onChangeText={(value) => updateField("tieUpBankName", value)} />
+                        <FieldInput label="Loan Approval Status" placeholder="Enter loan approval status" value={step5.loanApprovalStatus} onChangeText={(value) => updateField("loanApprovalStatus", value)} />
+                        <FieldInput label="Maximum Loan Percentage, if known" placeholder="Example: 80%" keyboardType="numeric" value={step5.maximumLoanPercentage} onChangeText={(value) => updateField("maximumLoanPercentage", value)} />
+                        <FieldInput label="Required Documents for Loan, if any" placeholder="Mention required documents" multiline value={step5.requiredLoanDocuments} onChangeText={(value) => updateField("requiredLoanDocuments", value)} />
+                        {step5.bankTieUpAvailable === "Yes" && (
+                            <FieldInput label="Bank Name / Bank List" placeholder="Enter bank name / bank list" value={step5.bankNameList} onChangeText={(value) => updateField("bankNameList", value)} />
+                        )}
+                    </View>
+                )}
+            </FormSection>
+
+            <FormSection title="Project Ownership Type">
+                <OptionGroup label="Project Ownership Type" options={OWNERSHIP_TYPES} value={step5.ownershipType} onChange={(value) => updateField("ownershipType", value)} />
+                {step5.ownershipType === "Owned Project" && (
+                    <View className="gap-4">
+                        <FieldInput label="Owner / Company Name" placeholder="Enter owner or company name" value={step5.ownedOwnerCompanyName} onChangeText={(value) => updateField("ownedOwnerCompanyName", value)} />
+                        <DocumentUploadButton label="Ownership Document Upload" documents={step5.ownedDocuments} onDocumentsPicked={(documents) => updateField("ownedDocuments", documents)} />
+                    </View>
+                )}
+                {step5.ownershipType === "Joint Venture Project" && (
+                    <View className="gap-4">
+                        <FieldInput label="Land Owner Name" placeholder="Enter land owner name" value={step5.jvLandOwnerName} onChangeText={(value) => updateField("jvLandOwnerName", value)} />
+                        <FieldInput label="Developer / Builder Name" placeholder="Enter developer / builder name" value={step5.jvDeveloperBuilderName} onChangeText={(value) => updateField("jvDeveloperBuilderName", value)} />
+                        <OptionGroup label="JV Agreement Available?" options={["Yes", "No"]} value={step5.jvAgreementAvailable} onChange={(value) => updateField("jvAgreementAvailable", value)} />
+                        <DocumentUploadButton label="Upload JV Agreement, if available" documents={step5.jvAgreementDocuments} onDocumentsPicked={(documents) => updateField("jvAgreementDocuments", documents)} />
+                        <FieldInput label="Revenue / Area Sharing Details" placeholder="Optional" multiline value={step5.jvRevenueAreaSharingDetails} onChangeText={(value) => updateField("jvRevenueAreaSharingDetails", value)} />
+                    </View>
+                )}
+                {step5.ownershipType === "Development Agreement Project" && (
+                    <View className="gap-4">
+                        <FieldInput label="Land Owner Name" placeholder="Enter land owner name" value={step5.developmentLandOwnerName} onChangeText={(value) => updateField("developmentLandOwnerName", value)} />
+                        <FieldInput label="Developer Name" placeholder="Enter developer name" value={step5.developmentDeveloperName} onChangeText={(value) => updateField("developmentDeveloperName", value)} />
+                        <OptionGroup label="Development Agreement Available?" options={["Yes", "No"]} value={step5.developmentAgreementAvailable} onChange={(value) => updateField("developmentAgreementAvailable", value)} />
+                        <DocumentUploadButton label="Upload Development Agreement" documents={step5.developmentAgreementDocuments} onDocumentsPicked={(documents) => updateField("developmentAgreementDocuments", documents)} />
+                    </View>
+                )}
+                {step5.ownershipType === "Other" && (
+                    <View className="gap-4">
+                        <FieldInput label="Mention Ownership Type" placeholder="Enter ownership type" value={step5.otherOwnershipType} onChangeText={(value) => updateField("otherOwnershipType", value)} />
+                        <DocumentUploadButton label="Upload Supporting Document" documents={step5.ownershipSupportingDocuments} onDocumentsPicked={(documents) => updateField("ownershipSupportingDocuments", documents)} />
+                    </View>
+                )}
+            </FormSection>
+
+            <FormSection title="Land / Project Title Verification">
+                <OptionGroup label="Is Title Verification Completed?" options={["Yes", "No", "Under Process"]} value={step5.titleVerificationStatus} onChange={(value) => updateField("titleVerificationStatus", value)} />
+                {step5.titleVerificationStatus === "Yes" && (
+                    <View className="gap-4">
+                        <FieldInput label="Title Verification Done By" placeholder="Enter verifier name / company" value={step5.titleVerificationDoneBy} onChangeText={(value) => updateField("titleVerificationDoneBy", value)} />
+                        <FieldInput label="Title Verification Date" placeholder="Select verification date" value={step5.titleVerificationDate} onChangeText={(value) => updateField("titleVerificationDate", value)} />
+                        <DocumentUploadButton label="Upload Title Report" documents={step5.titleReportDocuments} onDocumentsPicked={(documents) => updateField("titleReportDocuments", documents)} />
+                    </View>
+                )}
+                {step5.titleVerificationStatus === "Under Process" && (
+                    <FieldInput label="Expected Completion Date" placeholder="Select expected completion date" value={step5.titleExpectedCompletionDate} onChangeText={(value) => updateField("titleExpectedCompletionDate", value)} />
+                )}
+            </FormSection>
+
+            <FormSection title="Financial Remarks">
+                <FieldInput
+                    label="Financial / Ownership Remarks"
+                    placeholder="Add any important financial, guideline, loan, or ownership-related remarks"
+                    multiline
+                    value={step5.financialOwnershipRemarks}
+                    onChangeText={(value) => updateField("financialOwnershipRemarks", value)}
+                />
+            </FormSection>
+        </View>
+    );
+}
+
+// --- Step 6 Component ---
+function Step6() {
+    const dispatch = useDispatch();
+    const { step2, step3, step6 } = useSelector((state) => state.project);
     const [showUnitDropdown, setShowUnitDropdown] = useState(false);
     const priceRef = useRef(null);
 
@@ -2204,15 +2738,15 @@ function Step4() {
     // Initialize first unit if none selected
     useEffect(() => {
         if (allUnits.length === 0) return;
-        const selectedExists = allUnits.some(unit => unit.id === step4.currentSelectedUnitId);
+        const selectedExists = allUnits.some(unit => unit.id === step6.currentSelectedUnitId);
         if (!selectedExists) {
-            dispatch(updateStep4({ currentSelectedUnitId: allUnits[0].id }));
+            dispatch(updateStep6({ currentSelectedUnitId: allUnits[0].id }));
         }
-    }, [allUnits, step4.currentSelectedUnitId]);
+    }, [allUnits, step6.currentSelectedUnitId]);
 
-    const currentUnitId = step4.currentSelectedUnitId;
+    const currentUnitId = step6.currentSelectedUnitId;
     const currentSelectedUnit = allUnits.find(unit => unit.id === currentUnitId);
-    const currentData = step4.unitData[currentUnitId] || {
+    const currentData = step6.unitData[currentUnitId] || {
         images: currentSelectedUnit?.images || [],
         documents: [],
         sellingPrice: currentSelectedUnit?.price || '',
@@ -2223,7 +2757,7 @@ function Step4() {
     };
 
     const updateField = (field, value) => {
-        dispatch(updateStep4({
+        dispatch(updateStep6({
             unitId: currentUnitId,
             data: { [field]: value }
         }));
@@ -2310,7 +2844,7 @@ function Step4() {
                                 <TouchableOpacity
                                     key={item.id}
                                     onPress={() => {
-                                        dispatch(updateStep4({ currentSelectedUnitId: item.id }));
+                                        dispatch(updateStep6({ currentSelectedUnitId: item.id }));
                                         setShowUnitDropdown(false);
                                     }}
                                     className={`px-4 py-3 border-b border-gray-50 ${currentUnitId === item.id ? 'bg-[#F4F7FF]' : ''}`}

@@ -22,6 +22,64 @@ const initialState = {
         builderData: {}, // Keyed by typeId, value is visual builder state
     },
     step4: {
+        possessionStatus: '',
+        expectedPossessionDate: '',
+        possessionRemarks: '',
+        projectLaunchStatus: '',
+        projectLaunchDate: '',
+        expectedLaunchDate: '',
+        developmentCompletionPercentage: '',
+        currentDevelopmentStage: [],
+        otherDevelopmentStage: '',
+        developmentRemarks: '',
+        approvals: {
+            diversion: { status: '', referenceNumber: '', approvalDate: '', documents: [], expectedTime: '' },
+            tncp: { status: '', approvalNumber: '', approvalDate: '', documents: [], expectedTime: '' },
+            developmentPermission: { status: '', permissionNumber: '', permissionDate: '', documents: [], expectedTime: '' },
+            rera: { status: '', registrationNumber: '', registrationDate: '', documents: [], reasonNotAvailable: '', expectedTime: '' },
+            buildingPermission: { status: '', permissionNumber: '', permissionDate: '', documents: [], expectedTime: '' },
+        },
+        overallApprovalStatus: 'Not verified yet',
+    },
+    step5: {
+        guidelineValueAmount: '',
+        guidelineValueUnit: '',
+        propertyJurisdictionArea: '',
+        guidelineYear: '',
+        guidelineReferenceDocuments: [],
+        registryChargesAvailable: '',
+        registryChargesMaleBuyer: '',
+        registryChargesFemaleBuyer: '',
+        otherGovernmentCharges: '',
+        loanAvailable: '',
+        bankTieUpAvailable: '',
+        tieUpBankName: '',
+        loanApprovalStatus: '',
+        maximumLoanPercentage: '',
+        requiredLoanDocuments: '',
+        bankNameList: '',
+        ownershipType: '',
+        ownedOwnerCompanyName: '',
+        ownedDocuments: [],
+        jvLandOwnerName: '',
+        jvDeveloperBuilderName: '',
+        jvAgreementAvailable: '',
+        jvAgreementDocuments: [],
+        jvRevenueAreaSharingDetails: '',
+        developmentLandOwnerName: '',
+        developmentDeveloperName: '',
+        developmentAgreementAvailable: '',
+        developmentAgreementDocuments: [],
+        otherOwnershipType: '',
+        ownershipSupportingDocuments: [],
+        titleVerificationStatus: '',
+        titleVerificationDoneBy: '',
+        titleVerificationDate: '',
+        titleReportDocuments: [],
+        titleExpectedCompletionDate: '',
+        financialOwnershipRemarks: '',
+    },
+    step6: {
         unitData: {}, // Keyed by unique unit ID (e.g. "typeId-unitIndex")
         currentSelectedUnitId: null,
     },
@@ -44,9 +102,9 @@ const projectSlice = createSlice({
             state.step2.selectedTypes = state.step2.selectedTypes.filter(t => t.id !== action.payload);
             delete state.step3.unitConfigs[action.payload];
             if (state.step3.builderData) delete state.step3.builderData[action.payload];
-            Object.keys(state.step4.unitData).forEach(id => {
+            Object.keys(state.step6.unitData).forEach(id => {
                 if (id.startsWith(`${action.payload}-`)) {
-                    delete state.step4.unitData[id];
+                    delete state.step6.unitData[id];
                 }
             });
         },
@@ -147,7 +205,7 @@ const projectSlice = createSlice({
                             const unitIndex = newUnitConfigs.length - 1;
                             const sellingPrice = (override.customPrice || config.price || '').toString().replace(/,/g, '');
 
-                            const existing = state.step4.unitData[unitId] || {};
+                            const existing = state.step6.unitData[unitId] || {};
                             newUnitData[unitId] = {
                                 images: existing.images || [],
                                 documents: existing.documents || [],
@@ -163,18 +221,31 @@ const projectSlice = createSlice({
             });
 
             state.step3.unitConfigs[typeId] = newUnitConfigs;
-            Object.keys(state.step4.unitData).forEach(id => {
+            Object.keys(state.step6.unitData).forEach(id => {
                 if (!id.startsWith(`${typeId}-`)) {
-                    newUnitData[id] = state.step4.unitData[id];
+                    newUnitData[id] = state.step6.unitData[id];
                 }
             });
-            state.step4.unitData = newUnitData;
+            state.step6.unitData = newUnitData;
         },
         updateStep4: (state, action) => {
+            state.step4 = { ...state.step4, ...action.payload };
+        },
+        updateStep4Approval: (state, action) => {
+            const { approvalKey, data } = action.payload;
+            state.step4.approvals[approvalKey] = {
+                ...state.step4.approvals[approvalKey],
+                ...data,
+            };
+        },
+        updateStep5: (state, action) => {
+            state.step5 = { ...state.step5, ...action.payload };
+        },
+        updateStep6: (state, action) => {
             const { unitId, data } = action.payload;
             if (unitId) {
-                state.step4.unitData[unitId] = {
-                    ...(state.step4.unitData[unitId] || {
+                state.step6.unitData[unitId] = {
+                    ...(state.step6.unitData[unitId] || {
                         images: [],
                         documents: [],
                         sellingPrice: '',
@@ -186,25 +257,27 @@ const projectSlice = createSlice({
                     ...data
                 };
             } else {
-                state.step4 = { ...state.step4, ...action.payload };
+                state.step6 = { ...state.step6, ...action.payload };
             }
         },
         bulkUploadProject: (state, action) => {
-            const { step1, step2, step3, step4 } = action.payload;
+            const { step1, step2, step3, step4, step5, step6 } = action.payload;
             if (step1) state.step1 = { ...state.step1, ...step1 };
             if (step2) state.step2 = { ...state.step2, ...step2 };
             if (step3) state.step3 = { ...state.step3, ...step3 };
             if (step4) state.step4 = { ...state.step4, ...step4 };
+            if (step5) state.step5 = { ...state.step5, ...step5 };
+            if (step6) state.step6 = { ...state.step6, ...step6 };
         },
         bulkUploadSubtype: (state, action) => {
             const { typeId, unitConfigs, unitData } = action.payload;
-            Object.keys(state.step4.unitData).forEach(id => {
+            Object.keys(state.step6.unitData).forEach(id => {
                 if (id.startsWith(`${typeId}-`)) {
-                    delete state.step4.unitData[id];
+                    delete state.step6.unitData[id];
                 }
             });
             state.step3.unitConfigs[typeId] = unitConfigs;
-            Object.assign(state.step4.unitData, unitData);
+            Object.assign(state.step6.unitData, unitData);
         },
         resetForm: () => initialState,
     },
@@ -219,6 +292,9 @@ export const {
     updateStep3,
     updateBuilderData,
     updateStep4,
+    updateStep4Approval,
+    updateStep5,
+    updateStep6,
     bulkUploadProject,
     bulkUploadSubtype,
     resetForm,
