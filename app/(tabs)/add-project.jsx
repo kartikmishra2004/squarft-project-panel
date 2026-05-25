@@ -24,10 +24,8 @@ import {
     addPropertyType,
     removePropertyType,
     updatePropertyType,
-    updateStep3,
     updateBuilderData,
     updateStep4,
-    bulkUploadProject,
     bulkUploadSubtype,
     resetForm,
 } from "../../store/slices/projectSlice";
@@ -822,17 +820,13 @@ const getDefaultBuilderState = (subType) => {
     let rCount = 8;
     let cCount = 4;
 
-    if (subType === 'plot') {
-        secName = 'Sector A';
-        rCount = 5;
-        cCount = 6;
+    if (RANGE_BASED_SUB_TYPES.has(subType)) {
+        secName = 'A';
+        rCount = 1;
+        cCount = 4;
     } else if (subType === 'apartment') {
         secName = 'Tower A';
         rCount = 8;
-        cCount = 4;
-    } else if (subType === 'villa' || subType === 'rowhouse') {
-        secName = 'Section 1';
-        rCount = 3;
         cCount = 4;
     } else {
         secName = 'Section 1';
@@ -875,8 +869,6 @@ function Step3() {
     const [uploadModes, setUploadModes] = useState({}); // { [typeId]: 'manual' | 'bulk' }
     const [openUploadModeDropdown, setOpenUploadModeDropdown] = useState(false);
     const [openGridModeDropdown, setOpenGridModeDropdown] = useState(false);
-    const [propertyRanges, setPropertyRanges] = useState({});
-    const [selectedRangeUnitIndex, setSelectedRangeUnitIndex] = useState(0);
 
     // Keep active tab valid if types are removed
     useEffect(() => {
@@ -886,129 +878,6 @@ function Step3() {
     }, [step2.selectedTypes, activeTypeTab]);
 
     const activeType = step2.selectedTypes.find(t => t.id === activeTypeTab) || step2.selectedTypes[0];
-    const isRangeBasedType = !!activeType && RANGE_BASED_SUB_TYPES.has(activeType.subType);
-
-    const currentRange = propertyRanges[activeType?.id] || { start: '', end: '' };
-    const currentRangeUnits = activeType ? (step3.unitConfigs[activeType.id] || []) : [];
-    const selectedRangeUnit = currentRangeUnits[selectedRangeUnitIndex] || currentRangeUnits[0] || null;
-
-    useEffect(() => {
-        setSelectedRangeUnitIndex(0);
-    }, [activeType?.id]);
-
-    const handleRangeChange = (field, value) => {
-        if (!activeType) return;
-        setPropertyRanges(prev => ({
-            ...prev,
-            [activeType.id]: {
-                ...(prev[activeType.id] || { start: '', end: '' }),
-                [field]: value,
-            }
-        }));
-    };
-
-    const handleApplyPropertyRange = () => {
-        if (!activeType) return;
-
-        const start = parseInt(currentRange.start, 10);
-        const end = parseInt(currentRange.end, 10);
-
-        if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
-            alert("Please enter a valid property number range.");
-            return;
-        }
-
-        const unitConfigs = Array.from({ length: end - start + 1 }, (_, index) => ({
-            type: '',
-            name: '',
-            propertyNumber: String(start + index),
-            tower: '',
-            floor: '',
-            bhk: '',
-            officeType: '',
-            area: '',
-            areaUnit: activeType.subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
-            price: '',
-            images: [],
-            amenities: [''],
-            hasShop: false,
-            extraCharges: [{ title: '', amount: '' }],
-        }));
-
-        const unitData = {};
-        unitConfigs.forEach((_, index) => {
-            unitData[`${activeType.id}-${index}`] = {
-                images: [],
-                documents: [],
-                sellingPrice: '',
-                priceNegotiable: false,
-                taxExclude: false,
-                paymentMode: 'full',
-                agreed: false,
-            };
-        });
-
-        dispatch(bulkUploadSubtype({ typeId: activeType.id, unitConfigs, unitData }));
-        setSelectedRangeUnitIndex(0);
-    };
-
-    const handleUpdateRangeUnitField = (unitIndex, field, value) => {
-        if (!activeType) return;
-        dispatch(updateStep3({ typeId: activeType.id, unitIndex, data: { [field]: value } }));
-    };
-
-    const handlePickRangeUnitImages = async (unitIndex) => {
-        if (!activeType) return;
-        const unit = currentRangeUnits[unitIndex];
-        if (!unit) return;
-
-        const currentImages = unit.images || [];
-        if (currentImages.length >= 5) {
-            alert('You can add up to 5 images for each unit.');
-            return;
-        }
-
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            allowsMultipleSelection: true,
-            selectionLimit: 5 - currentImages.length,
-            quality: 0.8,
-        });
-
-        if (!result.canceled) {
-            const nextImages = [...currentImages, ...result.assets.map(asset => asset.uri)].slice(0, 5);
-            handleUpdateRangeUnitField(unitIndex, 'images', nextImages);
-        }
-    };
-
-    const handleRemoveRangeUnitImage = (unitIndex, imageUri) => {
-        const unit = currentRangeUnits[unitIndex];
-        if (!unit) return;
-        const nextImages = (unit.images || []).filter(uri => uri !== imageUri);
-        handleUpdateRangeUnitField(unitIndex, 'images', nextImages);
-    };
-
-    const handleAddRangeAmenity = (unitIndex) => {
-        const unit = currentRangeUnits[unitIndex];
-        if (!unit) return;
-        handleUpdateRangeUnitField(unitIndex, 'amenities', [...(unit.amenities || ['']), '']);
-    };
-
-    const handleUpdateRangeAmenity = (unitIndex, amenityIndex, value) => {
-        const unit = currentRangeUnits[unitIndex];
-        if (!unit) return;
-        const amenities = [...(unit.amenities || [''])];
-        amenities[amenityIndex] = value;
-        handleUpdateRangeUnitField(unitIndex, 'amenities', amenities);
-    };
-
-    const handleRemoveRangeAmenity = (unitIndex, amenityIndex) => {
-        const unit = currentRangeUnits[unitIndex];
-        if (!unit) return;
-        const amenities = [...(unit.amenities || [''])];
-        amenities.splice(amenityIndex, 1);
-        handleUpdateRangeUnitField(unitIndex, 'amenities', amenities.length > 0 ? amenities : ['']);
-    };
 
     // Initialize builder data if not present
     useEffect(() => {
@@ -1042,8 +911,8 @@ function Step3() {
         handleUpdateBuilder(prev => {
             const newId = (prev.sections[prev.sections.length - 1]?.id || 0) + 1;
             let newSecName = '';
-            if (activeType.subType === 'plot') {
-                newSecName = `Sector ${String.fromCharCode(64 + newId)}`;
+            if (RANGE_BASED_SUB_TYPES.has(activeType.subType)) {
+                newSecName = String.fromCharCode(64 + newId);
             } else if (activeType.subType === 'apartment') {
                 newSecName = `Tower ${String.fromCharCode(64 + newId)}`;
             } else {
@@ -1130,6 +999,7 @@ function Step3() {
         handleUpdateBuilder(prev => {
             const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
             if (!activeSec) return prev;
+            const shouldApplyAllRanges = RANGE_BASED_SUB_TYPES.has(activeType?.subType);
             const newCfgId = 'cfg_' + Date.now();
             const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'];
             const nextColor = colors[activeSec.configs.length % colors.length];
@@ -1141,11 +1011,15 @@ function Step3() {
                 price: '',
                 color: nextColor,
                 images: [],
+                brochure: null,
                 amenities: ['']
             };
             return {
                 ...prev,
-                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, configs: [...sec.configs, newCfg] } : sec),
+                sections: prev.sections.map(sec => {
+                    if (!shouldApplyAllRanges && sec.id !== prev.activeSectionId) return sec;
+                    return { ...sec, configs: [...sec.configs, JSON.parse(JSON.stringify(newCfg))] };
+                }),
                 activeConfigId: newCfgId
             };
         });
@@ -1155,22 +1029,28 @@ function Step3() {
         handleUpdateBuilder(prev => {
             const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
             if (!activeSec) return prev;
+            const shouldApplyAllRanges = RANGE_BASED_SUB_TYPES.has(activeType?.subType);
+            const targetSectionIds = shouldApplyAllRanges ? prev.sections.map(sec => sec.id) : [prev.activeSectionId];
+
             const remainingConfigs = activeSec.configs.filter(c => c.id !== cfgId);
-            
-            const newUnitMap = { ...activeSec.unitMap };
-            Object.keys(newUnitMap).forEach(key => {
-                if (newUnitMap[key] === cfgId) {
-                    delete newUnitMap[key];
-                }
-            });
 
             return {
                 ...prev,
-                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? {
-                    ...sec,
-                    configs: remainingConfigs,
-                    unitMap: newUnitMap
-                } : sec),
+                sections: prev.sections.map(sec => {
+                    if (!targetSectionIds.includes(sec.id)) return sec;
+                    const secRemainingConfigs = sec.configs.filter(c => c.id !== cfgId);
+                    const newUnitMap = { ...sec.unitMap };
+                    Object.keys(newUnitMap).forEach(key => {
+                        if (newUnitMap[key] === cfgId) {
+                            delete newUnitMap[key];
+                        }
+                    });
+                    return {
+                        ...sec,
+                        configs: secRemainingConfigs,
+                        unitMap: newUnitMap
+                    };
+                }),
                 activeConfigId: prev.activeConfigId === cfgId ? (remainingConfigs[0]?.id || null) : prev.activeConfigId
             };
         });
@@ -1179,10 +1059,13 @@ function Step3() {
     const handleUpdateConfigField = (cfgId, field, value) => {
         handleUpdateBuilder(prev => ({
             ...prev,
-            sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? {
-                ...sec,
-                configs: sec.configs.map(c => c.id === cfgId ? { ...c, [field]: value } : c)
-            } : sec)
+            sections: prev.sections.map(sec => {
+                if (!RANGE_BASED_SUB_TYPES.has(activeType?.subType) && sec.id !== prev.activeSectionId) return sec;
+                return {
+                    ...sec,
+                    configs: sec.configs.map(c => c.id === cfgId ? { ...c, [field]: value } : c)
+                };
+            })
         }));
     };
 
@@ -1238,16 +1121,48 @@ function Step3() {
         handleUpdateConfigField(cfgId, 'images', nextImages);
     };
 
-    const handleCellClick = (key) => {
+    const handlePickVariantBrochure = async (cfgId) => {
+        const config = activeSection?.configs?.find(c => c.id === cfgId);
+        if (!config) return;
+
+        const result = await DocumentPicker.getDocumentAsync({
+            type: [
+                'application/pdf',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            ],
+            multiple: false,
+            copyToCacheDirectory: true
+        });
+
+        if (!result.canceled && result.assets?.[0]) {
+            const brochure = result.assets[0];
+            handleUpdateConfigField(cfgId, 'brochure', {
+                name: brochure.name || 'Brochure',
+                uri: brochure.uri,
+                mimeType: brochure.mimeType || '',
+                size: brochure.size || 0,
+            });
+        }
+    };
+
+    const handleRemoveVariantBrochure = (cfgId) => {
+        handleUpdateConfigField(cfgId, 'brochure', null);
+    };
+
+    const handleCellClick = (key, sectionId) => {
         handleUpdateBuilder(prev => {
+            const targetSectionId = sectionId || prev.activeSectionId;
+            const targetSec = prev.sections.find(s => s.id === targetSectionId);
+            if (!targetSec) return prev;
+            const selectedKey = `${targetSectionId}:${key}`;
+
             if (prev.gridMode === 'paint') {
                 if (!prev.activeConfigId) {
                     alert("Please add and select a variant first before assigning units.");
                     return prev;
                 }
-                const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
-                if (!activeSec) return prev;
-                const newMap = { ...activeSec.unitMap };
+                const newMap = { ...targetSec.unitMap };
                 if (newMap[key] === prev.activeConfigId) {
                     delete newMap[key];
                 } else {
@@ -1255,15 +1170,19 @@ function Step3() {
                 }
                 return {
                     ...prev,
-                    sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitMap: newMap } : sec)
+                    activeSectionId: targetSectionId,
+                    sections: prev.sections.map(sec => sec.id === targetSectionId ? { ...sec, unitMap: newMap } : sec)
                 };
             } else {
-                const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
-                if (!activeSec || !activeSec.unitMap?.[key]) {
+                if (!targetSec.unitMap?.[key]) {
                     alert("Please assign a base variant to this unit in 'Assign Variants' mode before customizing.");
                     return prev;
                 }
-                return { ...prev, selectedUnitKey: key };
+                return {
+                    ...prev,
+                    activeSectionId: targetSectionId,
+                    selectedUnitKey: selectedKey
+                };
             }
         });
     };
@@ -1274,34 +1193,53 @@ function Step3() {
                 alert("Please add and select a variant first before assigning units.");
                 return prev;
             }
-            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
-            if (!activeSec) return prev;
-            const rows = activeSec.floors ?? activeSec.rows ?? activeSec.lanes ?? 1;
-            const cols = activeSec.unitsPerFloor ?? activeSec.plotsPerRow ?? activeSec.villasPerLane ?? 1;
-            const newMap = {};
-            for (let r = 1; r <= rows; r++) {
-                const rowCols = activeSec.rowUnitCounts?.[r] ?? cols;
-                for (let c = 1; c <= rowCols; c++) {
-                    newMap[`${r}_${c}`] = prev.activeConfigId;
-                }
-            }
+
+            const shouldApplyAllRanges = RANGE_BASED_SUB_TYPES.has(activeType?.subType);
+            const targetSectionIds = shouldApplyAllRanges
+                ? prev.sections.map(sec => sec.id)
+                : [prev.activeSectionId];
+
             return {
                 ...prev,
-                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitMap: newMap } : sec)
+                sections: prev.sections.map(sec => {
+                    if (!targetSectionIds.includes(sec.id)) return sec;
+                    const rows = sec.floors ?? sec.rows ?? sec.lanes ?? 1;
+                    const cols = sec.unitsPerFloor ?? sec.plotsPerRow ?? sec.villasPerLane ?? 1;
+                    const newMap = {};
+                    for (let r = 1; r <= rows; r++) {
+                        const rowCols = sec.rowUnitCounts?.[r] ?? cols;
+                        for (let c = 1; c <= rowCols; c++) {
+                            newMap[`${r}_${c}`] = prev.activeConfigId;
+                        }
+                    }
+                    return { ...sec, unitMap: newMap };
+                })
             };
         });
     };
 
     const handleClearAll = () => {
-        handleUpdateBuilder(prev => ({
-            ...prev,
-            sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitMap: {} } : sec)
-        }));
+        handleUpdateBuilder(prev => {
+            const shouldApplyAllRanges = RANGE_BASED_SUB_TYPES.has(activeType?.subType);
+            const targetSectionIds = shouldApplyAllRanges
+                ? prev.sections.map(sec => sec.id)
+                : [prev.activeSectionId];
+
+            return {
+                ...prev,
+                selectedUnitKey: shouldApplyAllRanges ? null : prev.selectedUnitKey,
+                sections: prev.sections.map(sec => {
+                    if (!targetSectionIds.includes(sec.id)) return sec;
+                    return { ...sec, unitMap: {} };
+                })
+            };
+        });
     };
 
-    const handleAdjustRowUnits = (rowNumber, delta) => {
+    const handleAdjustRowUnits = (rowNumber, delta, sectionId) => {
         handleUpdateBuilder(prev => {
-            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+            const targetSectionId = sectionId || prev.activeSectionId;
+            const activeSec = prev.sections.find(s => s.id === targetSectionId);
             if (!activeSec) return prev;
 
             const defaultCount = activeSec.unitsPerFloor ?? activeSec.plotsPerRow ?? activeSec.villasPerLane ?? 1;
@@ -1332,14 +1270,22 @@ function Step3() {
             });
 
             const selectedUnitKey = prev.selectedUnitKey && (() => {
-                const [rowValue, colValue] = prev.selectedUnitKey.split('_').map(Number);
+                const [selectedSectionId, selectedCellKey] = prev.selectedUnitKey.includes(':')
+                    ? prev.selectedUnitKey.split(':')
+                    : [String(prev.activeSectionId), prev.selectedUnitKey];
+
+                if (parseInt(selectedSectionId, 10) !== targetSectionId) {
+                    return prev.selectedUnitKey;
+                }
+
+                const [rowValue, colValue] = selectedCellKey.split('_').map(Number);
                 return rowValue === rowNumber && colValue > nextCount ? null : prev.selectedUnitKey;
             })();
 
             return {
                 ...prev,
                 selectedUnitKey,
-                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? {
+                sections: prev.sections.map(sec => sec.id === targetSectionId ? {
                     ...sec,
                     rowUnitCounts: nextRowUnitCounts,
                     unitMap: nextUnitMap,
@@ -1349,9 +1295,13 @@ function Step3() {
         });
     };
 
-    const handleUpdateOverride = (key, field, value) => {
+    const handleUpdateOverride = (compositeKey, field, value) => {
         handleUpdateBuilder(prev => {
-            const activeSec = prev.sections.find(s => s.id === prev.activeSectionId);
+            const [sectionIdRaw, key] = compositeKey.includes(':')
+                ? compositeKey.split(':')
+                : [String(prev.activeSectionId), compositeKey];
+            const sectionId = parseInt(sectionIdRaw, 10);
+            const activeSec = prev.sections.find(s => s.id === sectionId);
             if (!activeSec) return prev;
             const currentOverrides = { ...activeSec.unitOverrides };
             const unitOverride = { ...(currentOverrides[key] || {}) };
@@ -1359,7 +1309,7 @@ function Step3() {
             currentOverrides[key] = unitOverride;
             return {
                 ...prev,
-                sections: prev.sections.map(sec => sec.id === prev.activeSectionId ? { ...sec, unitOverrides: currentOverrides } : sec)
+                sections: prev.sections.map(sec => sec.id === sectionId ? { ...sec, unitOverrides: currentOverrides } : sec)
             };
         });
     };
@@ -1469,263 +1419,13 @@ function Step3() {
         );
     }
 
-    if (activeType && isRangeBasedType) {
-        const rangeUnits = currentRangeUnits;
-        const selectedIndex = Math.min(selectedRangeUnitIndex, Math.max(rangeUnits.length - 1, 0));
-        const selectedUnit = rangeUnits[selectedIndex] || null;
-
-        return (
-            <View className="gap-6">
-                <Text className="text-base font-lato-bold text-black">Configure Units</Text>
-
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
-                    {step2.selectedTypes.map((type) => {
-                        const typeIcon = subTypesData[type.mainType]?.find(t => t.id === type.subType)?.image;
-                        const isActive = activeTypeTab === type.id;
-                        return (
-                            <TouchableOpacity
-                                key={type.id}
-                                onPress={() => setActiveTypeTab(type.id)}
-                                className={`bg-white border rounded-lg px-3 py-2 mb-1 flex-row items-center mr-3 ${isActive ? 'border-[#4A43EC]' : 'border-gray-100'}`}
-                            >
-                                <View className="w-8 h-8 bg-[#F4F7FF] rounded-md items-center justify-center mr-2">
-                                    <Image source={typeIcon} className="w-5 h-5" resizeMode="contain" />
-                                </View>
-                                <View className="justify-center">
-                                    <Text className={`font-lato-bold text-[11px] leading-tight ${isActive ? 'text-[#4A43EC]' : 'text-black'}`}>
-                                        {type.subType.toUpperCase()}
-                                    </Text>
-                                    <Text className={`text-[9px] font-lato-bold uppercase mt-0.5 leading-tight ${isActive ? 'text-[#4A43EC]/80' : 'text-gray-500'}`}>
-                                        {type.mainType}
-                                    </Text>
-                                </View>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
-
-                <View className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm gap-4">
-                    <View className="gap-1">
-                        <Text className="text-sm font-lato-bold text-black">
-                            Property Number Range for {activeType.subType}
-                        </Text>
-                        <Text className="text-[11px] text-gray-500 font-lato">
-                            Enter a start and end property number. The app will create one simple box for each number in the range.
-                        </Text>
-                    </View>
-
-                    <View className="flex-row gap-3">
-                        <View className="flex-1">
-                            <Text className="text-xs font-lato-bold text-gray-500 mb-1.5">From</Text>
-                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                <TextInput
-                                    className="text-sm text-gray-800 font-lato-medium"
-                                    placeholder="1001"
-                                    placeholderTextColor="#9CA3AF"
-                                    keyboardType="number-pad"
-                                    value={currentRange.start}
-                                    onChangeText={(value) => handleRangeChange('start', value)}
-                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                />
-                            </View>
-                        </View>
-                        <View className="flex-1">
-                            <Text className="text-xs font-lato-bold text-gray-500 mb-1.5">To</Text>
-                            <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                <TextInput
-                                    className="text-sm text-gray-800 font-lato-medium"
-                                    placeholder="1006"
-                                    placeholderTextColor="#9CA3AF"
-                                    keyboardType="number-pad"
-                                    value={currentRange.end}
-                                    onChangeText={(value) => handleRangeChange('end', value)}
-                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                />
-                            </View>
-                        </View>
-                    </View>
-
-                    <TouchableOpacity
-                        onPress={handleApplyPropertyRange}
-                        className="bg-[#4A43EC] py-3.5 rounded-xl items-center"
-                    >
-                        <Text className="text-white text-[13px] font-lato-bold">Generate Boxes</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View className="gap-3">
-                    <View className="flex-row items-center justify-between">
-                        <Text className="text-sm font-lato-bold text-black">Generated Boxes</Text>
-                        <Text className="text-xs text-gray-500 font-lato">{rangeUnits.length} units</Text>
-                    </View>
-
-                    <View className="flex-row flex-wrap gap-3">
-                        {rangeUnits.map((unit, index) => (
-                            <View
-                                key={`${activeType.id}-${index}`}
-                                className={`w-[31%] min-h-20 rounded-2xl border bg-white px-3 py-3 items-center justify-center ${selectedIndex === index ? 'border-[#4A43EC] bg-[#F4F7FF]' : 'border-gray-200'}`}
-                            >
-                                <TouchableOpacity
-                                    className="absolute inset-0"
-                                    onPress={() => setSelectedRangeUnitIndex(index)}
-                                    activeOpacity={0.8}
-                                />
-                                <Text className="text-sm font-lato-bold text-[#4A43EC]" numberOfLines={1}>
-                                    {unit.propertyNumber || `Unit ${index + 1}`}
-                                </Text>
-                                <Text className="text-[10px] text-gray-500 font-lato mt-1">Simple Box</Text>
-                            </View>
-                        ))}
-                    </View>
-                </View>
-
-                {selectedUnit && (
-                    <View className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm gap-4">
-                        <Text className="text-sm font-lato-bold text-black">
-                            Edit Unit: {selectedUnit.propertyNumber}
-                        </Text>
-
-                        <View className="flex-row gap-4">
-                            <View className="flex-1">
-                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Category / Type</Text>
-                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
-                                    <TextInput
-                                        className="text-xs text-gray-800 font-lato-medium"
-                                        placeholder={activeType.subType === 'plot' ? 'eg. Standard Plot' : 'eg. 2 BHK'}
-                                        placeholderTextColor="#9CA3AF"
-                                        value={selectedUnit.type}
-                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'type', value)}
-                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                    />
-                                </View>
-                            </View>
-                            <View className="flex-1">
-                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Variant Name</Text>
-                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
-                                    <TextInput
-                                        className="text-xs text-gray-800 font-lato-medium"
-                                        placeholder="eg. Standard / Premium"
-                                        placeholderTextColor="#9CA3AF"
-                                        value={selectedUnit.name}
-                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'name', value)}
-                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                    />
-                                </View>
-                            </View>
-                        </View>
-
-                        <View className="gap-3">
-                            <View className="flex-row items-center justify-between">
-                                <Text className="text-[11px] font-lato-bold text-gray-500">Images</Text>
-                                <TouchableOpacity
-                                    onPress={() => handlePickRangeUnitImages(selectedIndex)}
-                                    className="px-3 py-1.5 rounded-full bg-white border border-[#4A43EC]/20"
-                                >
-                                    <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Add Images</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
-                                {(selectedUnit.images || []).map((uri) => (
-                                    <View key={uri} className="mr-2 relative">
-                                        <View className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
-                                            <Image source={{ uri }} className="w-full h-full" resizeMode="cover" />
-                                        </View>
-                                        <TouchableOpacity
-                                            onPress={() => handleRemoveRangeUnitImage(selectedIndex, uri)}
-                                            className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 items-center justify-center"
-                                        >
-                                            <Ionicons name="close" size={12} color="white" />
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
-
-                                {(selectedUnit.images || []).length < 5 && (
-                                    <TouchableOpacity
-                                        onPress={() => handlePickRangeUnitImages(selectedIndex)}
-                                        className="w-20 h-20 rounded-2xl border border-dashed border-[#4A43EC]/40 bg-[#F4F7FF] items-center justify-center mr-2"
-                                    >
-                                        <Ionicons name="add" size={22} color="#4A43EC" />
-                                        <Text className="text-[9px] font-lato-bold text-[#4A43EC] mt-1">Add</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </ScrollView>
-                        </View>
-
-                        <View className="gap-3">
-                            <View className="flex-row items-center justify-between">
-                                <Text className="text-[11px] font-lato-bold text-gray-500">Amenities</Text>
-                                <TouchableOpacity
-                                    onPress={() => handleAddRangeAmenity(selectedIndex)}
-                                    className="px-3 py-1.5 rounded-full bg-white border border-[#4A43EC]/20"
-                                >
-                                    <Text className="text-[10px] font-lato-bold text-[#4A43EC]">Add Amenity</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {(selectedUnit.amenities || ['']).map((amenity, amenityIndex) => (
-                                <View key={`${selectedUnit.propertyNumber}-amenity-${amenityIndex}`} className="flex-row items-center gap-2">
-                                    <View className="flex-1 bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
-                                        <TextInput
-                                            className="text-xs text-gray-800 font-lato-medium"
-                                            placeholder="Add amenity"
-                                            value={amenity}
-                                            onChangeText={(value) => handleUpdateRangeAmenity(selectedIndex, amenityIndex, value)}
-                                            style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                        />
-                                    </View>
-                                    {(selectedUnit.amenities || ['']).length > 1 && (
-                                        <TouchableOpacity
-                                            onPress={() => handleRemoveRangeAmenity(selectedIndex, amenityIndex)}
-                                            className="w-10 h-11 rounded-xl bg-red-50 border border-red-100 items-center justify-center"
-                                        >
-                                            <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-                            ))}
-                        </View>
-
-                        <View className="flex-row gap-4">
-                            <View className="flex-1">
-                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Area ({activeType.subType === 'plot' ? 'sqyd' : 'sqft'})</Text>
-                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
-                                    <TextInput
-                                        className="text-xs text-gray-800 font-lato-medium"
-                                        placeholder={activeType.subType === 'plot' ? 'eg. 150' : 'eg. 1150'}
-                                        placeholderTextColor="#9CA3AF"
-                                        keyboardType="numeric"
-                                        value={selectedUnit.area}
-                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'area', value)}
-                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                    />
-                                </View>
-                            </View>
-                            <View className="flex-1">
-                                <Text className="text-[11px] font-lato-bold text-gray-500 mb-1.5">Selling Price (₹)</Text>
-                                <View className="bg-white border border-gray-200 rounded-xl px-3 h-11 justify-center">
-                                    <TextInput
-                                        className="text-xs text-gray-800 font-lato-medium"
-                                        placeholder="eg. 6500000"
-                                        placeholderTextColor="#9CA3AF"
-                                        keyboardType="numeric"
-                                        value={selectedUnit.price}
-                                        onChangeText={(value) => handleUpdateRangeUnitField(selectedIndex, 'price', value)}
-                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                    />
-                                </View>
-                            </View>
-                        </View>
-                    </View>
-                )}
-            </View>
-        );
-    }
-
     const activeSection = builderState?.sections?.find(s => s.id === builderState.activeSectionId) || builderState?.sections?.[0];
     const activeConfig = activeSection?.configs?.find(c => c.id === builderState?.activeConfigId) || activeSection?.configs?.[0];
     const configsList = step3.unitConfigs[activeType?.id] || [];
     const getRowUnitCount = (section, rowNumber) => section?.rowUnitCounts?.[rowNumber] ?? (section?.unitsPerFloor ?? section?.plotsPerRow ?? section?.villasPerLane ?? 1);
+    const sectionsForGrid = RANGE_BASED_SUB_TYPES.has(activeType?.subType)
+        ? (builderState?.sections || [])
+        : (activeSection ? [activeSection] : []);
 
     return (
         <View className="gap-6">
@@ -1834,7 +1534,9 @@ function Step3() {
                                 <View className="gap-4">
                                     <View className="flex-row items-center justify-between">
                                         <Text className="text-sm font-lato-bold text-black">
-                                            {activeType.subType === 'plot' ? 'Sectors / Blocks' : (activeType.subType === 'apartment' ? 'Towers / Buildings' : 'Sections / Divisions')}
+                                            {RANGE_BASED_SUB_TYPES.has(activeType.subType)
+                                                ? 'Range Types & Property Count'
+                                                : (activeType.subType === 'apartment' ? 'Towers / Buildings' : 'Sections / Divisions')}
                                         </Text>
                                         <TouchableOpacity 
                                             onPress={handleAddSection}
@@ -1842,7 +1544,7 @@ function Step3() {
                                         >
                                             <Ionicons name="add-circle-outline" size={16} color="#4A43EC" />
                                             <Text className="text-[#4A43EC] text-xs font-lato-bold">
-                                                Add {activeType.subType === 'plot' ? 'Sector' : (activeType.subType === 'apartment' ? 'Tower' : 'Section')}
+                                                Add {RANGE_BASED_SUB_TYPES.has(activeType.subType) ? 'Range' : (activeType.subType === 'apartment' ? 'Tower' : 'Section')}
                                             </Text>
                                         </TouchableOpacity>
                                     </View>
@@ -1870,7 +1572,9 @@ function Step3() {
                                     <View className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm gap-4">
                                         <View>
                                             <Text className="text-xs font-lato-bold text-gray-500 mb-2">
-                                                {activeType.subType === 'plot' ? 'Sector Name' : (activeType.subType === 'apartment' ? 'Tower Name' : 'Section Name')}
+                                                {RANGE_BASED_SUB_TYPES.has(activeType.subType)
+                                                    ? 'Range Type (A, B, C...)'
+                                                    : (activeType.subType === 'apartment' ? 'Tower Name' : 'Section Name')}
                                             </Text>
                                             <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                                 <TextInput
@@ -1882,25 +1586,9 @@ function Step3() {
                                             </View>
                                         </View>
 
-                                        <View className="flex-row gap-4">
-                                            <View className="flex-1">
-                                                <Text className="text-xs font-lato-bold text-gray-500 mb-2">
-                                                    {activeType.subType === 'plot' ? 'Number of Rows' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'Number of Lanes' : 'Number of Floors')}
-                                                </Text>
-                                                <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
-                                                    <TextInput
-                                                        className="text-sm text-gray-800 font-lato-medium"
-                                                        keyboardType="numeric"
-                                                        value={(activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 0).toString()}
-                                                        onChangeText={v => handleUpdateDimensions(activeType.subType === 'plot' ? 'rows' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'lanes' : 'floors'), v)}
-                                                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                                    />
-                                                </View>
-                                            </View>
-                                            <View className="flex-1">
-                                                <Text className="text-xs font-lato-bold text-gray-500 mb-2">
-                                                    {activeType.subType === 'plot' ? 'Plots per Row' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'Villas per Lane' : 'Units per Floor')}
-                                                </Text>
+                                        {RANGE_BASED_SUB_TYPES.has(activeType.subType) ? (
+                                            <View>
+                                                <Text className="text-xs font-lato-bold text-gray-500 mb-2">No. of Properties in this Range</Text>
                                                 <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
                                                     <TextInput
                                                         className="text-sm text-gray-800 font-lato-medium"
@@ -1911,7 +1599,38 @@ function Step3() {
                                                     />
                                                 </View>
                                             </View>
-                                        </View>
+                                        ) : (
+                                            <View className="flex-row gap-4">
+                                                <View className="flex-1">
+                                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2">
+                                                        {activeType.subType === 'plot' ? 'Number of Rows' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'Number of Lanes' : 'Number of Floors')}
+                                                    </Text>
+                                                    <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                        <TextInput
+                                                            className="text-sm text-gray-800 font-lato-medium"
+                                                            keyboardType="numeric"
+                                                            value={(activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 0).toString()}
+                                                            onChangeText={v => handleUpdateDimensions(activeType.subType === 'plot' ? 'rows' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'lanes' : 'floors'), v)}
+                                                            style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                        />
+                                                    </View>
+                                                </View>
+                                                <View className="flex-1">
+                                                    <Text className="text-xs font-lato-bold text-gray-500 mb-2">
+                                                        {activeType.subType === 'plot' ? 'Plots per Row' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'Villas per Lane' : 'Units per Floor')}
+                                                    </Text>
+                                                    <View className="bg-white border border-gray-200 rounded-xl px-4 h-12 justify-center">
+                                                        <TextInput
+                                                            className="text-sm text-gray-800 font-lato-medium"
+                                                            keyboardType="numeric"
+                                                            value={(activeSection.unitsPerFloor ?? activeSection.plotsPerRow ?? activeSection.villasPerLane ?? 0).toString()}
+                                                            onChangeText={v => handleUpdateDimensions(activeType.subType === 'plot' ? 'plotsPerRow' : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? 'villasPerLane' : 'unitsPerFloor'), v)}
+                                                            style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
+                                                        />
+                                                    </View>
+                                                </View>
+                                            </View>
+                                        )}
                                     </View>
 
                                     {/* Variant Configs Section */}
@@ -2054,6 +1773,51 @@ function Step3() {
 
                                                 <View className="gap-3">
                                                     <View className="flex-row items-center justify-between">
+                                                        <Text className="text-[11px] font-lato-bold text-gray-500">Brochure Document</Text>
+                                                        <TouchableOpacity
+                                                            onPress={() => handlePickVariantBrochure(activeConfig.id)}
+                                                            className="px-3 py-1.5 rounded-full bg-white border border-[#4A43EC]/20"
+                                                        >
+                                                            <Text className="text-[10px] font-lato-bold text-[#4A43EC]">
+                                                                {activeConfig.brochure?.uri ? 'Replace Brochure' : 'Upload Brochure'}
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+
+                                                    {activeConfig.brochure?.uri ? (
+                                                        <View className="flex-row items-center justify-between bg-white border border-gray-200 rounded-xl px-3 py-3">
+                                                            <View className="flex-row items-center flex-1 mr-3">
+                                                                <View className="w-8 h-8 rounded-lg bg-[#F4F7FF] items-center justify-center mr-2">
+                                                                    <Ionicons name="document-text-outline" size={16} color="#4A43EC" />
+                                                                </View>
+                                                                <Text className="text-[11px] font-lato-medium text-gray-700 flex-1" numberOfLines={1}>
+                                                                    {activeConfig.brochure.name || 'Brochure'}
+                                                                </Text>
+                                                            </View>
+                                                            <TouchableOpacity
+                                                                onPress={() => handleRemoveVariantBrochure(activeConfig.id)}
+                                                                className="w-8 h-8 rounded-lg bg-red-50 border border-red-100 items-center justify-center"
+                                                            >
+                                                                <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    ) : (
+                                                        <TouchableOpacity
+                                                            onPress={() => handlePickVariantBrochure(activeConfig.id)}
+                                                            className="bg-white border border-dashed border-[#4A43EC]/35 rounded-xl px-3 py-3 flex-row items-center"
+                                                        >
+                                                            <View className="w-8 h-8 rounded-lg bg-[#F4F7FF] items-center justify-center mr-2">
+                                                                <Ionicons name="attach-outline" size={16} color="#4A43EC" />
+                                                            </View>
+                                                            <Text className="text-[11px] font-lato-medium text-gray-600">
+                                                                Add brochure (PDF/DOC)
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                    )}
+                                                </View>
+
+                                                <View className="gap-3">
+                                                    <View className="flex-row items-center justify-between">
                                                         <Text className="text-[11px] font-lato-bold text-gray-500">Amenities</Text>
                                                         <TouchableOpacity
                                                             onPress={() => handleAddAmenity(activeConfig.id)}
@@ -2192,97 +1956,94 @@ function Step3() {
                                                 </View>
 
                                                 <View className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm gap-4 overflow-hidden">
-                                                    {/* Top Banner */}
-                                                    <View className="bg-[#1E293B] py-3.5 rounded-2xl items-center justify-center shadow-sm mb-2">
-                                                        <Text className="text-xs font-lato-bold text-white uppercase tracking-wider">
-                                                            {activeSection.name} Rooftop
-                                                        </Text>
-                                                    </View>
-
-                                                    {(() => {
-                                                        const rows = activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 1;
+                                                    {sectionsForGrid.map((section) => {
+                                                        const rows = section.floors ?? section.rows ?? section.lanes ?? 1;
                                                         const rowsArr = Array.from({ length: rows }, (_, i) => activeType.subType === 'plot' ? i + 1 : rows - i);
 
-                                                        return rowsArr.map(r => (
-                                                            <View key={r} className="flex-row items-center gap-3">
-                                                                {/* Floor Label Box */}
-                                                                <View className="w-16 h-16 bg-[#F8FAFC] border border-gray-200 rounded-2xl items-center justify-center shadow-xs">
-                                                                    <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
-                                                                        {activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`)}
-                                                                    </Text>
-                                                                    <Text className="text-[9px] font-lato-bold text-gray-400 mt-1">
-                                                                        {getRowUnitCount(activeSection, r)} units
-                                                                    </Text>
-                                                                </View>
+                                                        return (
+                                                            <View key={`paint-section-${section.id}`} className="gap-3">
+                                                                {rowsArr.map(r => (
+                                                                    <View key={`${section.id}-${r}`} className="flex-row items-center gap-3">
+                                                                        <View className="w-16 h-16 bg-[#F8FAFC] border border-gray-200 rounded-2xl items-center justify-center shadow-xs">
+                                                                            <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
+                                                                                {RANGE_BASED_SUB_TYPES.has(activeType.subType)
+                                                                                    ? `RANGE ${section.name}`
+                                                                                    : (activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`))}
+                                                                            </Text>
+                                                                            <Text className="text-[9px] font-lato-bold text-gray-400 mt-1">
+                                                                                {getRowUnitCount(section, r)} units
+                                                                            </Text>
+                                                                        </View>
 
-                                                                <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs">
-                                                                    <TouchableOpacity
-                                                                        onPress={() => handleAdjustRowUnits(r, 1)}
-                                                                        className="w-10 h-8 items-center justify-center border-b border-gray-100"
-                                                                    >
-                                                                        <Ionicons name="add" size={16} color="#4A43EC" />
-                                                                    </TouchableOpacity>
-                                                                    <TouchableOpacity
-                                                                        onPress={() => handleAdjustRowUnits(r, -1)}
-                                                                        className="w-10 h-8 items-center justify-center"
-                                                                    >
-                                                                        <Ionicons name="remove" size={16} color="#EF4444" />
-                                                                    </TouchableOpacity>
-                                                                </View>
-
-                                                                {/* Unit Boxes Row */}
-                                                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
-                                                                    {Array.from({ length: getRowUnitCount(activeSection, r) }, (_, i) => i + 1).map(c => {
-                                                                        const key = `${r}_${c}`;
-                                                                        const assignedCfgId = activeSection.unitMap?.[key];
-                                                                        const assignedCfg = activeSection.configs?.find(cfg => cfg.id === assignedCfgId);
-                                                                        const override = activeSection.unitOverrides?.[key] || {};
-                                                                        const displayNum = `${r}${c.toString().padStart(2, '0')}`;
-                                                                        const label = override.customName || displayNum;
-                                                                        const hasOverride = override.customName || override.customArea || override.customPrice;
-
-                                                                        return (
+                                                                        <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs">
                                                                             <TouchableOpacity
-                                                                                key={key}
-                                                                                onPress={() => handleCellClick(key)}
-                                                                                style={{
-                                                                                    backgroundColor: assignedCfg ? assignedCfg.color : '#FFFFFF',
-                                                                                    borderColor: assignedCfg ? assignedCfg.color : '#CBD5E1',
-                                                                                    borderWidth: assignedCfg ? 0 : 1.5,
-                                                                                    borderStyle: assignedCfg ? 'solid' : 'dashed'
-                                                                                }}
-                                                                                className="w-28 h-16 rounded-2xl items-center justify-center mr-3 relative overflow-hidden shadow-xs"
+                                                                                onPress={() => handleAdjustRowUnits(r, 1, section.id)}
+                                                                                className="w-10 h-8 items-center justify-center border-b border-gray-100"
                                                                             >
-                                                                                <Text className={`text-xs font-lato-bold ${assignedCfg ? 'text-white' : 'text-gray-400'}`} numberOfLines={1}>
-                                                                                    {label}
-                                                                                </Text>
-                                                                                {assignedCfg ? (
-                                                                                    <>
-                                                                                        <Text className="text-[10px] font-lato-bold text-white/95 mt-0.5" numberOfLines={1}>
-                                                                                            {assignedCfg.type}
-                                                                                        </Text>
-                                                                                        <Text className="text-[9px] font-lato-bold text-white/85 uppercase tracking-wider mt-0.5" numberOfLines={1}>
-                                                                                            {assignedCfg.name}
-                                                                                        </Text>
-                                                                                    </>
-                                                                                ) : (
-                                                                                    <Text className="text-[9px] font-lato text-gray-300 mt-1 uppercase" numberOfLines={1}>
-                                                                                        Unassigned
-                                                                                    </Text>
-                                                                                )}
-
-                                                                                {hasOverride && (
-                                                                                    <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
-                                                                                        <Ionicons name="star" size={9} color="white" />
-                                                                                    </View>
-                                                                                )}
+                                                                                <Ionicons name="add" size={16} color="#4A43EC" />
                                                                             </TouchableOpacity>
-                                                                        );
-                                                                    })}
-                                                                </ScrollView>
+                                                                            <TouchableOpacity
+                                                                                onPress={() => handleAdjustRowUnits(r, -1, section.id)}
+                                                                                className="w-10 h-8 items-center justify-center"
+                                                                            >
+                                                                                <Ionicons name="remove" size={16} color="#EF4444" />
+                                                                            </TouchableOpacity>
+                                                                        </View>
+
+                                                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
+                                                                            {Array.from({ length: getRowUnitCount(section, r) }, (_, i) => i + 1).map(c => {
+                                                                                const key = `${r}_${c}`;
+                                                                                const assignedCfgId = section.unitMap?.[key];
+                                                                                const assignedCfg = section.configs?.find(cfg => cfg.id === assignedCfgId);
+                                                                                const override = section.unitOverrides?.[key] || {};
+                                                                                const displayNum = `${r}${c.toString().padStart(2, '0')}`;
+                                                                                const label = override.customName || displayNum;
+                                                                                const hasOverride = override.customName || override.customArea || override.customPrice;
+
+                                                                                return (
+                                                                                    <TouchableOpacity
+                                                                                        key={`${section.id}-${key}`}
+                                                                                        onPress={() => handleCellClick(key, section.id)}
+                                                                                        style={{
+                                                                                            backgroundColor: assignedCfg ? assignedCfg.color : '#FFFFFF',
+                                                                                            borderColor: assignedCfg ? assignedCfg.color : '#CBD5E1',
+                                                                                            borderWidth: assignedCfg ? 0 : 1.5,
+                                                                                            borderStyle: assignedCfg ? 'solid' : 'dashed'
+                                                                                        }}
+                                                                                        className="w-28 h-16 rounded-2xl items-center justify-center mr-3 relative overflow-hidden shadow-xs"
+                                                                                    >
+                                                                                        <Text className={`text-xs font-lato-bold ${assignedCfg ? 'text-white' : 'text-gray-400'}`} numberOfLines={1}>
+                                                                                            {label}
+                                                                                        </Text>
+                                                                                        {assignedCfg ? (
+                                                                                            <>
+                                                                                                <Text className="text-[10px] font-lato-bold text-white/95 mt-0.5" numberOfLines={1}>
+                                                                                                    {assignedCfg.type}
+                                                                                                </Text>
+                                                                                                <Text className="text-[9px] font-lato-bold text-white/85 uppercase tracking-wider mt-0.5" numberOfLines={1}>
+                                                                                                    {assignedCfg.name}
+                                                                                                </Text>
+                                                                                            </>
+                                                                                        ) : (
+                                                                                            <Text className="text-[9px] font-lato text-gray-300 mt-1 uppercase" numberOfLines={1}>
+                                                                                                Unassigned
+                                                                                            </Text>
+                                                                                        )}
+
+                                                                                        {hasOverride && (
+                                                                                            <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
+                                                                                                <Ionicons name="star" size={9} color="white" />
+                                                                                            </View>
+                                                                                        )}
+                                                                                    </TouchableOpacity>
+                                                                                );
+                                                                            })}
+                                                                        </ScrollView>
+                                                                    </View>
+                                                                ))}
                                                             </View>
-                                                        ));
-                                                    })()}
+                                                        );
+                                                    })}
 
                                                     {/* Bottom Foundation Bar */}
                                                     <View className="bg-[#E2E8F0] h-6 rounded-xl mt-2 border border-gray-300 shadow-xs" />
@@ -2295,98 +2056,96 @@ function Step3() {
                                                 </Text>
 
                                                 <View className="bg-white border border-gray-100 rounded-3xl p-6 shadow-sm gap-4 overflow-hidden">
-                                                    {/* Top Banner */}
-                                                    <View className="bg-[#1E293B] py-3.5 rounded-2xl items-center justify-center shadow-sm mb-2">
-                                                        <Text className="text-xs font-lato-bold text-white uppercase tracking-wider">
-                                                            {activeSection.name} Rooftop (Select Unit to Override)
-                                                        </Text>
-                                                    </View>
-
-                                                    {(() => {
-                                                        const rows = activeSection.floors ?? activeSection.rows ?? activeSection.lanes ?? 1;
+                                                    {sectionsForGrid.map((section) => {
+                                                        const rows = section.floors ?? section.rows ?? section.lanes ?? 1;
                                                         const rowsArr = Array.from({ length: rows }, (_, i) => activeType.subType === 'plot' ? i + 1 : rows - i);
 
-                                                        return rowsArr.map(r => (
-                                                            <View key={r} className="flex-row items-center gap-3">
-                                                                {/* Floor Label Box */}
-                                                                <View className="w-16 h-16 bg-[#F8FAFC] border border-gray-200 rounded-2xl items-center justify-center shadow-xs">
-                                                                    <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
-                                                                        {activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`)}
-                                                                    </Text>
-                                                                    <Text className="text-[9px] font-lato-bold text-gray-400 mt-1">
-                                                                        {getRowUnitCount(activeSection, r)} units
-                                                                    </Text>
-                                                                </View>
+                                                        return (
+                                                            <View key={`edit-section-${section.id}`} className="gap-3">
+                                                                {rowsArr.map(r => (
+                                                                    <View key={`${section.id}-${r}`} className="flex-row items-center gap-3">
+                                                                        <View className="w-16 h-16 bg-[#F8FAFC] border border-gray-200 rounded-2xl items-center justify-center shadow-xs">
+                                                                            <Text className="text-xs font-lato-bold text-gray-700 uppercase tracking-wider">
+                                                                                {RANGE_BASED_SUB_TYPES.has(activeType.subType)
+                                                                                    ? `RANGE ${section.name}`
+                                                                                    : (activeType.subType === 'plot' ? `ROW ${r}` : (activeType.subType === 'villa' || activeType.subType === 'rowhouse' ? `LANE ${r}` : `FL ${r}`))}
+                                                                            </Text>
+                                                                            <Text className="text-[9px] font-lato-bold text-gray-400 mt-1">
+                                                                                {getRowUnitCount(section, r)} units
+                                                                            </Text>
+                                                                        </View>
 
-                                                                <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs">
-                                                                    <TouchableOpacity
-                                                                        onPress={() => handleAdjustRowUnits(r, 1)}
-                                                                        className="w-10 h-8 items-center justify-center border-b border-gray-100"
-                                                                    >
-                                                                        <Ionicons name="add" size={16} color="#4A43EC" />
-                                                                    </TouchableOpacity>
-                                                                    <TouchableOpacity
-                                                                        onPress={() => handleAdjustRowUnits(r, -1)}
-                                                                        className="w-10 h-8 items-center justify-center"
-                                                                    >
-                                                                        <Ionicons name="remove" size={16} color="#EF4444" />
-                                                                    </TouchableOpacity>
-                                                                </View>
-
-                                                                {/* Unit Boxes Row */}
-                                                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
-                                                                    {Array.from({ length: getRowUnitCount(activeSection, r) }, (_, i) => i + 1).map(c => {
-                                                                        const key = `${r}_${c}`;
-                                                                        const isSelected = builderState.selectedUnitKey === key;
-                                                                        const assignedCfgId = activeSection.unitMap?.[key];
-                                                                        const assignedCfg = activeSection.configs?.find(cfg => cfg.id === assignedCfgId);
-                                                                        const override = activeSection.unitOverrides?.[key] || {};
-                                                                        const displayNum = `${r}${c.toString().padStart(2, '0')}`;
-                                                                        const label = override.customName || displayNum;
-                                                                        const hasOverride = override.customName || override.customArea || override.customPrice;
-
-                                                                        return (
+                                                                        <View className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-xs">
                                                                             <TouchableOpacity
-                                                                                key={key}
-                                                                                onPress={() => handleCellClick(key)}
-                                                                                style={{
-                                                                                    backgroundColor: isSelected ? '#4A43EC' : (assignedCfg ? assignedCfg.color : '#FFFFFF'),
-                                                                                    borderColor: isSelected ? '#000000' : (assignedCfg ? assignedCfg.color : '#CBD5E1'),
-                                                                                    borderWidth: isSelected ? 3 : (assignedCfg ? 0 : 1.5),
-                                                                                    borderStyle: assignedCfg || isSelected ? 'solid' : 'dashed'
-                                                                                }}
-                                                                                className="w-28 h-16 rounded-2xl items-center justify-center mr-3 relative overflow-hidden shadow-xs"
+                                                                                onPress={() => handleAdjustRowUnits(r, 1, section.id)}
+                                                                                className="w-10 h-8 items-center justify-center border-b border-gray-100"
                                                                             >
-                                                                                <Text className={`text-xs font-lato-bold ${assignedCfg || isSelected ? 'text-white' : 'text-gray-400'}`} numberOfLines={1}>
-                                                                                    {label}
-                                                                                </Text>
-                                                                                {assignedCfg ? (
-                                                                                    <>
-                                                                                        <Text className="text-[10px] font-lato-bold text-white/95 mt-0.5" numberOfLines={1}>
-                                                                                            {assignedCfg.type}
-                                                                                        </Text>
-                                                                                        <Text className="text-[9px] font-lato-bold text-white/90 uppercase tracking-wider mt-0.5" numberOfLines={1}>
-                                                                                            {override.customPrice ? `₹${override.customPrice}` : `₹${assignedCfg.price}`}
-                                                                                        </Text>
-                                                                                    </>
-                                                                                ) : (
-                                                                                    <Text className="text-[9px] font-lato text-gray-300 mt-1 uppercase" numberOfLines={1}>
-                                                                                        Unassigned
-                                                                                    </Text>
-                                                                                )}
-
-                                                                                {hasOverride && (
-                                                                                    <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
-                                                                                        <Ionicons name="star" size={9} color="white" />
-                                                                                    </View>
-                                                                                )}
+                                                                                <Ionicons name="add" size={16} color="#4A43EC" />
                                                                             </TouchableOpacity>
-                                                                        );
-                                                                    })}
-                                                                </ScrollView>
+                                                                            <TouchableOpacity
+                                                                                onPress={() => handleAdjustRowUnits(r, -1, section.id)}
+                                                                                className="w-10 h-8 items-center justify-center"
+                                                                            >
+                                                                                <Ionicons name="remove" size={16} color="#EF4444" />
+                                                                            </TouchableOpacity>
+                                                                        </View>
+
+                                                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 flex-row gap-3">
+                                                                            {Array.from({ length: getRowUnitCount(section, r) }, (_, i) => i + 1).map(c => {
+                                                                                const key = `${r}_${c}`;
+                                                                                const compositeKey = `${section.id}:${key}`;
+                                                                                const isSelected = builderState.selectedUnitKey === compositeKey;
+                                                                                const assignedCfgId = section.unitMap?.[key];
+                                                                                const assignedCfg = section.configs?.find(cfg => cfg.id === assignedCfgId);
+                                                                                const override = section.unitOverrides?.[key] || {};
+                                                                                const displayNum = `${r}${c.toString().padStart(2, '0')}`;
+                                                                                const label = override.customName || displayNum;
+                                                                                const hasOverride = override.customName || override.customArea || override.customPrice;
+
+                                                                                return (
+                                                                                    <TouchableOpacity
+                                                                                        key={`${section.id}-${key}`}
+                                                                                        onPress={() => handleCellClick(key, section.id)}
+                                                                                        style={{
+                                                                                            backgroundColor: isSelected ? '#4A43EC' : (assignedCfg ? assignedCfg.color : '#FFFFFF'),
+                                                                                            borderColor: isSelected ? '#000000' : (assignedCfg ? assignedCfg.color : '#CBD5E1'),
+                                                                                            borderWidth: isSelected ? 3 : (assignedCfg ? 0 : 1.5),
+                                                                                            borderStyle: assignedCfg || isSelected ? 'solid' : 'dashed'
+                                                                                        }}
+                                                                                        className="w-28 h-16 rounded-2xl items-center justify-center mr-3 relative overflow-hidden shadow-xs"
+                                                                                    >
+                                                                                        <Text className={`text-xs font-lato-bold ${assignedCfg || isSelected ? 'text-white' : 'text-gray-400'}`} numberOfLines={1}>
+                                                                                            {label}
+                                                                                        </Text>
+                                                                                        {assignedCfg ? (
+                                                                                            <>
+                                                                                                <Text className="text-[10px] font-lato-bold text-white/95 mt-0.5" numberOfLines={1}>
+                                                                                                    {assignedCfg.type}
+                                                                                                </Text>
+                                                                                                <Text className="text-[9px] font-lato-bold text-white/90 uppercase tracking-wider mt-0.5" numberOfLines={1}>
+                                                                                                    {override.customPrice ? `₹${override.customPrice}` : `₹${assignedCfg.price}`}
+                                                                                                </Text>
+                                                                                            </>
+                                                                                        ) : (
+                                                                                            <Text className="text-[9px] font-lato text-gray-300 mt-1 uppercase" numberOfLines={1}>
+                                                                                                Unassigned
+                                                                                            </Text>
+                                                                                        )}
+
+                                                                                        {hasOverride && (
+                                                                                            <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
+                                                                                                <Ionicons name="star" size={9} color="white" />
+                                                                                            </View>
+                                                                                        )}
+                                                                                    </TouchableOpacity>
+                                                                                );
+                                                                            })}
+                                                                        </ScrollView>
+                                                                    </View>
+                                                                ))}
                                                             </View>
-                                                        ));
-                                                    })()}
+                                                        );
+                                                    })}
 
                                                     {/* Bottom Foundation Bar */}
                                                     <View className="bg-[#E2E8F0] h-6 rounded-xl mt-2 border border-gray-300 shadow-xs" />
@@ -2394,20 +2153,28 @@ function Step3() {
 
                                                 {/* Selected Unit Override Card */}
                                                 {builderState.selectedUnitKey && (() => {
-                                                    const key = builderState.selectedUnitKey;
+                                                    const [sectionIdRaw, key] = builderState.selectedUnitKey.includes(':')
+                                                        ? builderState.selectedUnitKey.split(':')
+                                                        : [String(builderState.activeSectionId), builderState.selectedUnitKey];
+                                                    const selectedSection = builderState.sections.find(sec => sec.id === parseInt(sectionIdRaw, 10));
+                                                    if (!selectedSection) return null;
+
                                                     const [r, c] = key.split('_');
-                                                    const assignedCfgId = activeSection.unitMap?.[key];
-                                                    const assignedCfg = activeSection.configs?.find(cfg => cfg.id === assignedCfgId) || {};
-                                                    const override = activeSection.unitOverrides?.[key] || {};
+                                                    const assignedCfgId = selectedSection.unitMap?.[key];
+                                                    const assignedCfg = selectedSection.configs?.find(cfg => cfg.id === assignedCfgId) || {};
+                                                    const override = selectedSection.unitOverrides?.[key] || {};
                                                     const displayNum = `${r}${c.padStart(2, '0')}`;
-                                                    const defaultPropNum = displayNum;
+                                                    const defaultPropNum = RANGE_BASED_SUB_TYPES.has(activeType.subType)
+                                                        ? `${selectedSection.name || 'A'}-${c}`
+                                                        : displayNum;
+                                                    const selectedCompositeKey = `${selectedSection.id}:${key}`;
 
                                                     return (
                                                         <View className="bg-white border border-[#4A43EC] rounded-3xl p-6 shadow-md gap-4">
                                                             <View className="flex-row items-center justify-between border-b border-gray-100 pb-3">
                                                                 <View>
                                                                     <Text className="text-sm font-lato-bold text-black">Customize Unit: {override.customName || defaultPropNum}</Text>
-                                                                    <Text className="text-xs text-gray-500 font-lato mt-0.5">Base Variant: {assignedCfg.type || 'Unassigned'}</Text>
+                                                                    <Text className="text-xs text-gray-500 font-lato mt-0.5">{RANGE_BASED_SUB_TYPES.has(activeType.subType) ? `Range ${selectedSection.name} • ` : ''}Base Variant: {assignedCfg.type || 'Unassigned'}</Text>
                                                                 </View>
                                                                 <TouchableOpacity onPress={() => handleUpdateBuilder(prev => ({ ...prev, selectedUnitKey: null }))}>
                                                                     <Ionicons name="close-circle" size={24} color="#9CA3AF" />
@@ -2422,7 +2189,7 @@ function Step3() {
                                                                             className="text-sm text-gray-800 font-lato-medium"
                                                                             placeholder={defaultPropNum}
                                                                             value={override.customName || ''}
-                                                                            onChangeText={v => handleUpdateOverride(key, 'customName', v)}
+                                                                            onChangeText={v => handleUpdateOverride(selectedCompositeKey, 'customName', v)}
                                                                             style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                                         />
                                                                     </View>
@@ -2437,7 +2204,7 @@ function Step3() {
                                                                                 placeholder={assignedCfg.area || '0'}
                                                                                 keyboardType="numeric"
                                                                                 value={override.customArea || ''}
-                                                                                onChangeText={v => handleUpdateOverride(key, 'customArea', v)}
+                                                                                onChangeText={v => handleUpdateOverride(selectedCompositeKey, 'customArea', v)}
                                                                                 style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                                             />
                                                                         </View>
@@ -2450,7 +2217,7 @@ function Step3() {
                                                                                 placeholder={assignedCfg.price || '0'}
                                                                                 keyboardType="numeric"
                                                                                 value={override.customPrice || ''}
-                                                                                onChangeText={v => handleUpdateOverride(key, 'customPrice', v)}
+                                                                                onChangeText={v => handleUpdateOverride(selectedCompositeKey, 'customPrice', v)}
                                                                                 style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                                                                             />
                                                                         </View>

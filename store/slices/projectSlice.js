@@ -121,7 +121,12 @@ const projectSlice = createSlice({
                             const override = section.unitOverrides?.[key] || {};
 
                             const displayNum = `${r}${c.toString().padStart(2, '0')}`;
-                            const propertyNumber = override.customName || displayNum;
+                            const rangeLabel = (section.name || '').trim() || 'A';
+                            const rangeBasedNumber = `${rangeLabel}-${c}`;
+                            const defaultPropertyNumber = (subType === 'plot' || subType === 'villa' || subType === 'rowhouse')
+                                ? rangeBasedNumber
+                                : displayNum;
+                            const propertyNumber = override.customName || defaultPropertyNumber;
                             const unitId = `${typeId}-${section.id}-${key}`;
 
                             const unitConfig = {
@@ -137,6 +142,7 @@ const projectSlice = createSlice({
                                 area: (override.customArea || config.area || '0').toString(),
                                 areaUnit: subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
                                 images: config.images || [],
+                                brochure: config.brochure || null,
                                 amenities: (config.amenities || []).filter(Boolean).length > 0 ? (config.amenities || []).filter(Boolean) : [config.name || 'Standard'],
                                 propertyNumber: propertyNumber,
                                 hasShop: false,
