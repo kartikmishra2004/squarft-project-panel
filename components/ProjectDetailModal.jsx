@@ -348,38 +348,36 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                     </>
                 ) : (
                     <>
-                        <View className="px-4 pb-2.5">
-                            <View className="flex-row items-center justify-between mb-2.5">
+                        <View className="px-3 pb-1.5">
+                            <View className="flex-row items-center justify-between mb-2">
                                 <TouchableOpacity
                                     onPress={goToProperty}
-                                    className="w-8 h-8 rounded-full bg-[#F3F4F8] items-center justify-center"
+                                    className="w-7 h-7 rounded-full bg-[#F3F4F8] items-center justify-center"
                                     activeOpacity={0.85}
                                 >
-                                    <Ionicons name="arrow-back" size={14} color="#1F2937" />
+                                    <Ionicons name="arrow-back" size={12} color="#1F2937" />
                                 </TouchableOpacity>
-                                <View className="flex-1 ml-2.5">
-                                    <Text className="text-[16px] font-lato-bold text-[#1F2937]">Payment Schedule</Text>
-                                    <Text className="mt-0.5 text-[10px] font-lato text-[#8E98AA]" numberOfLines={1}>
+                                <View className="flex-1 ml-2">
+                                    <Text className="text-[14px] font-lato-bold text-[#1F2937]">Payment Schedule</Text>
+                                    <Text className="mt-0.5 text-[9px] font-lato text-[#8E98AA]" numberOfLines={1}>
                                         {title} · {bookedBy}
                                     </Text>
                                 </View>
-                                <View className="w-9 h-9 rounded-full bg-[#F3F4F8] items-center justify-center">
-                                    <MaterialCommunityIcons name="calendar-month-outline" size={15} color="#D1D5DB" />
-                                </View>
+                                {/* Calendar icon removed per design */}
                             </View>
 
                             <View className="flex-row flex-wrap justify-between">
                                 {paymentSummary.map((item) => (
-                                    <View key={item.label} className="rounded-[12px] px-3 py-2.5 mb-2" style={{ width: (width - 62) / 2, backgroundColor: item.bg }}>
-                                        <Text className="text-[9px] font-lato text-[#6B7280]">{item.label}</Text>
-                                        <Text className="mt-0.5 text-[12px] font-lato-bold" style={{ color: item.tone }} numberOfLines={1}>
+                                    <View key={item.label} className="rounded-[10px] px-2 py-2 mb-2" style={{ width: (width - 62) / 2, backgroundColor: item.bg }}>
+                                        <Text className="text-[8px] font-lato text-[#6B7280]">{item.label}</Text>
+                                        <Text className="mt-0.5 text-[11px] font-lato-bold" style={{ color: item.tone }} numberOfLines={1}>
                                             {item.value}
                                         </Text>
                                     </View>
                                 ))}
                             </View>
 
-                            <Text className="mt-2.5 mb-2 text-[11px] font-lato-bold tracking-[1px] text-[#53637D]">MILESTONE SCHEDULE</Text>
+                            <Text className="mt-2 mb-1 text-[10px] font-lato-bold tracking-[1px] text-[#53637D]">MILESTONE SCHEDULE</Text>
 
                             <View>
                                 {paymentMilestones.map((milestone, index) => {
@@ -387,22 +385,22 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                     const isLast = index === paymentMilestones.length - 1;
 
                                     return (
-                                        <View key={`${milestone.title}-${index}`} className={`rounded-[14px] border px-3.5 py-3 mb-2.5 ${tone.container}`}>
-                                            <View className="flex-row items-center justify-between mb-2">
-                                                <Text className="text-[12px] font-lato-bold text-[#1F2937]">{milestone.title}</Text>
-                                                <Text className={`text-[10px] font-lato-bold ${tone.status}`}>{milestone.status}</Text>
+                                        <View key={`${milestone.title}-${index}`} className={`rounded-[12px] border px-3 py-2 mb-2 ${tone.container}`}>
+                                            <View className="flex-row items-center justify-between mb-1">
+                                                <Text className="text-[11px] font-lato-bold text-[#1F2937]">{milestone.title}</Text>
+                                                <Text className={`text-[9px] font-lato-bold ${tone.status}`}>{milestone.status}</Text>
                                             </View>
 
-                                            <Text className={`text-[15px] font-lato-bold ${tone.amount}`}>{milestone.amount}</Text>
-                                            <Text className="mt-0.5 text-[10px] font-lato text-[#52607A]">{milestone.detail}</Text>
+                                            <Text className={`text-[13px] font-lato-bold ${tone.amount}`}>{milestone.amount}</Text>
+                                            <Text className="mt-0.5 text-[9px] font-lato text-[#52607A]">{milestone.detail}</Text>
 
                                             {milestone.actionLabel ? (
-                                                <TouchableOpacity activeOpacity={0.85} className="mt-2.5 self-start">
-                                                    <Text className="text-[10px] font-lato-bold text-[#4A43EC]">{milestone.actionLabel}</Text>
+                                                <TouchableOpacity activeOpacity={0.85} className="mt-1.5 self-start">
+                                                    <Text className="text-[9px] font-lato-bold text-[#4A43EC]">{milestone.actionLabel}</Text>
                                                 </TouchableOpacity>
                                             ) : null}
 
-                                            {!isLast ? <View className="mt-2.5 h-px bg-[#DDE6DD]" /> : null}
+                                            {!isLast ? <View className="mt-1.5 h-px bg-[#DDE6DD]" /> : null}
                                         </View>
                                     );
                                 })}

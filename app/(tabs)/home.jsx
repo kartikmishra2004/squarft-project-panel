@@ -243,6 +243,27 @@ export default function Home() {
         }
     };
 
+    const mapDealStatus = (deal) => {
+        const s = (deal.dealStatus || deal.topStatus || "").toLowerCase();
+        if ((deal.progress || 0) >= 100 || s.includes("done") || s.includes("completed")) return "Deal completed";
+        if (s.includes("install")) return "Installment";
+        if (s.includes("token")) return "Tokened";
+        return "Visit completed";
+    };
+
+    const getDealTone = (mappedStatus) => {
+        switch (mappedStatus) {
+            case "Deal completed":
+                return "success";
+            case "Installment":
+                return "warning";
+            case "Tokened":
+                return "info";
+            default:
+                return "muted";
+        }
+    };
+
     const getRangeLabel = (index, section) => section?.name || section?.label || `Range ${String.fromCharCode(65 + index)}`;
 
     const getSectionLabel = (index, inventoryTypeValue) => {
@@ -925,68 +946,49 @@ export default function Home() {
                                     elevation: 1,
                                 }}
                             >
-                                <View className="px-4 pt-3.5 pb-3.5">
-                                    <View className="flex-row items-start justify-between mb-2.5">
-                                        <View className="flex-1 pr-3">
-                                            <Text className="text-[16px] font-lato-bold text-[#1F2937] leading-5" numberOfLines={1}>
-                                                {deal.title}
-                                            </Text>
-                                            <View className="flex-row items-center mt-1.5">
-                                                <View className="h-2 w-2 rounded-full bg-[#6F5DF5] mr-2" />
-                                                <Text className="text-[12px] font-lato text-[#7E889A]" numberOfLines={1}>
-                                                    {deal.bookedBy} • {deal.mobile}
-                                                </Text>
-                                            </View>
+                                <View className="px-3 pt-2 pb-2">
+                                    <View className="flex-row items-start justify-between mb-1">
+                                        <View className="flex-1 pr-2">
+                                            <Text className="text-[13px] font-lato-bold text-[#1F2937] leading-4" numberOfLines={1}>{deal.title}</Text>
+                                            <Text className="mt-0.5 text-[11px] font-lato text-[#7E889A]" numberOfLines={1}>{deal.bookedBy} • {deal.mobile}</Text>
                                         </View>
                                         <View className="items-end">
-                                            <View className={`px-3 py-1 rounded-full ${getDealStatusStyle("muted")}`}>
-                                                <Text className="text-[10px] font-lato-bold text-[#7B73F8]">{deal.dealStatus}</Text>
-                                            </View>
-                                            <Text className="mt-1 text-[11px] font-lato text-[#8E98AA]">{deal.bookingDate}</Text>
+                                            {(() => {
+                                                const mapped = mapDealStatus(deal);
+                                                const tone = getDealTone(mapped);
+                                                return (
+                                                    <>
+                                                        <View className={`px-2 py-0.5 rounded-full ${getDealStatusStyle(tone)}`}>
+                                                            <Text className="text-[9px] font-lato-bold">{mapped}</Text>
+                                                        </View>
+                                                        <Text className="mt-1 text-[10px] font-lato text-[#8E98AA]">{deal.bookingDate}</Text>
+                                                    </>
+                                                );
+                                            })()}
                                         </View>
                                     </View>
 
-                                    <View className="mb-3">
-                                        <View className="flex-row items-center justify-between mb-1.5">
-                                            <Text className="text-[12px] font-lato-bold text-[#4B5563]">Payment Progress</Text>
-                                            <Text className="text-[12px] font-lato-bold text-[#6F5DF5]">{deal.progress}%</Text>
+                                    <View className="mb-2">
+                                        <View className="flex-row items-center justify-between mb-1">
+                                            <Text className="text-[11px] font-lato-bold text-[#4B5563]">Payment</Text>
+                                            <Text className="text-[11px] font-lato-bold text-[#6F5DF5]">{deal.progress}%</Text>
                                         </View>
-                                        <View className="h-[8px] rounded-full bg-[#ECEFF6] overflow-hidden">
+                                        <View className="h-[6px] rounded-full bg-[#ECEFF6] overflow-hidden">
                                             <View className="h-full bg-[#3029E8] rounded-full" style={{ width: `${deal.progress}%` }} />
                                         </View>
                                     </View>
 
-                                    <View className="flex-row gap-2 mb-3">
-                                        <View className="flex-1 rounded-xl bg-[#F7F8FC] px-3 py-2">
-                                            <Text className="text-[9px] font-lato-bold text-[#96A0B2] tracking-[1px]">DEAL VALUE</Text>
-                                            <Text className="mt-0.5 text-[13px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.dealValue}</Text>
+                                    <View className="flex-row gap-2">
+                                        <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-1">
+                                            <Text className="text-[9px] font-lato-bold text-[#96A0B2]">DEAL VALUE</Text>
+                                            <Text className="mt-0.5 text-[12px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.dealValue}</Text>
                                         </View>
-                                        <View className="flex-1 rounded-xl bg-[#F7F8FC] px-3 py-2">
-                                            <Text className="text-[9px] font-lato-bold text-[#96A0B2] tracking-[1px]">NEXT DUE</Text>
-                                            <Text className="mt-0.5 text-[13px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.nextDue}</Text>
-                                        </View>
-                                    </View>
-
-                                    <View className="flex-row items-center justify-between">
-                                        <View className="flex-1 flex-row items-center gap-2">
-                                            {deal.steps.map((step, stepIndex) => (
-                                                <View key={step.label} className="flex-row items-center">
-                                                    <View
-                                                        className={`px-2.5 py-1 rounded-full ${step.state === "done" ? "bg-[#E5ECFF]" : step.state === "current" ? "bg-[#F3EFFF]" : "bg-[#F3F4F6]"}`}
-                                                    >
-                                                        <Text
-                                                            className={`text-[9px] font-lato-bold tracking-[1px] ${step.state === "done" ? "text-[#3559E4]" : step.state === "current" ? "text-[#6F5DF5]" : "text-[#8B93A7]"}`}
-                                                        >
-                                                            {step.label}
-                                                        </Text>
-                                                    </View>
-                                                    {stepIndex < deal.steps.length - 1 ? <View className="w-1.5" /> : null}
-                                                </View>
-                                            ))}
-                                        </View>
-                                        <View className={`px-3 py-1.5 rounded-full ${getDealStatusStyle("success")}`}>
-                                            <Text className="text-[11px] font-lato-bold text-[#009B79]">{deal.footerStatus}</Text>
-                                        </View>
+                                        {mapDealStatus(deal) === "Installment" ? (
+                                            <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-1">
+                                                <Text className="text-[9px] font-lato-bold text-[#96A0B2]">NEXT DUE</Text>
+                                                <Text className="mt-0.5 text-[12px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.nextDue}</Text>
+                                            </View>
+                                        ) : null}
                                     </View>
                                 </View>
                             </TouchableOpacity>
