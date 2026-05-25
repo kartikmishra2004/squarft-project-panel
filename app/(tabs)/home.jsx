@@ -205,6 +205,16 @@ export default function Home() {
 
     const getPropertyDetailText = (inventoryTypeValue, item) => {
         if (inventoryTypeValue === "plot" || inventoryTypeValue === "shop" || inventoryTypeValue === "showroom") {
+            if (inventoryTypeValue === "plot") {
+                const metaText = item.meta || item.label || "";
+                const areaMatch = metaText.match(/([\d,.]+\s*(?:sq\.?\s*ft\.?|sqft|m2|sqm))/i);
+                if (areaMatch) return areaMatch[1].replace(/\s+/g, " ").replace(/sq\.?\s*ft\.?/i, "Sq.Ft");
+
+                const splitParts = metaText.split("•").map((part) => part.trim()).filter(Boolean);
+                if (splitParts.length > 1) return splitParts[1];
+                if (splitParts.length === 1) return splitParts[0];
+            }
+
             return item.area || item.label || "-";
         }
 
@@ -276,6 +286,8 @@ export default function Home() {
         <View className="flex-row flex-wrap justify-between">
             {items.map((item, index) => {
                 const statusStyle = getBadgeStyle(item.status);
+                const isPlot = item.context?.inventoryType === "plot";
+                const displayTitle = item.raw.title || (isPlot ? "Plot" : item.raw.meta || item.detail);
 
                 return (
                     <TouchableOpacity
@@ -312,12 +324,13 @@ export default function Home() {
 
                             <View className="mb-0.5">
                                 <Text className="text-[13px] font-lato-bold text-[#1A1A1A]" numberOfLines={1}>
-                                    {item.raw.title || item.raw.meta || item.detail}
-                                </Text>
-                                <Text className="mt-0.5 text-[10px] font-lato-bold text-[#4A43EC]" numberOfLines={1}>
-                                    {item.price}
+                                    {displayTitle}
                                 </Text>
                             </View>
+
+                            <Text className="mt-0.5 text-[10px] font-lato-bold text-[#4A43EC]" numberOfLines={1}>
+                                {item.price}
+                            </Text>
 
                             <View className="flex-row items-center justify-end">
                                 <TouchableOpacity
