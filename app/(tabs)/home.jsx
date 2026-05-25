@@ -38,7 +38,7 @@ export default function Home() {
         { key: "plot", label: "Plot" },
         { key: "shop", label: "Shop" }
     ];
-    const statusOptions = ["Available", "Booked", "Sold", "Tokened"];
+    const statusOptions = ["Available", "Booked", "Sold"];
     const insets = useSafeAreaInsets();
 
     const getBadgeStyle = (status) => {
@@ -47,8 +47,6 @@ export default function Home() {
                 return "bg-emerald-100 text-emerald-600";
             case "Booked":
                 return "bg-amber-100 text-amber-600";
-            case "Tokened":
-                return "bg-slate-100 text-slate-500";
             case "Sold":
                 return "bg-rose-100 text-rose-500";
             default:
@@ -177,8 +175,6 @@ export default function Home() {
 
     const getPlotStatusStyle = (status) => {
         switch (status) {
-            case "Tokened":
-                return "bg-slate-100 text-slate-600";
             case "Booked":
                 return "bg-emerald-100 text-emerald-700";
             case "Sold":
@@ -306,7 +302,7 @@ export default function Home() {
                             detail: getPropertyDetailText(inventoryType, card),
                             price: card.price || selectedProject.avgPrice,
                             status: card.status || "Available",
-                            isDimmed: card.active === false && card.status === "Tokened",
+                            isDimmed: card.active === false && card.status === "Sold",
                             target: {
                                 inventoryType: "plot",
                                 stackKey: stack.key,
