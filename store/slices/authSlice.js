@@ -10,6 +10,7 @@ const authSlice = createSlice({
         newPassword: '',
         confirmPassword: '',
         companyName: '',
+        companyType: '',
         reraNumber: '',
         location: '',
         otp: ['', '', '', ''],
@@ -29,6 +30,7 @@ const authSlice = createSlice({
         setNewPassword: (state, action) => { state.newPassword = action.payload; },
         setConfirmPassword: (state, action) => { state.confirmPassword = action.payload; },
         setCompanyName: (state, action) => { state.companyName = action.payload; },
+        setCompanyType: (state, action) => { state.companyType = action.payload; },
         setReraNumber: (state, action) => { state.reraNumber = action.payload; },
         setLocation: (state, action) => { state.location = action.payload; },
         setOtpDigit: (state, action) => {
@@ -50,6 +52,7 @@ const authSlice = createSlice({
             state.mobile = '';
             state.password = '';
             state.companyName = '';
+            state.companyType = '';
             state.reraNumber = '';
             state.location = '';
             state.isLoggedIn = false;
@@ -68,6 +71,7 @@ export const {
     setNewPassword, 
     setConfirmPassword, 
     setCompanyName,
+    setCompanyType,
     setReraNumber,
     setLocation,
     setOtpDigit, 

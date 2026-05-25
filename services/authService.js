@@ -8,6 +8,7 @@ export const authService = {
       console.log('🔵 [AUTH SERVICE] Register attempt with data:', {
         full_name: `${userData.first_name} ${userData.last_name}`.trim(),
         company_name: userData.company_name,
+        company_type: userData.company_type,
         rera_number: userData.rera_number,
         phone: userData.phone,
         location: userData.location,
@@ -17,6 +18,7 @@ export const authService = {
       const response = await api.post('/api/project-developer/auth/register', {
         full_name: `${userData.first_name} ${userData.last_name}`.trim(),
         company_name: userData.company_name,
+        company_type: userData.company_type,
         rera_number: userData.rera_number,
         phone: userData.phone,
         location: userData.location,
