@@ -1,22 +1,125 @@
-import { Text, View, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, Image, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Link, router } from "expo-router";
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Ionicons, AntDesign } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { setMobile, setPassword, toggleRememberMe, setLoggedIn } from "../../store/slices/authSlice";
+import { setMobile, setPassword, toggleRememberMe, setLoggedIn, setUser, setToken, setLoading, setError, clearError } from "../../store/slices/authSlice";
+import { authService } from "../../services/authService";
 
 const logo = require("../../assets/icons/app-icon.png");
 
 export default function Login() {
     const dispatch = useDispatch();
-    const { mobile, password, rememberMe } = useSelector((state) => state.auth);
+    const { mobile, password, rememberMe, loading, error } = useSelector((state) => state.auth);
     const [showPassword, setShowPassword] = useState(false);
 
-    const handleLogin = () => {
-        dispatch(setLoggedIn(true));
-        router.replace("/(tabs)/home");
+    const handleLogin = async () => {
+        // Clear previous errors
+        dispatch(clearError());
+
+        console.log('🔵 [LOGIN PAGE] Login button pressed');
+        console.log('🔵 [LOGIN PAGE] Mobile:', mobile);
+        console.log('🔵 [LOGIN PAGE] Password length:', password?.length);
+
+        // Validation
+        if (!mobile || !password) {
+            console.log(' [LOGIN PAGE] Validation failed: Missing fields');
+            Alert.alert('Missing Information', 'Please enter both phone number and password');
+            return;
+        }
+
+        if (mobile.length < 10) {
+            console.log(' [LOGIN PAGE] Validation failed: Invalid phone length');
+            Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number');
+            return;
+        }
+
+        try {
+            console.log('🔵 [LOGIN PAGE] Starting login process...');
+            dispatch(setLoading(true));
+            
+            const response = await authService.login(mobile, password);
+            
+            console.log(' [LOGIN PAGE] Login response received:', response);
+            
+            if (response.success) {
+                console.log(' [LOGIN PAGE] Login successful, updating Redux state');
+                // Update Redux state
+                dispatch(setToken(response.token));
+                dispatch(setUser(response.user));
+                dispatch(setLoggedIn(true));
+                
+                console.log(' [LOGIN PAGE] Navigating to home');
+                // Navigate to home
+                router.replace("/(tabs)/home");
+            } else {
+                console.log(' [LOGIN PAGE] Login response success=false');
+                Alert.alert('Login Failed', 'Invalid response from server. Please try again.');
+            }
+        } catch (err) {
+            console.error(' [LOGIN PAGE] Login error caught:', err);
+            
+            // Get error details safely
+            const errorStatus = err?.status;
+            const errorMessage = err?.message || 'Login failed. Please try again.';
+            const errorDetails = err?.details;
+            
+            console.log('Error details:', { errorStatus, errorMessage, errorDetails });
+            
+            // Handle specific error cases
+            if (errorStatus === 401 || errorMessage.toLowerCase().includes('invalid credentials')) {
+                // Invalid credentials
+                Alert.alert(
+                    'Login Failed',
+                    'Invalid phone number or password. Please check your credentials and try again.',
+                    [{ text: 'OK' }]
+                );
+            } else if (errorStatus === 400 || errorMessage.toLowerCase().includes('required')) {
+                // Missing fields
+                Alert.alert(
+                    'Missing Information',
+                    'Please enter both phone number and password.',
+                    [{ text: 'OK' }]
+                );
+            } else if (errorMessage.toLowerCase().includes('network') || errorMessage.toLowerCase().includes('timeout')) {
+                // Network error
+                Alert.alert(
+                    'Connection Error',
+                    'Unable to connect to server. Please check your internet connection and try again.',
+                    [{ text: 'OK' }]
+                );
+            } else if (errorMessage.toLowerCase().includes('not found')) {
+                // Account not found
+                Alert.alert(
+                    'Account Not Found',
+                    'No account found with this phone number. Would you like to register?',
+                    [
+                        {
+                            text: 'Register',
+                            onPress: () => router.replace('/register'),
+                        },
+                        {
+                            text: 'Cancel',
+                            style: 'cancel',
+                        },
+                    ]
+                );
+            } else {
+                // Generic error
+                Alert.alert(
+                    'Login Failed',
+                    errorMessage || 'An unexpected error occurred. Please try again.',
+                    [{ text: 'OK' }]
+                );
+            }
+            
+            dispatch(setError(errorMessage));
+        } finally {
+            dispatch(setLoading(false));
+            console.log('🔵 [LOGIN PAGE] Login process completed');
+        }
     };
 
     return (
@@ -95,9 +198,14 @@ export default function Login() {
 
                         <TouchableOpacity
                             onPress={handleLogin}
-                            className="bg-[#4A43EC] rounded-2xl py-4 items-center mb-8 shadow-lg shadow-blue-500/30"
+                            disabled={loading}
+                            className={`bg-[#4A43EC] rounded-2xl py-4 items-center mb-8 shadow-lg shadow-blue-500/30 ${loading ? 'opacity-70' : ''}`}
                         >
-                            <Text className="text-white text-[16px] font-lato-bold">Log In</Text>
+                            {loading ? (
+                                <ActivityIndicator color="white" />
+                            ) : (
+                                <Text className="text-white text-[16px] font-lato-bold">Log In</Text>
+                            )}
                         </TouchableOpacity>
 
                         <View className="flex-row items-center mb-8">
@@ -106,23 +214,6 @@ export default function Login() {
                             <View className="flex-1 h-[1px] bg-gray-200" />
                         </View>
 
-                        <TouchableOpacity className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-4 mb-4 relative">
-                            <Image
-                                source={require('../../assets/icons/google.png')}
-                                style={{ width: 20, height: 20, position: 'absolute', left: 20 }}
-                                resizeMode="contain"
-                            />
-                            <Text className="text-black text-[15px] font-lato-bold">Continue With Google</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity className="flex-row items-center justify-center border border-gray-200 rounded-2xl py-4 mb-10 relative">
-                            <Image
-                                source={require('../../assets/icons/apple-logo.png')}
-                                style={{ width: 20, height: 20, position: 'absolute', left: 20 }}
-                                resizeMode="contain"
-                            />
-                            <Text className="text-black text-[15px] font-lato-bold">Continue With Apple</Text>
-                        </TouchableOpacity>
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>

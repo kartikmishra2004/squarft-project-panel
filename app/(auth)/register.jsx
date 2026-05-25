@@ -1,4 +1,4 @@
-import { Text, View, TextInput, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Link, router } from "expo-router";
 import { useState } from "react";
@@ -6,34 +6,222 @@ import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-    setName,
+    setFirstName,
+    setLastName,
     setMobile,
     setPassword,
     setConfirmPassword,
-    setOtpFlow,
     setCompanyName,
     setReraNumber,
-    setLocation
+    setLocation,
+    setLoading,
+    setError,
+    clearError,
+    setLoggedIn,
+    setUser,
+    setToken
 } from "../../store/slices/authSlice";
+import { authService } from "../../services/authService";
 
 const logo = require("../../assets/icons/app-icon.png");
 
 export default function Register() {
     const dispatch = useDispatch();
     const {
-        name,
+        firstName,
+        lastName,
         mobile,
         password,
         confirmPassword,
         companyName,
         reraNumber,
-        location
+        location,
+        loading
     } = useSelector((state) => state.auth);
-    const [showConfirm, setShowConfirm] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
-    const handleRegister = () => {
-        dispatch(setOtpFlow('register'));
-        router.push("/otp-verification");
+    const handleRegister = async () => {
+        // Clear previous errors
+        dispatch(clearError());
+
+        console.log('🔵 [REGISTER PAGE] Register button pressed');
+        console.log('🔵 [REGISTER PAGE] Form data:', {
+            firstName,
+            lastName,
+            companyName,
+            reraNumber,
+            mobile,
+            location,
+            passwordLength: password?.length,
+        });
+
+        // Validation
+        if (!firstName || !lastName) {
+            console.log(' [REGISTER PAGE] Validation failed: Missing name');
+            Alert.alert('Missing Information', 'Please enter your first and last name');
+            return;
+        }
+
+        if (!companyName) {
+            console.log(' [REGISTER PAGE] Validation failed: Missing company name');
+            Alert.alert('Missing Information', 'Please enter your company name');
+            return;
+        }
+
+        if (!reraNumber) {
+            console.log(' [REGISTER PAGE] Validation failed: Missing RERA number');
+            Alert.alert('Missing Information', 'Please enter your RERA number');
+            return;
+        }
+
+        if (!mobile) {
+            console.log(' [REGISTER PAGE] Validation failed: Missing phone');
+            Alert.alert('Missing Information', 'Please enter your phone number');
+            return;
+        }
+
+        if (mobile.length < 10) {
+            console.log(' [REGISTER PAGE] Validation failed: Invalid phone length');
+            Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number');
+            return;
+        }
+
+        if (!location) {
+            console.log(' [REGISTER PAGE] Validation failed: Missing location');
+            Alert.alert('Missing Information', 'Please enter your location');
+            return;
+        }
+
+        if (!password) {
+            console.log(' [REGISTER PAGE] Validation failed: Missing password');
+            Alert.alert('Missing Information', 'Please enter a password');
+            return;
+        }
+
+        if (password.length < 8) {
+            console.log(' [REGISTER PAGE] Validation failed: Password too short');
+            Alert.alert('Weak Password', 'Password must be at least 8 characters long');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            console.log(' [REGISTER PAGE] Validation failed: Passwords do not match');
+            Alert.alert('Password Mismatch', 'Passwords do not match. Please check and try again.');
+            return;
+        }
+
+        try {
+            console.log('🔵 [REGISTER PAGE] Starting registration process...');
+            dispatch(setLoading(true));
+
+            // Register the user
+            const registerResponse = await authService.register({
+                first_name: firstName,
+                last_name: lastName,
+                company_name: companyName,
+                rera_number: reraNumber,
+                phone: mobile,
+                location: location,
+                password: password,
+            });
+
+            console.log(' [REGISTER PAGE] Registration response:', registerResponse);
+
+            if (registerResponse.success) {
+                console.log(' [REGISTER PAGE] Registration successful, attempting auto-login');
+                Alert.alert(
+                    'Success',
+                    'Account created successfully! Logging you in...',
+                    [
+                        {
+                            text: 'OK',
+                            onPress: async () => {
+                                try {
+                                    console.log('🔵 [REGISTER PAGE] Starting auto-login...');
+                                    const loginResponse = await authService.login(mobile, password);
+                                    
+                                    console.log(' [REGISTER PAGE] Auto-login response:', loginResponse);
+                                    
+                                    if (loginResponse.success) {
+                                        dispatch(setToken(loginResponse.token));
+                                        dispatch(setUser(loginResponse.user));
+                                        dispatch(setLoggedIn(true));
+                                        console.log(' [REGISTER PAGE] Navigating to home');
+                                        router.replace("/(tabs)/home");
+                                    } else {
+                                        throw new Error('Login response was not successful');
+                                    }
+                                } catch (loginErr) {
+                                    console.error(' [REGISTER PAGE] Auto-login error:', loginErr);
+                                    Alert.alert(
+                                        'Login Required',
+                                        'Account created successfully but auto-login failed. Please login manually.',
+                                        [
+                                            {
+                                                text: 'Go to Login',
+                                                onPress: () => router.replace("/login")
+                                            }
+                                        ]
+                                    );
+                                }
+                            }
+                        }
+                    ]
+                );
+            } else {
+                console.log(' [REGISTER PAGE] Registration response success=false');
+                Alert.alert('Registration Failed', 'Invalid response from server. Please try again.');
+            }
+        } catch (err) {
+            console.error(' [REGISTER PAGE] Registration error caught:', err);
+            
+            const errorStatus = err?.status || err?.response?.status;
+            const errorMessage = err?.message || err?.response?.data?.message || 'Registration failed. Please try again.';
+            const errorDetails = err?.details;
+            
+            console.log('Error details:', { errorStatus, errorMessage, errorDetails });
+            
+            if (errorStatus === 409 || errorStatus === 400 || errorMessage.toLowerCase().includes('already exists')) {
+                Alert.alert(
+                    'Account Already Exists',
+                    'This phone number is already registered. Would you like to login instead?',
+                    [
+                        {
+                            text: 'Go to Login',
+                            onPress: () => router.replace('/login'),
+                        },
+                        {
+                            text: 'Try Different Number',
+                            style: 'cancel',
+                        },
+                    ]
+                );
+            } else if (errorStatus === 422 || errorMessage.toLowerCase().includes('password')) {
+                Alert.alert(
+                    'Invalid Password',
+                    errorMessage,
+                    [{ text: 'OK' }]
+                );
+            } else if (errorMessage.toLowerCase().includes('network') || errorMessage.toLowerCase().includes('timeout')) {
+                Alert.alert(
+                    'Connection Error',
+                    'Unable to connect to server. Please check your internet connection and try again.',
+                    [{ text: 'OK' }]
+                );
+                // Only trigger global red snackbar fallback for structural connectivity loss
+                dispatch(setError(errorMessage));
+            } else {
+                Alert.alert(
+                    'Registration Failed',
+                    errorMessage || 'An unexpected error occurred. Please try again.',
+                    [{ text: 'OK' }]
+                );
+                dispatch(setError(errorMessage));
+            }
+        } finally {
+            dispatch(setLoading(false));
+            console.log('🔵 [REGISTER PAGE] Registration process completed');
+        }
     };
 
     return (
@@ -63,13 +251,25 @@ export default function Register() {
                     </View>
 
                     <View className="px-6 pt-6">
-                        {/* Name */}
-                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Full Name</Text>
+                        {/* First Name */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">First Name</Text>
                         <View className="border border-gray-200 rounded-xl px-4 py-3 mb-4">
                             <TextInput
-                                value={name}
-                                onChangeText={(val) => dispatch(setName(val))}
-                                placeholder="Full Name"
+                                value={firstName}
+                                onChangeText={(val) => dispatch(setFirstName(val))}
+                                placeholder="First Name"
+                                placeholderTextColor="#aaa"
+                                className="text-[15px] text-black font-lato"
+                            />
+                        </View>
+
+                        {/* Last Name */}
+                        <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Last Name</Text>
+                        <View className="border border-gray-200 rounded-xl px-4 py-3 mb-4">
+                            <TextInput
+                                value={lastName}
+                                onChangeText={(val) => dispatch(setLastName(val))}
+                                placeholder="Last Name"
                                 placeholderTextColor="#aaa"
                                 className="text-[15px] text-black font-lato"
                             />
@@ -132,12 +332,12 @@ export default function Register() {
                                 onChangeText={(val) => dispatch(setPassword(val))}
                                 placeholder="••••••••"
                                 placeholderTextColor="#aaa"
-                                secureTextEntry={!showConfirm}
+                                secureTextEntry={!showPassword}
                                 className="flex-1 text-[15px] text-black font-lato"
                             />
-                            <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                                 <Ionicons
-                                    name={showConfirm ? "eye-outline" : "eye-off-outline"}
+                                    name={showPassword ? "eye-outline" : "eye-off-outline"}
                                     size={20}
                                     color="#aaa"
                                 />
@@ -152,12 +352,12 @@ export default function Register() {
                                 onChangeText={(val) => dispatch(setConfirmPassword(val))}
                                 placeholder="••••••••"
                                 placeholderTextColor="#aaa"
-                                secureTextEntry={!showConfirm}
+                                secureTextEntry={!showPassword}
                                 className="flex-1 text-[15px] text-black font-lato"
                             />
-                            <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
+                            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                                 <Ionicons
-                                    name={showConfirm ? "eye-outline" : "eye-off-outline"}
+                                    name={showPassword ? "eye-outline" : "eye-off-outline"}
                                     size={20}
                                     color="#aaa"
                                 />
@@ -166,9 +366,14 @@ export default function Register() {
 
                         <TouchableOpacity
                             onPress={handleRegister}
-                            className="bg-[#4A43EC] rounded-2xl py-4 items-center mb-10 shadow-lg shadow-blue-500/30"
+                            disabled={loading}
+                            className={`bg-[#4A43EC] rounded-2xl py-4 items-center mb-10 shadow-lg shadow-blue-500/30 ${loading ? 'opacity-70' : ''}`}
                         >
-                            <Text className="text-white text-[16px] font-lato-bold">Register</Text>
+                            {loading ? (
+                                <ActivityIndicator color="white" />
+                            ) : (
+                                <Text className="text-white text-[16px] font-lato-bold">Register</Text>
+                            )}
                         </TouchableOpacity>
                     </View>
                 </ScrollView>
