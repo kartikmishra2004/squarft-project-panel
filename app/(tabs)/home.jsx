@@ -1,8 +1,8 @@
-import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
+import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform, Animated, Easing } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
 import { mockData } from "../../constants/mockData";
@@ -41,6 +41,25 @@ export default function Home() {
     ];
     const statusOptions = ["Available", "Booked", "Sold"];
     const insets = useSafeAreaInsets();
+    const headerAnimation = useRef(new Animated.Value(1)).current;
+    const expandedHeaderHeight = Math.max(insets.top, 20) + 221;
+    const compactHeaderHeight = Math.max(insets.top, 20) + 66;
+    const animatedHeaderHeight = headerAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [compactHeaderHeight, expandedHeaderHeight],
+    });
+    const overviewHeaderTranslateY = headerAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-28, 0],
+    });
+    const compactHeaderOpacity = headerAnimation.interpolate({
+        inputRange: [0, 0.55, 1],
+        outputRange: [1, 0, 0],
+    });
+    const compactHeaderTranslateY = headerAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 12],
+    });
 
     const getBadgeStyle = (status) => {
         switch (status) {
@@ -190,6 +209,11 @@ export default function Home() {
         setIsInventoryEditVisible(false);
         setInventoryEditTarget(null);
         setIsStatusDropdownOpen(false);
+    };
+
+    const handleTabPress = (tab) => {
+        setIsProjectDropdownOpen(false);
+        setActiveTab(tab);
     };
 
     const getPlotStatusStyle = (status) => {
@@ -613,191 +637,229 @@ export default function Home() {
         }
     }, [isInventoryEditVisible, inventoryEditTarget, projectsData, selectedProjectId]);
 
+    useEffect(() => {
+        Animated.timing(headerAnimation, {
+            toValue: activeTab === "Overview" ? 1 : 0,
+            duration: 280,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+        }).start();
+    }, [activeTab, headerAnimation]);
+
     return (
         <View className="flex-1 bg-white">
             <StatusBar style={activeTab === "Overview" ? "light" : "dark"} translucent backgroundColor="transparent" />
 
             {/* Header Switcher */}
-            {activeTab === "Overview" ? (
-                <View style={{ position: "relative" }}>
-                    <LinearGradient
-                        colors={["#5D57F3", "#4A43EC"]}
-                        className="rounded-b-[35px]"
-                        style={{
-                            paddingTop: Math.max(insets.top, 20) + 7,
-                            paddingHorizontal: 20,
-                            paddingBottom: 50,
-                            overflow: "visible"
-                        }}
-                    >
-                        {/* Profile & Notification */}
-                        <View className="flex-row justify-between items-center mb-4">
-                            <View className="flex-row items-center">
-                                <View className="w-10 h-10 rounded-2xl overflow-hidden bg-gray-200 border-2 border-white/20">
-                                    <Image source={profileImg} className="w-full h-full" />
-                                </View>
-                                <View className="ml-3">
-                                    <View className="flex-row items-center">
-                                        <Text className="text-white text-[15px] font-lato-bold">{mockData.user.name}</Text>
-                                        {mockData.user.verified && (
-                                            <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
-                                        )}
-                                    </View>
-                                    <Text className="text-white/70 text-[9px] font-lato">{mockData.user.date}</Text>
-                                </View>
-                            </View>
-                            <TouchableOpacity className="w-8 h-8 rounded-full bg-white/10 items-center justify-center">
-                                <Ionicons name="notifications-outline" size={18} color="white" />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Search & Add Project */}
-                        <View className="flex-row items-center gap-2.5 mb-4" style={{ zIndex: 1000, elevation: 1000, position: "relative" }}>
-                            <View className="flex-1 relative z-50" style={{ zIndex: 9999, elevation: 9999 }}>
-                                <TouchableOpacity
-                                    activeOpacity={0.85}
-                                    onPress={() => setIsProjectDropdownOpen((current) => !current)}
-                                    className="h-9 bg-white rounded-xl flex-row items-center px-3"
-                                >
-                                    <Ionicons name="chevron-down" size={16} color="#4A43EC" />
-                                    <Text className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]" numberOfLines={1}>
-                                        {selectedProject?.title || "Select Project"}
-                                    </Text>
-                                </TouchableOpacity>
-
-                                {isProjectDropdownOpen ? (
-                                    <View
-                                        className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                        style={{ zIndex: 10000, elevation: 50 }}
-                                    >
-                                        {projectOptions.map((project) => {
-                                            const isSelected = project.id === selectedProjectId;
-
-                                            return (
-                                                <TouchableOpacity
-                                                    key={project.id}
-                                                    activeOpacity={0.85}
-                                                    onPress={() => {
-                                                        setSelectedProjectId(project.id);
-                                                        setIsProjectDropdownOpen(false);
-                                                    }}
-                                                    className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
-                                                >
-                                                    <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
-                                                        {project.title}
-                                                    </Text>
-                                                    <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
-                                                        {project.location}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            );
-                                        })}
-                                    </View>
-                                ) : null}
-                            </View>
-                            <TouchableOpacity
-                                className="h-9 px-3 rounded-xl flex-row items-center border border-white/50"
-                                onPress={() => router.push("/add-project")}
-                            >
-                                <View className="w-[18px] h-[18px] rounded-full bg-white items-center justify-center">
-                                    <Ionicons name="add" size={14} color="#4A43EC" />
-                                </View>
-                                <Text className="text-white ml-2 font-lato-bold text-[11px]">Add Projects</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Stats Cards */}
-                        <View className="flex-row justify-between" style={{ zIndex: 1, elevation: 1, position: "relative" }}>
-                            <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
-                                <View className="bg-[#4A43EC] py-2.5 items-center">
-                                    <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
-                                </View>
-                                <View className="py-3 items-center bg-white">
-                                    <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{mockData.stats.totalReceived}</Text>
-                                </View>
-                            </View>
-
-                            <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
-                                <View className="bg-[#4A43EC] py-2.5 items-center">
-                                    <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
-                                </View>
-                                <View className="py-3 items-center bg-white">
-                                    <Text className="text-[#10B981] text-[13px] font-lato-bold">{mockData.stats.upcomingAmount}</Text>
-                                </View>
-                            </View>
-
-                            <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-white/50 min-h-[72px]">
-                                <View className="bg-[#4A43EC] py-2.5 items-center">
-                                    <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
-                                </View>
-                                <View className="py-3 items-center bg-white">
-                                    <Text className="text-[#EF4444] text-[13px] font-lato-bold">{mockData.stats.toBeReleased}</Text>
-                                </View>
-                            </View>
-                        </View>
-                    </LinearGradient>
-
-                    {/* 20-stop smooth fade overlay */}
-                    <LinearGradient
-                        colors={[
-                            "transparent",
-                            "rgba(255,255,255,0.01)",
-                            "rgba(255,255,255,0.03)",
-                            "rgba(255,255,255,0.06)",
-                            "rgba(255,255,255,0.10)",
-                            "rgba(255,255,255,0.15)",
-                            "rgba(255,255,255,0.21)",
-                            "rgba(255,255,255,0.28)",
-                            "rgba(255,255,255,0.36)",
-                            "rgba(255,255,255,0.44)",
-                            "rgba(255,255,255,0.52)",
-                            "rgba(255,255,255,0.60)",
-                            "rgba(255,255,255,0.68)",
-                            "rgba(255,255,255,0.75)",
-                            "rgba(255,255,255,0.82)",
-                            "rgba(255,255,255,0.88)",
-                            "rgba(255,255,255,0.93)",
-                            "rgba(255,255,255,0.97)",
-                            "rgba(255,255,255,0.99)",
-                            "white"
-                        ]}
-                        style={{
-                            position: "absolute",
-                            bottom: 0,
-                            left: 0,
-                            right: 0,
-                            height: 100,
-                        }}
-                        pointerEvents="none"
-                    />
-                </View>
-            ) : (
-                <View
-                    style={{ paddingTop: Math.max(insets.top, 20) + 10 }}
-                    className="bg-white px-5 pb-4"
+            <Animated.View
+                style={{
+                    height: animatedHeaderHeight,
+                    overflow: "hidden",
+                    position: "relative",
+                    zIndex: isProjectDropdownOpen ? 20 : 1,
+                }}
+            >
+                <Animated.View
+                    pointerEvents={activeTab === "Overview" ? "auto" : "none"}
+                    style={{
+                        opacity: headerAnimation,
+                        transform: [{ translateY: overviewHeaderTranslateY }],
+                    }}
                 >
-                    <View className="flex-row items-center justify-between">
-                        <TouchableOpacity
-                            onPress={() => setActiveTab("Overview")}
-                            className="w-10 h-10 rounded-full border border-gray-100 items-center justify-center"
+                    <View style={{ position: "relative" }}>
+                        <LinearGradient
+                            colors={["#5D57F3", "#4A43EC"]}
+                            className="rounded-b-[35px]"
+                            style={{
+                                paddingTop: Math.max(insets.top, 20) + 7,
+                                paddingHorizontal: 20,
+                                paddingBottom: 50,
+                                overflow: "visible"
+                            }}
                         >
-                            <Ionicons name="chevron-back" size={20} color="#1A1A1A" />
-                        </TouchableOpacity>
-                        <TouchableOpacity className="flex-row items-center">
-                            <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1">Serenity Reserve</Text>
-                            <Ionicons name="chevron-down" size={16} color="#1A1A1A" />
-                        </TouchableOpacity>
-                        <View className="w-10" />
+                            {/* Profile & Notification */}
+                            <View className="flex-row justify-between items-center mb-4">
+                                <View className="flex-row items-center">
+                                    <View className="w-10 h-10 rounded-2xl overflow-hidden bg-gray-200 border-2 border-white/20">
+                                        <Image source={profileImg} className="w-full h-full" />
+                                    </View>
+                                    <View className="ml-3">
+                                        <View className="flex-row items-center">
+                                            <Text className="text-white text-[15px] font-lato-bold">{mockData.user.name}</Text>
+                                            {mockData.user.verified && (
+                                                <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
+                                            )}
+                                        </View>
+                                        <Text className="text-white/70 text-[9px] font-lato">{mockData.user.date}</Text>
+                                    </View>
+                                </View>
+                                <TouchableOpacity className="w-8 h-8 rounded-full bg-white/10 items-center justify-center">
+                                    <Ionicons name="notifications-outline" size={18} color="white" />
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Search & Add Project */}
+                            <View className="flex-row items-center gap-2.5 mb-4" style={{ zIndex: 1000, elevation: 1000, position: "relative" }}>
+                                <View className="flex-1 relative z-50" style={{ zIndex: 9999, elevation: 9999 }}>
+                                    <TouchableOpacity
+                                        activeOpacity={0.85}
+                                        onPress={() => setIsProjectDropdownOpen((current) => !current)}
+                                        className="h-9 bg-white rounded-xl flex-row items-center px-3"
+                                    >
+                                        <Ionicons name="chevron-down" size={16} color="#4A43EC" />
+                                        <Text className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]" numberOfLines={1}>
+                                            {selectedProject?.title || "Select Project"}
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                    {isProjectDropdownOpen ? (
+                                        <View
+                                            className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
+                                            style={{ zIndex: 10000, elevation: 50 }}
+                                        >
+                                            {projectOptions.map((project) => {
+                                                const isSelected = project.id === selectedProjectId;
+
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={project.id}
+                                                        activeOpacity={0.85}
+                                                        onPress={() => {
+                                                            setSelectedProjectId(project.id);
+                                                            setIsProjectDropdownOpen(false);
+                                                        }}
+                                                        className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
+                                                    >
+                                                        <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
+                                                            {project.title}
+                                                        </Text>
+                                                        <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                                            {project.location}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </View>
+                                    ) : null}
+                                </View>
+                                <TouchableOpacity
+                                    className="h-9 px-3 rounded-xl flex-row items-center border border-white/50"
+                                    onPress={() => router.push("/add-project")}
+                                >
+                                    <View className="w-[18px] h-[18px] rounded-full bg-white items-center justify-center">
+                                        <Ionicons name="add" size={14} color="#4A43EC" />
+                                    </View>
+                                    <Text className="text-white ml-2 font-lato-bold text-[11px]">Add Projects</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Stats Cards */}
+                            <View className="flex-row justify-between" style={{ zIndex: 1, elevation: 1, position: "relative" }}>
+                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                    <View className="bg-[#4A43EC] py-2.5 items-center">
+                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
+                                    </View>
+                                    <View className="py-3 items-center bg-white">
+                                        <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{mockData.stats.totalReceived}</Text>
+                                    </View>
+                                </View>
+
+                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                    <View className="bg-[#4A43EC] py-2.5 items-center">
+                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
+                                    </View>
+                                    <View className="py-3 items-center bg-white">
+                                        <Text className="text-[#10B981] text-[13px] font-lato-bold">{mockData.stats.upcomingAmount}</Text>
+                                    </View>
+                                </View>
+
+                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-white/50 min-h-[72px]">
+                                    <View className="bg-[#4A43EC] py-2.5 items-center">
+                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
+                                    </View>
+                                    <View className="py-3 items-center bg-white">
+                                        <Text className="text-[#EF4444] text-[13px] font-lato-bold">{mockData.stats.toBeReleased}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </LinearGradient>
+
+                        {/* 20-stop smooth fade overlay */}
+                        <LinearGradient
+                            colors={[
+                                "transparent",
+                                "rgba(255,255,255,0.01)",
+                                "rgba(255,255,255,0.03)",
+                                "rgba(255,255,255,0.06)",
+                                "rgba(255,255,255,0.10)",
+                                "rgba(255,255,255,0.15)",
+                                "rgba(255,255,255,0.21)",
+                                "rgba(255,255,255,0.28)",
+                                "rgba(255,255,255,0.36)",
+                                "rgba(255,255,255,0.44)",
+                                "rgba(255,255,255,0.52)",
+                                "rgba(255,255,255,0.60)",
+                                "rgba(255,255,255,0.68)",
+                                "rgba(255,255,255,0.75)",
+                                "rgba(255,255,255,0.82)",
+                                "rgba(255,255,255,0.88)",
+                                "rgba(255,255,255,0.93)",
+                                "rgba(255,255,255,0.97)",
+                                "rgba(255,255,255,0.99)",
+                                "white"
+                            ]}
+                            style={{
+                                position: "absolute",
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                height: 100,
+                            }}
+                            pointerEvents="none"
+                        />
                     </View>
-                </View>
-            )}
+                </Animated.View>
+
+                <Animated.View
+                    pointerEvents={activeTab === "Overview" ? "none" : "auto"}
+                    style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        opacity: compactHeaderOpacity,
+                        transform: [{ translateY: compactHeaderTranslateY }],
+                    }}
+                >
+                    <View
+                        style={{
+                            paddingTop: Math.max(insets.top, 20) + 10,
+                        }}
+                        className="bg-white px-5 pb-4"
+                    >
+                        <View className="flex-row items-center justify-between">
+                            <TouchableOpacity
+                                onPress={() => setActiveTab("Overview")}
+                                className="w-10 h-10 rounded-full border border-gray-100 items-center justify-center"
+                            >
+                                <Ionicons name="chevron-back" size={20} color="#1A1A1A" />
+                            </TouchableOpacity>
+                            <TouchableOpacity className="flex-row items-center">
+                                <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1">Serenity Reserve</Text>
+                                <Ionicons name="chevron-down" size={16} color="#1A1A1A" />
+                            </TouchableOpacity>
+                            <View className="w-10" />
+                        </View>
+                    </View>
+                </Animated.View>
+            </Animated.View>
 
             {/* Tabs Bar */}
             <View className="flex-row justify-around border-b border-gray-100 bg-white" style={{ paddingHorizontal: 10 }}>
                 {tabs.map((tab) => (
                     <TouchableOpacity
                         key={tab}
-                        onPress={() => setActiveTab(tab)}
+                        onPress={() => handleTabPress(tab)}
                                 className={`pb-2 px-1.5 ${activeTab === tab ? "border-b-2 border-[#4A43EC]" : ""}`}
                     >
                         <Text className={`${activeTab === tab ? "text-[#4A43EC] font-lato-bold" : "text-gray-400 font-lato"} text-[11px]`}>
