@@ -81,6 +81,7 @@ const initialState = {
     },
     step6: {
         images: [],
+        videos: [],
         documents: [],
         agreed: false,
     },

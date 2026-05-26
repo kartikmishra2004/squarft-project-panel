@@ -12,6 +12,7 @@ import {
     Pressable,
     Keyboard,
     TouchableWithoutFeedback,
+    PanResponder,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -37,6 +38,7 @@ import { addNotification } from "../../store/slices/notificationSlice";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 
 const { width } = Dimensions.get("window");
 
@@ -106,13 +108,7 @@ const DEVELOPMENT_STAGE_OPTIONS = [
 ];
 const APPROVAL_STATUS_OPTIONS = ["Yes", "No"];
 const OPTIONAL_APPROVAL_STATUS_OPTIONS = ["Yes", "No", "Not Applicable"];
-const OVERALL_APPROVAL_STATUS_OPTIONS = [
-    "All approvals completed",
-    "Major approvals completed",
-    "Some approvals pending",
-    "Approvals under process",
-    "Not verified yet",
-];
+const TIME_TO_APPROVAL_OPTIONS = ["3 months", "6 months", "12 months", "18 months", "24 months", "24+ months"];
 const GUIDELINE_VALUE_UNITS = ["Per Sq. Ft.", "Per Sq. Meter", "Per Acre", "Per Hectare"];
 const OWNERSHIP_TYPES = [
     "Owned Project",
@@ -127,11 +123,21 @@ export default function AddProject() {
     const { currentStep, step1, step2, step3, step4, step5, step6 } = useSelector((state) => state.project);
     const scrollRef = useRef(null);
     const [step1Errors, setStep1Errors] = useState({});
+    const [stepErrors, setStepErrors] = useState({});
 
     useEffect(() => {
         scrollRef.current?.scrollToPosition?.(0, 0, false);
         scrollRef.current?.scrollTo?.({ y: 0, animated: false });
     }, [currentStep]);
+
+    useEffect(() => {
+        setStepErrors(prev => {
+            if (!prev[currentStep]) return prev;
+            const next = { ...prev };
+            delete next[currentStep];
+            return next;
+        });
+    }, [currentStep, step2, step3, step4, step5, step6]);
 
     const validateStep1Fields = (values) => {
         const errors = {};
@@ -174,14 +180,125 @@ export default function AddProject() {
         return { valid: Object.keys(errors).length === 0, errors };
     };
 
-    const handleNext = () => {
+    const validateCurrentStep = () => {
         if (currentStep === 1) {
             const { valid, errors } = validateStep1Fields(step1);
-            if (!valid) {
-                setStep1Errors(errors);
-                return;
+            return { valid, errors };
+        }
+
+        if (currentStep === 2) {
+            const messages = [];
+            if (step2.selectedTypes.length === 0) messages.push("Select at least one property type before moving ahead.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 3) {
+            const messages = [];
+            if (step2.selectedTypes.length === 0) {
+                messages.push("Go back and select at least one property type.");
+            } else {
+                step2.selectedTypes.forEach(type => {
+                    const typeLabel = `${type.mainType || "Property"} ${type.subType || ""}`.trim();
+                    const configs = step3.unitConfigs[type.id] || [];
+                    if (configs.length === 0) {
+                        messages.push(`Add at least one unit for ${typeLabel}.`);
+                        return;
+                    }
+
+                    configs.forEach((unit, index) => {
+                        const unitLabel = `${typeLabel} unit ${index + 1}`;
+                        if (!unit.area || !unit.propertyNumber) messages.push(`Fill area and property number for ${unitLabel}.`);
+                        if (type.subType === 'apartment' && (!unit.tower || !unit.floor || !unit.bhk)) {
+                            messages.push(`Fill tower, floor, and BHK for ${unitLabel}.`);
+                        }
+                        if ((type.subType === 'villa' || type.subType === 'rowhouse') && !unit.bhk) {
+                            messages.push(`Select BHK for ${unitLabel}.`);
+                        }
+                        if (type.subType === 'office' && !unit.officeType) {
+                            messages.push(`Select office type for ${unitLabel}.`);
+                        }
+                    });
+                });
             }
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 4) {
+            const percentage = Number(step4.developmentCompletionPercentage);
+            const messages = [];
+            if (!step4.projectLaunchStatus) messages.push("Select project launch status.");
+            if (step4.projectLaunchStatus === "Already Launched" && !step4.projectLaunchDate) messages.push("Select project launch date.");
+            if (step4.projectLaunchStatus === "Upcoming Launch" && !step4.expectedLaunchDate) messages.push("Select expected launch date.");
+            if (!step4.possessionStatus) messages.push("Select possession status.");
+            if (step4.possessionStatus === "Possession Pending" && !step4.expectedPossessionDate) messages.push("Select expected possession date.");
+            if (step4.developmentCompletionPercentage === '' || Number.isNaN(percentage) || percentage < 0 || percentage > 100) messages.push("Set development completion percentage.");
+            if (step4.currentDevelopmentStage.length === 0) messages.push("Select current development stage.");
+            if (step4.currentDevelopmentStage.includes("Other") && !step4.otherDevelopmentStage) messages.push("Mention the other development stage.");
+            if (!step4.approvals.diversion.status) messages.push("Answer diversion approval status.");
+            if (step4.approvals.diversion.status === "No" && !step4.approvals.diversion.expectedTime) messages.push("Select expected time for diversion approval.");
+            if (!step4.approvals.tncp.status) messages.push("Answer TNCP approval status.");
+            if (!step4.approvals.developmentPermission.status) messages.push("Answer development permission approval status.");
+            if (step4.approvals.developmentPermission.status === "No" && !step4.approvals.developmentPermission.expectedTime) messages.push("Select expected time for development permission.");
+            if (step4.approvals.developmentPermission.status === "Yes" && !step4.approvals.developmentPermission.permissionDate) messages.push("Select development permission approved date.");
+            if (!step4.approvals.rera.status) messages.push("Answer RERA approval status.");
+            if (step4.approvals.rera.status === "Yes" && (!step4.approvals.rera.registrationNumber || !step4.approvals.rera.registrationDate)) messages.push("Fill RERA registration number and registration date.");
+            if (step4.approvals.rera.status === "No" && (!step4.approvals.rera.reasonNotAvailable || !step4.approvals.rera.expectedTime)) messages.push("Fill RERA reason and expected approval date.");
+            if (!step4.approvals.buildingPermission.status) messages.push("Answer building permission approval status.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 5) {
+            const messages = [];
+            if (!step5.guidelineValueAmount || !step5.guidelineValueUnit || !step5.guidelineYear) messages.push("Fill guideline value amount, unit, and year.");
+            if (!step5.registryChargesAvailable) messages.push("Answer registry charges availability.");
+            if (step5.registryChargesAvailable === "Yes" && (!step5.registryChargesMaleBuyer || !step5.registryChargesFemaleBuyer || !step5.otherGovernmentCharges)) messages.push("Fill all registry and government charge details.");
+            if (!step5.loanAvailable) messages.push("Answer whether loan is available.");
+            if (step5.loanAvailable === "Yes" && (!step5.bankTieUpAvailable || !step5.loanApprovalStatus || !(step5.tieUpBankName || step5.bankNameList))) messages.push("Fill loan tie-up, approval status, and bank name/list.");
+            if (!step5.ownershipType) messages.push("Select project ownership type.");
+            if (step5.ownershipType === "Owned Project" && (!step5.ownedOwnerCompanyName || step5.ownedDocuments.length === 0)) messages.push("Fill owner/company name and upload ownership document.");
+            if (step5.ownershipType === "Joint Venture Project" && (!step5.jvLandOwnerName || !step5.jvDeveloperBuilderName)) messages.push("Fill joint venture land owner and developer/builder names.");
+            if (step5.ownershipType === "Development Agreement Project" && (!step5.developmentLandOwnerName || !step5.developmentDeveloperName || !step5.developmentAgreementAvailable || step5.developmentAgreementDocuments.length === 0)) messages.push("Fill development agreement details and upload agreement document.");
+            if (step5.ownershipType === "Other" && (!step5.otherOwnershipType || step5.ownershipSupportingDocuments.length === 0)) messages.push("Mention ownership type and upload supporting document.");
+            if (!step5.titleVerificationStatus) messages.push("Select title verification status.");
+            if (step5.titleVerificationStatus === "Yes" && (!step5.titleVerificationDoneBy || !step5.titleVerificationDate || step5.titleReportDocuments.length === 0)) messages.push("Fill title verification details and upload title report.");
+            if (step5.titleVerificationStatus === "Under Process" && !step5.titleExpectedCompletionDate) messages.push("Select title verification expected completion date.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 6) {
+            const messages = [];
+            if (step6.images.length < 3) messages.push("Upload at least 3 project photos.");
+            if ((step6.videos || []).length < 1) messages.push("Upload at least 1 project video.");
+            if ((step6.videos || []).length > 2) messages.push("Keep project videos to a maximum of 2.");
+            if (step6.documents.length === 0) messages.push("Upload project brochure.");
+            if (!step6.agreed) messages.push("Confirm the agreement before submitting.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        return { valid: true, errors: { messages: [] } };
+    };
+
+    const handleNext = () => {
+        const { valid, errors } = validateCurrentStep();
+        if (!valid) {
+            if (currentStep === 1) {
+                setStep1Errors(errors);
+            } else {
+                setStepErrors(prev => ({ ...prev, [currentStep]: errors }));
+            }
+            scrollRef.current?.scrollToPosition?.(0, 0, true);
+            scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+            return;
+        }
+
+        if (currentStep === 1) {
             setStep1Errors({});
+        } else {
+            setStepErrors(prev => {
+                const next = { ...prev };
+                delete next[currentStep];
+                return next;
+            });
         }
 
         if (currentStep < 6) {
@@ -211,68 +328,6 @@ export default function AddProject() {
             dispatch(resetForm());
             router.push('/success');
         }
-    };
-
-    const isNextDisabled = () => {
-        if (currentStep === 1) {
-            return !validateStep1Fields(step1).valid;
-        }
-
-        if (currentStep === 2) {
-            return step2.selectedTypes.length === 0;
-        }
-
-        if (currentStep === 3) {
-            if (step2.selectedTypes.length === 0) return true;
-            
-            // Check if all selected types have at least one unit and all units are filled
-            return step2.selectedTypes.some(type => {
-                const configs = step3.unitConfigs[type.id] || [];
-                if (configs.length === 0) return true;
-                
-                return configs.some(unit => {
-                    const baseFields = !unit.area || !unit.propertyNumber;
-                    if (baseFields) return true;
-
-                    if (type.subType === 'apartment') {
-                        if (!unit.tower || !unit.floor || !unit.bhk) return true;
-                    }
-                    if (type.subType === 'villa' || type.subType === 'rowhouse') {
-                        if (!unit.bhk) return true;
-                    }
-                    if (type.subType === 'office') {
-                        if (!unit.officeType) return true;
-                    }
-                    return false;
-                });
-            });
-        }
-
-        if (currentStep === 4) {
-            const percentage = Number(step4.developmentCompletionPercentage);
-            if (step4.possessionStatus === "Possession Pending" && !step4.expectedPossessionDate) return true;
-            if (step4.projectLaunchStatus === "Already Launched" && !step4.projectLaunchDate) return true;
-            if (step4.projectLaunchStatus === "Upcoming Launch" && !step4.expectedLaunchDate) return true;
-            if (step4.developmentCompletionPercentage !== '' && (Number.isNaN(percentage) || percentage < 0 || percentage > 100)) return true;
-            if (step4.approvals.rera.status === "Yes" && !step4.approvals.rera.registrationNumber) return true;
-            if (step4.approvals.buildingPermission.status === "No" && !step4.approvals.buildingPermission.expectedTime) return true;
-            if (step4.approvals.developmentPermission.status === "No" && !step4.approvals.developmentPermission.expectedTime) return true;
-            return false;
-        }
-
-        if (currentStep === 5) {
-            if (step5.guidelineValueAmount && !step5.guidelineValueUnit) return true;
-            if (step5.guidelineValueUnit && !step5.guidelineValueAmount) return true;
-            if (step5.loanAvailable === "Yes" && (!step5.bankTieUpAvailable || !step5.loanApprovalStatus || !(step5.tieUpBankName || step5.bankNameList))) return true;
-            if (step5.ownershipType === "Joint Venture Project" && (!step5.jvLandOwnerName || !step5.jvDeveloperBuilderName)) return true;
-            return false;
-        }
-
-        if (currentStep === 6) {
-            return step6.images.length < 3 || !step6.agreed;
-        }
-
-        return false;
     };
 
     const handleBack = () => {
@@ -358,19 +413,18 @@ export default function AddProject() {
                         >
                             <View>
                                 {currentStep === 1 && <Step1 errors={step1Errors} setErrors={setStep1Errors} />}
-                                {currentStep === 2 && <Step2 />}
-                                {currentStep === 3 && <Step3 />}
-                                {currentStep === 4 && <Step4 />}
-                                {currentStep === 5 && <Step5 />}
-                                {currentStep === 6 && <Step6 />}
+                                {currentStep === 2 && <Step2 errors={stepErrors[2]} />}
+                                {currentStep === 3 && <Step3 errors={stepErrors[3]} />}
+                                {currentStep === 4 && <Step4 errors={stepErrors[4]} />}
+                                {currentStep === 5 && <Step5 errors={stepErrors[5]} />}
+                                {currentStep === 6 && <Step6 errors={stepErrors[6]} />}
 
                                 {/* Next Button */}
                                 <View className="mt-8 mb-4">
                                     <TouchableOpacity
-                                        className={`py-4 rounded-xl items-center ${isNextDisabled() ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
+                                        className="py-4 rounded-xl items-center bg-[#4A43EC]"
                                         activeOpacity={0.8}
                                         onPress={handleNext}
-                                        disabled={isNextDisabled()}
                                     >
                                         <Text className="text-white text-sm font-lato-bold">
                                             {currentStep === 6 ? "Submit" : "Next"}
@@ -383,6 +437,25 @@ export default function AddProject() {
                 </View>
     );
 }
+
+const StepErrorSummary = ({ errors }) => {
+    const messages = errors?.messages || [];
+    if (messages.length === 0) return null;
+
+    return (
+        <View className="bg-red-50 border border-red-100 rounded-2xl p-4 gap-2">
+            <View className="flex-row items-center gap-2">
+                <Ionicons name="alert-circle-outline" size={18} color="#EF4444" />
+                <Text className="text-xs font-lato-bold text-red-600">Please fill these required details</Text>
+            </View>
+            {messages.map((message, index) => (
+                <Text key={`${message}-${index}`} className="text-[11px] text-red-500 font-lato">
+                    {index + 1}. {message}
+                </Text>
+            ))}
+        </View>
+    );
+};
 
 // --- Step 1 Component ---
 function Step1({ errors = {}, setErrors }) {
@@ -625,7 +698,7 @@ const parseCSV = (text) => {
 };
 
 // --- Step 2 Component ---
-function Step2() {
+function Step2({ errors }) {
     const { width } = Dimensions.get('window');
     const dispatch = useDispatch();
     const { step2 } = useSelector((state) => state.project);
@@ -694,6 +767,7 @@ function Step2() {
 
     return (
         <View className="gap-5">
+            <StepErrorSummary errors={errors} />
             <Text className="text-base font-lato-bold text-black">Configure Property Types</Text>
 
             {/* Added Types List */}
@@ -825,7 +899,7 @@ const getDefaultBuilderState = (subType) => {
 };
 
 // --- Step 3 Component ---
-function Step3() {
+function Step3({ errors }) {
     const dispatch = useDispatch();
     const { step2, step3 } = useSelector((state) => state.project);
     const { width } = Dimensions.get('window');
@@ -1385,6 +1459,7 @@ function Step3() {
 
     return (
         <View className="gap-6">
+            <StepErrorSummary errors={errors} />
             <Text className="text-base font-lato-bold text-black">Configure Units (Project Engine)</Text>
 
             {/* Subtypes Tabs */}
@@ -2293,6 +2368,153 @@ const FieldInput = ({ label, value, onChangeText, placeholder, keyboardType = "d
     );
 };
 
+const formatDateValue = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
+
+const parseDateValue = (value) => {
+    if (!value) return new Date();
+    const [year, month, day] = value.split("-").map(Number);
+    if (!year || !month || !day) return new Date();
+    return new Date(year, month - 1, day);
+};
+
+const DateFieldInput = ({ label, value, onChangeText, placeholder }) => {
+    const selectedDate = parseDateValue(value);
+    const displayValue = value || placeholder || "Select date";
+
+    if (Platform.OS === "web") {
+        return (
+            <View>
+                <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+                <View className="bg-white border border-gray-200 rounded-xl h-12 justify-center overflow-hidden">
+                    {React.createElement("input", {
+                        type: "date",
+                        value: value || "",
+                        onChange: (event) => onChangeText(event.target.value),
+                        "aria-label": label,
+                        style: {
+                            height: "100%",
+                            border: "0",
+                            paddingLeft: 16,
+                            paddingRight: 16,
+                            fontSize: 13,
+                            color: "#1F2937",
+                            fontFamily: "Lato_500Medium",
+                            outline: "none",
+                            backgroundColor: "white",
+                            width: "100%",
+                            cursor: "pointer",
+                            boxSizing: "border-box",
+                        },
+                        placeholder,
+                    })}
+                </View>
+            </View>
+        );
+    }
+
+    if (Platform.OS === "ios") {
+        return (
+            <View>
+                <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+                <View className="bg-white h-12 justify-center overflow-hidden">
+                    <DateTimePicker
+                        value={selectedDate}
+                        mode="date"
+                        display="compact"
+                        themeVariant="light"
+                        textColor="#111827"
+                        accentColor="#4A43EC"
+                        onChange={(event, date) => {
+                            if (date) {
+                                onChangeText(formatDateValue(date));
+                            }
+                        }}
+                    />
+                </View>
+            </View>
+        );
+    }
+
+    const handleNativePress = () => {
+        DateTimePickerAndroid.open({
+            value: selectedDate,
+            mode: "date",
+            display: "calendar",
+            onChange: (event, date) => {
+                if (event.type === "set" && date) {
+                    onChangeText(formatDateValue(date));
+                }
+            },
+        });
+    };
+
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+            <TouchableOpacity
+                onPress={handleNativePress}
+                activeOpacity={0.8}
+                className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center"
+            >
+                <Text className={`flex-1 text-[13px] font-lato-medium ${value ? 'text-gray-800' : 'text-gray-400'}`}>
+                    {displayValue}
+                </Text>
+                <Ionicons name="calendar-outline" size={16} color="#4A43EC" />
+            </TouchableOpacity>
+        </View>
+    );
+};
+
+const RangeInput = ({ label, value, onChange }) => {
+    const trackWidthRef = useRef(1);
+    const numericValue = Math.max(0, Math.min(100, Number(value) || 0));
+
+    const setFromLocation = (locationX) => {
+        const nextValue = Math.round(Math.max(0, Math.min(locationX / trackWidthRef.current, 1)) * 100);
+        onChange(String(nextValue));
+    };
+
+    const panResponder = useRef(PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => setFromLocation(event.nativeEvent.locationX),
+        onPanResponderMove: (event) => setFromLocation(event.nativeEvent.locationX),
+    })).current;
+
+    return (
+        <View>
+            <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-xs font-lato-bold text-black">{label}</Text>
+                <Text className="text-xs font-lato-bold text-[#4A43EC]">{numericValue}%</Text>
+            </View>
+            <View
+                className="h-8 justify-center"
+                onLayout={(event) => {
+                    const widthValue = Math.max(1, event.nativeEvent.layout.width);
+                    trackWidthRef.current = widthValue;
+                }}
+                {...panResponder.panHandlers}
+            >
+                <View className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                    <View
+                        className="h-2 rounded-full bg-[#4A43EC]"
+                        style={{ width: `${numericValue}%` }}
+                    />
+                </View>
+                <View
+                    className="absolute w-5 h-5 rounded-full bg-white border-2 border-[#4A43EC]"
+                    style={{ left: `${numericValue}%`, transform: [{ translateX: -10 }] }}
+                />
+            </View>
+        </View>
+    );
+};
+
 const MultiCheckboxGroup = ({ label, options, values, onChange }) => {
     const toggle = (option) => {
         const nextValues = values.includes(option)
@@ -2364,6 +2586,40 @@ function ApprovalBlock({ title, approvalKey, options = APPROVAL_STATUS_OPTIONS, 
     const dispatch = useDispatch();
     const approval = useSelector((state) => state.project.step4.approvals[approvalKey]);
     const updateApproval = (data) => dispatch(updateStep4Approval({ approvalKey, data }));
+    const renderApprovalField = (field) => {
+        if (field.type === "date") {
+            return (
+                <DateFieldInput
+                    key={field.key}
+                    label={field.label}
+                    placeholder={field.placeholder}
+                    value={approval[field.key]}
+                    onChangeText={(value) => updateApproval({ [field.key]: value })}
+                />
+            );
+        }
+        if (field.type === "select") {
+            return (
+                <OptionGroup
+                    key={field.key}
+                    label={field.label}
+                    options={field.options}
+                    value={approval[field.key]}
+                    onChange={(value) => updateApproval({ [field.key]: value })}
+                />
+            );
+        }
+        return (
+            <FieldInput
+                key={field.key}
+                label={field.label}
+                placeholder={field.placeholder}
+                value={approval[field.key]}
+                keyboardType={field.keyboardType}
+                onChangeText={(value) => updateApproval({ [field.key]: value })}
+            />
+        );
+    };
 
     return (
         <View className="gap-4 border-t border-gray-100 pt-4">
@@ -2377,89 +2633,35 @@ function ApprovalBlock({ title, approvalKey, options = APPROVAL_STATUS_OPTIONS, 
 
             {approval.status === "Yes" && (
                 <View className="gap-4">
-                    {fields.yes.map(field => (
-                        <FieldInput
-                            key={field.key}
-                            label={field.label}
-                            placeholder={field.placeholder}
-                            value={approval[field.key]}
-                            keyboardType={field.keyboardType}
-                            onChangeText={(value) => updateApproval({ [field.key]: value })}
+                    {fields.yes.map(renderApprovalField)}
+                    {fields.documentLabel ? (
+                        <DocumentUploadButton
+                            label={fields.documentLabel}
+                            documents={approval.documents}
+                            onDocumentsPicked={(documents) => updateApproval({ documents })}
                         />
-                    ))}
-                    <DocumentUploadButton
-                        label={fields.documentLabel}
-                        documents={approval.documents}
-                        onDocumentsPicked={(documents) => updateApproval({ documents })}
-                    />
+                    ) : null}
                 </View>
             )}
 
             {approval.status === "No" && (
                 <View className="gap-4">
-                    {fields.no.map(field => (
-                        <FieldInput
-                            key={field.key}
-                            label={field.label}
-                            placeholder={field.placeholder}
-                            value={approval[field.key]}
-                            onChangeText={(value) => updateApproval({ [field.key]: value })}
-                        />
-                    ))}
+                    {fields.no.map(renderApprovalField)}
                 </View>
             )}
         </View>
     );
 }
 
-function Step4() {
+function Step4({ errors }) {
     const dispatch = useDispatch();
     const { step4 } = useSelector((state) => state.project);
     const updateField = (field, value) => dispatch(updateStep4({ [field]: value }));
 
-    const normalizedApprovalStatuses = [
-        step4.approvals.diversion.status,
-        step4.approvals.tncp.status,
-        step4.approvals.developmentPermission.status,
-        step4.approvals.rera.status,
-        step4.approvals.buildingPermission.status,
-    ].filter(Boolean);
-    const allCompleted = normalizedApprovalStatuses.length === 5 && normalizedApprovalStatuses.every(status => status === "Yes" || status === "Not Applicable");
-    const somePending = normalizedApprovalStatuses.some(status => status === "No");
-    const suggestedStatus = allCompleted ? "All approvals completed" : somePending ? "Some approvals pending" : "Not verified yet";
-
-    useEffect(() => {
-        if (step4.overallApprovalStatus === "Not verified yet" && suggestedStatus !== step4.overallApprovalStatus) {
-            updateField("overallApprovalStatus", suggestedStatus);
-        }
-    }, [suggestedStatus, step4.overallApprovalStatus]);
-
     return (
         <View className="gap-5">
+            <StepErrorSummary errors={errors} />
             <Text className="text-base font-lato-bold text-black">Approvals, Permissions & Project Progress</Text>
-
-            <FormSection title="Possession Status">
-                <OptionGroup
-                    options={["Possession Completed", "Possession Pending"]}
-                    value={step4.possessionStatus}
-                    onChange={(value) => updateField("possessionStatus", value)}
-                />
-                {step4.possessionStatus === "Possession Pending" && (
-                    <FieldInput
-                        label="Expected Possession Date"
-                        placeholder="Select expected possession date"
-                        value={step4.expectedPossessionDate}
-                        onChangeText={(value) => updateField("expectedPossessionDate", value)}
-                    />
-                )}
-                <FieldInput
-                    label="Possession Remarks"
-                    placeholder="Example: Possession expected after completion of final development work"
-                    value={step4.possessionRemarks}
-                    multiline
-                    onChangeText={(value) => updateField("possessionRemarks", value)}
-                />
-            </FormSection>
 
             <FormSection title="Project Launch Status">
                 <OptionGroup
@@ -2468,7 +2670,7 @@ function Step4() {
                     onChange={(value) => updateField("projectLaunchStatus", value)}
                 />
                 {step4.projectLaunchStatus === "Already Launched" && (
-                    <FieldInput
+                    <DateFieldInput
                         label="Project Launch Date"
                         placeholder="Select project launch date"
                         value={step4.projectLaunchDate}
@@ -2476,7 +2678,7 @@ function Step4() {
                     />
                 )}
                 {step4.projectLaunchStatus === "Upcoming Launch" && (
-                    <FieldInput
+                    <DateFieldInput
                         label="Expected Launch Date"
                         placeholder="Select expected launch date"
                         value={step4.expectedLaunchDate}
@@ -2485,13 +2687,27 @@ function Step4() {
                 )}
             </FormSection>
 
+            <FormSection title="Possession Status">
+                <OptionGroup
+                    options={["Possession Completed", "Possession Pending"]}
+                    value={step4.possessionStatus}
+                    onChange={(value) => updateField("possessionStatus", value)}
+                />
+                {step4.possessionStatus === "Possession Pending" && (
+                    <OptionGroup
+                        label="Expected Possession Date"
+                        options={TIME_TO_APPROVAL_OPTIONS}
+                        value={step4.expectedPossessionDate}
+                        onChange={(value) => updateField("expectedPossessionDate", value)}
+                    />
+                )}
+            </FormSection>
+
             <FormSection title="Development Progress">
-                <FieldInput
+                <RangeInput
                     label="Development Completion Percentage"
-                    placeholder="Example: 65%"
-                    keyboardType="numeric"
                     value={step4.developmentCompletionPercentage}
-                    onChangeText={(value) => updateField("developmentCompletionPercentage", value)}
+                    onChange={(value) => updateField("developmentCompletionPercentage", value)}
                 />
                 <MultiCheckboxGroup
                     label="Current Development Stage"
@@ -2522,12 +2738,8 @@ function Step4() {
                     approvalKey="diversion"
                     fields={{
                         statusLabel: "Is Diversion Approved?",
-                        yes: [
-                            { key: "referenceNumber", label: "Diversion Order Number / Reference Number", placeholder: "Enter reference number" },
-                            { key: "approvalDate", label: "Diversion Approval Date", placeholder: "Select approval date" },
-                        ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive Diversion Approval", placeholder: "Number of months / expected date" }],
-                        documentLabel: "Upload Diversion Document",
+                        yes: [],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Diversion Approval", type: "select", options: TIME_TO_APPROVAL_OPTIONS }],
                     }}
                 />
                 <ApprovalBlock
@@ -2537,10 +2749,9 @@ function Step4() {
                         statusLabel: "Is TNCP Approved?",
                         yes: [
                             { key: "approvalNumber", label: "TNCP Approval Number", placeholder: "Enter approval number" },
-                            { key: "approvalDate", label: "TNCP Approval Date", placeholder: "Select approval date" },
                         ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive TNCP Approval", placeholder: "Number of months / expected date" }],
-                        documentLabel: "Upload TNCP Document",
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive TNCP Approval", type: "select", options: TIME_TO_APPROVAL_OPTIONS }],
+                        documentLabel: "Upload TNCP Document (Optional)",
                     }}
                 />
                 <ApprovalBlock
@@ -2550,25 +2761,24 @@ function Step4() {
                         statusLabel: "Is Development Permission Approved?",
                         yes: [
                             { key: "permissionNumber", label: "Development Permission Number", placeholder: "Enter permission number" },
-                            { key: "permissionDate", label: "Development Permission Date", placeholder: "Select permission date" },
+                            { key: "permissionDate", label: "Development Permission Approved Date", placeholder: "Select approved date", type: "date" },
                         ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive Development Permission", placeholder: "Number of months / expected date" }],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Development Permission", type: "select", options: TIME_TO_APPROVAL_OPTIONS }],
                         documentLabel: "Upload Development Permission Document",
                     }}
                 />
                 <ApprovalBlock
                     title="D. RERA Approval"
                     approvalKey="rera"
-                    options={OPTIONAL_APPROVAL_STATUS_OPTIONS}
                     fields={{
                         statusLabel: "Is the Project RERA Approved?",
                         yes: [
                             { key: "registrationNumber", label: "RERA Registration Number", placeholder: "Enter RERA registration number" },
-                            { key: "registrationDate", label: "RERA Registration Date", placeholder: "Select registration date" },
+                            { key: "registrationDate", label: "RERA Registration Date", placeholder: "Select registration date", type: "date" },
                         ],
                         no: [
                             { key: "reasonNotAvailable", label: "Reason for RERA Not Available", placeholder: "Mention reason" },
-                            { key: "expectedTime", label: "Expected Time to Receive RERA Approval, if applicable", placeholder: "Number of months / expected date" },
+                            { key: "expectedTime", label: "Expected Date to Receive RERA Approval", placeholder: "Select expected date", type: "date" },
                         ],
                         documentLabel: "Upload RERA Certificate",
                     }}
@@ -2579,43 +2789,29 @@ function Step4() {
                     options={OPTIONAL_APPROVAL_STATUS_OPTIONS}
                     fields={{
                         statusLabel: "Is Building Permission Approved?",
-                        yes: [
-                            { key: "permissionNumber", label: "Building Permission Number", placeholder: "Enter permission number" },
-                            { key: "permissionDate", label: "Building Permission Date", placeholder: "Select permission date" },
-                        ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive Building Permission", placeholder: "Example: 3 months" }],
-                        documentLabel: "Upload Building Permission Document",
+                        yes: [],
+                        no: [],
                     }}
-                />
-            </FormSection>
-
-            <FormSection title="Approval Summary Status">
-                <OptionGroup
-                    label="Overall Approval Status"
-                    options={OVERALL_APPROVAL_STATUS_OPTIONS}
-                    value={step4.overallApprovalStatus}
-                    onChange={(value) => updateField("overallApprovalStatus", value)}
                 />
             </FormSection>
         </View>
     );
 }
 
-function Step5() {
+function Step5({ errors }) {
     const dispatch = useDispatch();
     const { step5 } = useSelector((state) => state.project);
     const updateField = (field, value) => dispatch(updateStep5({ [field]: value }));
 
     return (
         <View className="gap-5">
+            <StepErrorSummary errors={errors} />
             <Text className="text-base font-lato-bold text-black">Financial, Guideline & Ownership Verification</Text>
 
             <FormSection title="Government Guideline Value">
                 <FieldInput label="Guideline Value Amount" placeholder="Example: Rs. 3,500 per sq. ft." keyboardType="numeric" value={step5.guidelineValueAmount} onChangeText={(value) => updateField("guidelineValueAmount", value)} />
                 <OptionGroup label="Guideline Value Unit" options={GUIDELINE_VALUE_UNITS} value={step5.guidelineValueUnit} onChange={(value) => updateField("guidelineValueUnit", value)} />
-                <FieldInput label="Property Jurisdiction / Area" placeholder="Enter jurisdiction / area" value={step5.propertyJurisdictionArea} onChangeText={(value) => updateField("propertyJurisdictionArea", value)} />
                 <FieldInput label="Guideline Year" placeholder="Enter guideline year, if required" keyboardType="numeric" value={step5.guidelineYear} onChangeText={(value) => updateField("guidelineYear", value)} />
-                <DocumentUploadButton label="Upload Guideline Reference Document" documents={step5.guidelineReferenceDocuments} onDocumentsPicked={(documents) => updateField("guidelineReferenceDocuments", documents)} />
             </FormSection>
 
             <FormSection title="Registry & Stamp Duty Details">
@@ -2683,12 +2879,12 @@ function Step5() {
                 {step5.titleVerificationStatus === "Yes" && (
                     <View className="gap-4">
                         <FieldInput label="Title Verification Done By" placeholder="Enter verifier name / company" value={step5.titleVerificationDoneBy} onChangeText={(value) => updateField("titleVerificationDoneBy", value)} />
-                        <FieldInput label="Title Verification Date" placeholder="Select verification date" value={step5.titleVerificationDate} onChangeText={(value) => updateField("titleVerificationDate", value)} />
+                        <DateFieldInput label="Title Verification Date" placeholder="Select verification date" value={step5.titleVerificationDate} onChangeText={(value) => updateField("titleVerificationDate", value)} />
                         <DocumentUploadButton label="Upload Title Report" documents={step5.titleReportDocuments} onDocumentsPicked={(documents) => updateField("titleReportDocuments", documents)} />
                     </View>
                 )}
                 {step5.titleVerificationStatus === "Under Process" && (
-                    <FieldInput label="Expected Completion Date" placeholder="Select expected completion date" value={step5.titleExpectedCompletionDate} onChangeText={(value) => updateField("titleExpectedCompletionDate", value)} />
+                    <DateFieldInput label="Expected Completion Date" placeholder="Select expected completion date" value={step5.titleExpectedCompletionDate} onChangeText={(value) => updateField("titleExpectedCompletionDate", value)} />
                 )}
             </FormSection>
 
@@ -2706,7 +2902,7 @@ function Step5() {
 }
 
 // --- Step 6 Component ---
-function Step6() {
+function Step6({ errors }) {
     const dispatch = useDispatch();
     const { step6 } = useSelector((state) => state.project);
 
@@ -2728,6 +2924,29 @@ function Step6() {
 
     const removeImage = (imageIndex) => {
         updateField('images', step6.images.filter((_, index) => index !== imageIndex));
+    };
+
+    const pickVideos = async () => {
+        const currentVideos = step6.videos || [];
+        if (currentVideos.length >= 2) {
+            alert('You can add up to 2 videos for this project.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            allowsMultipleSelection: true,
+            selectionLimit: 2 - currentVideos.length,
+            quality: 0.8,
+        });
+
+        if (!result.canceled) {
+            updateField('videos', [...currentVideos, ...result.assets].slice(0, 2));
+        }
+    };
+
+    const removeVideo = (videoIndex) => {
+        updateField('videos', (step6.videos || []).filter((_, index) => index !== videoIndex));
     };
 
     const pickDocuments = async () => {
@@ -2762,6 +2981,7 @@ function Step6() {
 
     return (
         <View className="gap-5">
+            <StepErrorSummary errors={errors} />
             <Text className="text-base font-lato-bold text-black">Project Images & Submission</Text>
 
             {/* Image Upload */}
@@ -2797,12 +3017,41 @@ function Step6() {
                 )}
             </View>
 
+            {/* Video Upload */}
+            <View>
+                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload Project Videos</Text>
+                <TouchableOpacity
+                    className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-8 items-center justify-center"
+                    onPress={pickVideos}
+                >
+                    <View className="w-10 h-10 bg-[#EBEAFF] rounded-full items-center justify-center mb-2.5">
+                        <Ionicons name="videocam-outline" size={20} color="#4A43EC" />
+                    </View>
+                    <Text className="text-xs font-lato-bold text-[#4A43EC]">
+                        {(step6.videos || []).length > 0 ? `${(step6.videos || []).length} Video(s) Added` : "Add 1 to 2 Videos"}
+                    </Text>
+                    <Text className="text-[9px] text-gray-400 font-lato mt-0.5">click from camera or browse to upload</Text>
+                </TouchableOpacity>
+                {(step6.videos || []).length > 0 && (
+                    <View className="gap-2 mt-3">
+                        {(step6.videos || []).map((video, idx) => (
+                            <View key={`${video.uri}-${idx}`} className="flex-row items-center bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                                <Ionicons name="play-circle-outline" size={18} color="#4A43EC" />
+                                <Text className="text-xs text-gray-700 font-lato-medium flex-1 ml-2" numberOfLines={1}>
+                                    {video.fileName || video.name || `Project video ${idx + 1}`}
+                                </Text>
+                                <TouchableOpacity onPress={() => removeVideo(idx)} className="w-7 h-7 rounded-full bg-white items-center justify-center">
+                                    <Ionicons name="close" size={14} color="#6B7280" />
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                    </View>
+                )}
+            </View>
+
             {/* Document Upload */}
             <View>
-                <View className="flex-row items-center gap-1 mb-2.5">
-                    <Text className="text-xs font-lato-bold text-black">Upload Project Documents</Text>
-                    <Text className="text-[9px] text-gray-400 font-lato">(Optional)</Text>
-                </View>
+                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload project brochure</Text>
                 <TouchableOpacity
                     className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-8 items-center justify-center"
                     onPress={pickDocuments}
@@ -2811,7 +3060,7 @@ function Step6() {
                         <Ionicons name="document-text-outline" size={20} color="#4A43EC" />
                     </View>
                     <Text className="text-xs font-lato-bold text-[#4A43EC]">
-                        {step6.documents.length > 0 ? `${step6.documents.length} Documents Added` : "Upload Documents"}
+                        {step6.documents.length > 0 ? `${step6.documents.length} Brochure(s) Added` : "Upload project brochure"}
                     </Text>
                     <Text className="text-[9px] text-gray-400 font-lato mt-0.5">click from camera or browse to upload</Text>
                 </TouchableOpacity>

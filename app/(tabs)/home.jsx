@@ -13,6 +13,7 @@ import { addNotification } from "../../store/slices/notificationSlice";
 
 const profileImg = require("../../assets/images/user_profile.png");
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
+const DROPDOWN_LAYER = 2147483647;
 const INVENTORY_TABS = [
     { key: "apartment", label: "Apartment" },
     { key: "villa", label: "Villa" },
@@ -44,6 +45,7 @@ export default function Home() {
     const [selectedTower, setSelectedTower] = useState("tower-a");
     const [selectedPlotStack, setSelectedPlotStack] = useState("stack-a");
     const [selectedPlotUnit, setSelectedPlotUnit] = useState("A-1202");
+    const [selectedRangeByType, setSelectedRangeByType] = useState({});
     const tabs = HOME_TABS;
     const inventoryTabs = INVENTORY_TABS;
     const statusOptions = STATUS_OPTIONS;
@@ -347,12 +349,32 @@ export default function Home() {
         return `Range ${String.fromCharCode(65 + index)}`;
     };
 
+    const renderRangeTabs = (groups, activeKey, onSelect) => (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+            {groups.map((group) => {
+                const isActive = group.key === activeKey;
+                return (
+                    <TouchableOpacity
+                        key={group.key}
+                        onPress={() => onSelect(group.key)}
+                        className={`px-4 py-2 rounded-full mr-2.5 ${isActive ? "bg-[#3D30F2]" : "bg-white border border-gray-100"}`}
+                    >
+                        <Text className={`font-lato-bold text-[11px] ${isActive ? "text-white" : "text-gray-500"}`} numberOfLines={1}>
+                            {group.label}
+                        </Text>
+                    </TouchableOpacity>
+                );
+            })}
+        </ScrollView>
+    );
+
     const renderCardGrid = (items, gridKey) => (
-        <View className="flex-row flex-wrap justify-between">
+        <View className="flex-row flex-wrap">
             {items.map((item, index) => {
                 const statusStyle = getBadgeStyle(item.status);
                 const isPlot = item.context?.inventoryType === "plot";
                 const displayTitle = item.raw.title || (isPlot ? "Plot" : item.raw.meta || item.detail);
+                const isRowEnd = (index + 1) % 3 === 0;
 
                 return (
                     <TouchableOpacity
@@ -361,8 +383,9 @@ export default function Home() {
                         activeOpacity={0.9}
                         className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-2.5 overflow-hidden"
                         style={{
-                            width: "47%",
-                            minHeight: 132,
+                            width: "31.5%",
+                            marginRight: isRowEnd ? 0 : "2.75%",
+                            minHeight: 118,
                             opacity: item.isDimmed ? 0.72 : 1,
                             borderColor: "#E5E7EB",
                             shadowColor: "#000",
@@ -372,7 +395,7 @@ export default function Home() {
                             elevation: 2,
                         }}
                     >
-                        <View className="p-2 flex-1 justify-between">
+                        <View className="p-1.5 flex-1 justify-between">
                             <View className="flex-row items-start justify-between mb-0">
                                 <View className="flex-1 pr-2">
                                     <Text className="text-[#9AA3B2] text-[9px] font-lato-bold" numberOfLines={1}>
@@ -382,18 +405,18 @@ export default function Home() {
                                         {item.detail}
                                     </Text>
                                 </View>
-                                <View className={`px-1.5 py-0.5 rounded-full ${statusStyle}`}>
+                                <View className={`px-1 py-0.5 rounded-full ${statusStyle}`}>
                                     <Text className="text-[7px] font-lato-bold uppercase">{item.status}</Text>
                                 </View>
                             </View>
 
                             <View className="mb-0.5">
-                                <Text className="text-[13px] font-lato-bold text-[#1A1A1A]" numberOfLines={1}>
+                                <Text className="text-[12px] font-lato-bold text-[#1A1A1A]" numberOfLines={1}>
                                     {displayTitle}
                                 </Text>
                             </View>
 
-                            <Text className="mt-0.5 text-[10px] font-lato-bold text-[#4A43EC]" numberOfLines={1}>
+                            <Text className="mt-0.5 text-[9px] font-lato-bold text-[#4A43EC]" numberOfLines={1}>
                                 {item.price}
                             </Text>
 
@@ -401,9 +424,9 @@ export default function Home() {
                                 <TouchableOpacity
                                     activeOpacity={0.9}
                                     onPress={() => openInventoryEdit(item.raw, item.target)}
-                                    className="w-10 h-10 rounded-xl bg-gray-100 items-center justify-center"
+                                    className="w-8 h-8 rounded-lg bg-gray-100 items-center justify-center"
                                 >
-                                    <Feather name="edit-3" size={16} color="#94A3B8" />
+                                    <Feather name="edit-3" size={14} color="#94A3B8" />
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -519,23 +542,24 @@ export default function Home() {
             }));
 
             if (!rangeGroups.length) return <EmptyState message="No plot inventory available for this project yet." />;
+            const activeRangeKey = rangeGroups.some(group => group.key === selectedPlotStack) ? selectedPlotStack : rangeGroups[0].key;
+            const activeRangeGroup = rangeGroups.find(group => group.key === activeRangeKey) || rangeGroups[0];
 
             return (
                 <View>
-                    {rangeGroups.map((rangeGroup) => (
-                        <View key={rangeGroup.key} className="mb-4">
-                            <View className="mb-2 flex-row items-center justify-between">
-                                <Text className="text-[12px] font-lato-bold text-[#4A43EC]">{rangeGroup.label}</Text>
-                                <Text className="text-[10px] font-lato text-gray-400">Range Wise</Text>
-                            </View>
-                            {rangeGroup.rows.map((row) => (
-                                <View key={row.key} className="mb-3">
-                                    <Text className="mb-2 text-[11px] font-lato-bold text-gray-500">{row.label}</Text>
-                                    {row.cards.length ? renderCardGrid(row.cards, row.key) : <EmptyState message={`No plots available in ${row.label}.`} />}
-                                </View>
-                            ))}
+                    {renderRangeTabs(rangeGroups, activeRangeKey, setSelectedPlotStack)}
+                    <View className="mb-4">
+                        <View className="mb-2 flex-row items-center justify-between">
+                            <Text className="text-[12px] font-lato-bold text-[#4A43EC]">{activeRangeGroup.label}</Text>
+                            <Text className="text-[10px] font-lato text-gray-400">Range Wise</Text>
                         </View>
-                    ))}
+                        {activeRangeGroup.rows.map((row) => (
+                            <View key={row.key} className="mb-3">
+                                <Text className="mb-2 text-[11px] font-lato-bold text-gray-500">{row.label}</Text>
+                                {row.cards.length ? renderCardGrid(row.cards, row.key) : <EmptyState message={`No plots available in ${row.label}.`} />}
+                            </View>
+                        ))}
+                    </View>
                 </View>
             );
         }
@@ -564,6 +588,26 @@ export default function Home() {
         });
 
         if (!sectionGroups.length) return <EmptyState message={`No ${inventoryLabel.toLowerCase()} inventory available for this project yet.`} />;
+
+        if (inventoryType === "villa" || inventoryType === "rowhouse") {
+            const activeSectionKey = sectionGroups.some(group => group.key === selectedRangeByType[inventoryType])
+                ? selectedRangeByType[inventoryType]
+                : sectionGroups[0].key;
+            const activeSectionGroup = sectionGroups.find(group => group.key === activeSectionKey) || sectionGroups[0];
+
+            return (
+                <View>
+                    {renderRangeTabs(sectionGroups, activeSectionKey, (key) => setSelectedRangeByType(prev => ({ ...prev, [inventoryType]: key })))}
+                    <View className="mb-4">
+                        <View className="mb-2 flex-row items-center justify-between">
+                            <Text className="text-[12px] font-lato-bold text-[#4A43EC]">{activeSectionGroup.label}</Text>
+                            <Text className="text-[10px] font-lato text-gray-400">Range Wise</Text>
+                        </View>
+                        {activeSectionGroup.units.length ? renderCardGrid(activeSectionGroup.units, activeSectionGroup.key) : <EmptyState message={`No units available in ${activeSectionGroup.label}.`} />}
+                    </View>
+                </View>
+            );
+        }
 
         return (
             <View>
@@ -714,15 +758,63 @@ export default function Home() {
     return (
         <View className="flex-1 bg-white">
             <StatusBar style={activeTab === "Overview" ? "light" : "dark"} translucent backgroundColor="transparent" />
+            <Modal
+                visible={isProjectDropdownOpen}
+                transparent
+                animationType="fade"
+                statusBarTranslucent
+                onRequestClose={() => setIsProjectDropdownOpen(false)}
+            >
+                <TouchableOpacity
+                    activeOpacity={1}
+                    onPress={() => setIsProjectDropdownOpen(false)}
+                    style={{ flex: 1, backgroundColor: "transparent", zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}
+                >
+                    <View
+                        className="bg-white rounded-xl border overflow-hidden"
+                        style={{
+                            marginTop: activeTab === "Overview" ? Math.max(insets.top, 20) + 104 : Math.max(insets.top, 20) + 58,
+                            marginHorizontal: activeTab === "Overview" ? 20 : 64,
+                            maxHeight: 280,
+                            borderWidth: 1.5,
+                            borderColor: "#4A43EC",
+                            zIndex: DROPDOWN_LAYER,
+                            elevation: DROPDOWN_LAYER,
+                        }}
+                    >
+                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                            {projectOptions.map((project) => {
+                                const isSelected = project.id === selectedProjectId;
+
+                                return (
+                                    <TouchableOpacity
+                                        key={project.id}
+                                        activeOpacity={0.85}
+                                        onPress={() => handleProjectSelect(project.id)}
+                                        className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
+                                    >
+                                        <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
+                                            {project.title}
+                                        </Text>
+                                        <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                            {project.location || "Location pending"}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
 
             {/* Header Switcher */}
             <Animated.View
                 style={{
                     height: animatedHeaderHeight,
-                    overflow: isProjectDropdownOpen ? "visible" : "hidden",
+                    overflow: isProjectDropdownOpen || activeTab !== "Overview" ? "visible" : "hidden",
                     position: "relative",
-                    zIndex: isProjectDropdownOpen ? 999999 : 1,
-                    elevation: isProjectDropdownOpen ? 999999 : 1,
+                    zIndex: isProjectDropdownOpen ? DROPDOWN_LAYER : 1,
+                    elevation: isProjectDropdownOpen ? DROPDOWN_LAYER : 1,
                 }}
             >
                 <Animated.View
@@ -780,7 +872,7 @@ export default function Home() {
 
                             {/* Search & Add Project */}
                             <View className="flex-row items-center gap-2.5 mb-4" style={{ zIndex: 1000, elevation: 1000, position: "relative" }}>
-                                <View className="flex-1 relative z-50" style={{ zIndex: 9999, elevation: 9999 }}>
+                                <View className="flex-1 relative z-50" style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}>
                                     <TouchableOpacity
                                         activeOpacity={0.85}
                                         onPress={() => setIsProjectDropdownOpen((current) => !current)}
@@ -792,10 +884,10 @@ export default function Home() {
                                         </Text>
                                     </TouchableOpacity>
 
-                                    {isProjectDropdownOpen ? (
+                                    {false && isProjectDropdownOpen ? (
                                         <View
                                             className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                            style={{ zIndex: 999999, elevation: 999999, borderWidth: 1.5, borderColor: "#4A43EC" }}
+                                            style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER, borderWidth: 1.5, borderColor: "#4A43EC" }}
                                         >
                                             {projectOptions.map((project) => {
                                                 const isSelected = project.id === selectedProjectId;
@@ -908,11 +1000,16 @@ export default function Home() {
                         top: 0,
                         opacity: compactHeaderOpacity,
                         transform: [{ translateY: compactHeaderTranslateY }],
+                        zIndex: isProjectDropdownOpen ? DROPDOWN_LAYER : 10,
+                        elevation: isProjectDropdownOpen ? DROPDOWN_LAYER : 10,
                     }}
                 >
                     <View
                         style={{
                             paddingTop: Math.max(insets.top, 20) + 10,
+                            position: "relative",
+                            zIndex: isProjectDropdownOpen ? DROPDOWN_LAYER : 10,
+                            elevation: isProjectDropdownOpen ? DROPDOWN_LAYER : 10,
                         }}
                         className="bg-white px-5 pb-4"
                     >
@@ -923,7 +1020,7 @@ export default function Home() {
                             >
                                 <Ionicons name="chevron-back" size={20} color="#1A1A1A" />
                             </TouchableOpacity>
-                            <View className="relative flex-1 mx-3 items-center" style={{ zIndex: 50, elevation: 50 }}>
+                            <View className="relative flex-1 mx-3 items-center" style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}>
                                 <TouchableOpacity
                                     activeOpacity={0.85}
                                     onPress={() => setIsProjectDropdownOpen((current) => !current)}
@@ -935,10 +1032,10 @@ export default function Home() {
                                     <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
                                 </TouchableOpacity>
 
-                                {isProjectDropdownOpen ? (
+                                {false && isProjectDropdownOpen ? (
                                     <View
                                         className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                        style={{ zIndex: 999999, elevation: 999999, maxHeight: 240, borderWidth: 1.5, borderColor: "#4A43EC" }}
+                                        style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER, maxHeight: 260, borderWidth: 1.5, borderColor: "#4A43EC" }}
                                     >
                                         <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
                                             {projectOptions.map((project) => {
@@ -971,7 +1068,7 @@ export default function Home() {
             </Animated.View>
 
             {/* Tabs Bar */}
-            <View className="flex-row justify-around border-b border-gray-100 bg-white" style={{ paddingHorizontal: 10 }}>
+            <View className="flex-row justify-around border-b border-gray-100 bg-white" style={{ paddingHorizontal: 10, zIndex: 0, elevation: 0 }}>
                 {tabs.map((tab) => (
                     <TouchableOpacity
                         key={tab}

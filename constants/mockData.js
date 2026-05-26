@@ -224,14 +224,20 @@ export const mockData = {
                                     rowLabel: "FLOOR 1",
                                     units: [
                                         { id: "#1201", status: "Available", title: "3 BHK + Study", price: "₹2.55 Cr", area: "1,850 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
-                                        { id: "#1202", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                                        { id: "#1202", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1203", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1204", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1205", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
                                     ]
                                 },
                                 {
                                     rowLabel: "FLOOR 2",
                                     units: [
                                         { id: "#1101", status: "Sold", title: "3 BHK + Study", price: "₹2.55 Cr", area: "1,850 Sq.Ft", ctaLabel: "LOCKED", ctaVariant: "disabled", actionIcon: "eye", dimmed: true },
-                                        { id: "#1102", status: "Available", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" }
+                                        { id: "#1102", status: "Available", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                        { id: "#1206", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1207", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1208", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
                                     ]
                                 }
                             ]
@@ -414,7 +420,7 @@ export const mockData = {
                         }
                     ]
                 }
-                ,showroom: {
+                , showroom: {
                     sections: [
                         {
                             rowLabel: "SECTION 1",
@@ -587,7 +593,7 @@ export const mockData = {
                         }
                     ]
                 }
-                ,showroom: {
+                , showroom: {
                     sections: [
                         {
                             rowLabel: "SECTION 1",
