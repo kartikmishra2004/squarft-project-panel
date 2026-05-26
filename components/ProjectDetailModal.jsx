@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Image, TouchableOpacity, Dimensions, TextInput } from "react-native";
-import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { View, Text, Image, TouchableOpacity, Dimensions } from "react-native";
+import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
@@ -95,11 +95,17 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const [collectAmount, setCollectAmount] = useState("");
     const [collectError, setCollectError] = useState("");
     const snapPoints = useMemo(() => ["88%"], []);
+    const variantKey = variant?.id ?? variant?.title ?? variant?.type ?? variant?.propertyType ?? "variant";
+    const paymentPlanSeedRef = useRef({ key: null, plan: [] });
+
+    if (paymentPlanSeedRef.current.key !== variantKey) {
+        paymentPlanSeedRef.current = { key: variantKey, plan: buildPaymentPlan(variant) };
+    }
 
     useEffect(() => {
         if (visible) {
             setSheetView("property");
-            setPaymentPlan(buildPaymentPlan(variant));
+            setPaymentPlan(paymentPlanSeedRef.current.plan);
             setActiveMilestoneIndex(null);
             setCollectAmount("");
             setCollectError("");
@@ -108,7 +114,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         }
 
         sheetRef.current?.dismiss();
-    }, [visible, variant]);
+    }, [visible, variantKey]);
 
     if (!project || !variant) return null;
 
@@ -298,10 +304,17 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
             backdropComponent={(props) => (
                 <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.45} pressBehavior="close" />
             )}
+            keyboardBehavior="interactive"
+            keyboardBlurBehavior="restore"
+            android_keyboardInputMode="adjustResize"
             backgroundStyle={{ borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: "#fff" }}
             handleIndicatorStyle={{ backgroundColor: "#CBD5E1" }}
         >
-            <BottomSheetScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 18 }}>
+            <BottomSheetScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: sheetView === "collect" ? 120 : 18 }}
+            >
 
                 {sheetView === "property" ? (
                     <>
@@ -603,7 +616,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
 
                             <View className="mt-4">
                                 <Text className="text-[10px] font-lato-bold text-[#6B7280] uppercase mb-1.5">Amount</Text>
-                                <TextInput
+                                <BottomSheetTextInput
                                     value={collectAmount}
                                     onChangeText={(value) => {
                                         setCollectAmount(value);
@@ -612,7 +625,17 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                     keyboardType="numeric"
                                     placeholder="Enter amount"
                                     placeholderTextColor="#94A3B8"
-                                    className="h-12 rounded-2xl border border-gray-200 px-4 text-[14px] font-lato text-[#111827] bg-white"
+                                    style={{
+                                        height: 48,
+                                        borderRadius: 16,
+                                        borderWidth: 1,
+                                        borderColor: "#E5E7EB",
+                                        paddingHorizontal: 16,
+                                        fontSize: 14,
+                                        color: "#111827",
+                                        backgroundColor: "#fff",
+                                        fontFamily: "Lato-Regular",
+                                    }}
                                     returnKeyType="done"
                                 />
                                 {collectError ? <Text className="mt-1 text-[11px] text-red-500">{collectError}</Text> : null}
