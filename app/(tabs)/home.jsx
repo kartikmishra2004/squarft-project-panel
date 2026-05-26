@@ -553,12 +553,12 @@ export default function Home() {
                             <Text className="text-[12px] font-lato-bold text-[#4A43EC]">{activeRangeGroup.label}</Text>
                             <Text className="text-[10px] font-lato text-gray-400">Range Wise</Text>
                         </View>
-                        {activeRangeGroup.rows.map((row) => (
-                            <View key={row.key} className="mb-3">
-                                <Text className="mb-2 text-[11px] font-lato-bold text-gray-500">{row.label}</Text>
-                                {row.cards.length ? renderCardGrid(row.cards, row.key) : <EmptyState message={`No plots available in ${row.label}.`} />}
-                            </View>
-                        ))}
+                        {(() => {
+                            const plotCards = activeRangeGroup.rows.flatMap(row => row.cards);
+                            return plotCards.length
+                                ? renderCardGrid(plotCards, activeRangeGroup.key)
+                                : <EmptyState message={`No plots available in ${activeRangeGroup.label}.`} />;
+                        })()}
                     </View>
                 </View>
             );
