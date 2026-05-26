@@ -80,8 +80,9 @@ const initialState = {
         financialOwnershipRemarks: '',
     },
     step6: {
-        unitData: {}, // Keyed by unique unit ID (e.g. "typeId-unitIndex")
-        currentSelectedUnitId: null,
+        images: [],
+        documents: [],
+        agreed: false,
     },
 };
 
@@ -102,11 +103,6 @@ const projectSlice = createSlice({
             state.step2.selectedTypes = state.step2.selectedTypes.filter(t => t.id !== action.payload);
             delete state.step3.unitConfigs[action.payload];
             if (state.step3.builderData) delete state.step3.builderData[action.payload];
-            Object.keys(state.step6.unitData).forEach(id => {
-                if (id.startsWith(`${action.payload}-`)) {
-                    delete state.step6.unitData[id];
-                }
-            });
         },
         updatePropertyType: (state, action) => {
             const index = state.step2.selectedTypes.findIndex(t => t.id === action.payload.id);
@@ -155,8 +151,6 @@ const projectSlice = createSlice({
             state.step3.builderData[typeId] = builderState;
 
             const newUnitConfigs = [];
-            const newUnitData = {};
-
             const sections = builderState.sections || [];
             sections.forEach(section => {
                 const rows = section.floors ?? section.rows ?? section.lanes ?? 1;
@@ -202,31 +196,12 @@ const projectSlice = createSlice({
 
                             newUnitConfigs.push(unitConfig);
 
-                            const unitIndex = newUnitConfigs.length - 1;
-                            const sellingPrice = (override.customPrice || config.price || '').toString().replace(/,/g, '');
-
-                            const existing = state.step6.unitData[unitId] || {};
-                            newUnitData[unitId] = {
-                                images: existing.images || [],
-                                documents: existing.documents || [],
-                                sellingPrice: sellingPrice || existing.sellingPrice || '',
-                                priceNegotiable: existing.priceNegotiable || false,
-                                taxExclude: existing.taxExclude || false,
-                                paymentMode: existing.paymentMode || 'full',
-                                agreed: existing.agreed ?? true,
-                            };
                         }
                     }
                 }
             });
 
             state.step3.unitConfigs[typeId] = newUnitConfigs;
-            Object.keys(state.step6.unitData).forEach(id => {
-                if (!id.startsWith(`${typeId}-`)) {
-                    newUnitData[id] = state.step6.unitData[id];
-                }
-            });
-            state.step6.unitData = newUnitData;
         },
         updateStep4: (state, action) => {
             state.step4 = { ...state.step4, ...action.payload };
@@ -242,23 +217,7 @@ const projectSlice = createSlice({
             state.step5 = { ...state.step5, ...action.payload };
         },
         updateStep6: (state, action) => {
-            const { unitId, data } = action.payload;
-            if (unitId) {
-                state.step6.unitData[unitId] = {
-                    ...(state.step6.unitData[unitId] || {
-                        images: [],
-                        documents: [],
-                        sellingPrice: '',
-                        priceNegotiable: false,
-                        taxExclude: false,
-                        paymentMode: 'full',
-                        agreed: false,
-                    }),
-                    ...data
-                };
-            } else {
-                state.step6 = { ...state.step6, ...action.payload };
-            }
+            state.step6 = { ...state.step6, ...action.payload };
         },
         bulkUploadProject: (state, action) => {
             const { step1, step2, step3, step4, step5, step6 } = action.payload;
@@ -270,14 +229,8 @@ const projectSlice = createSlice({
             if (step6) state.step6 = { ...state.step6, ...step6 };
         },
         bulkUploadSubtype: (state, action) => {
-            const { typeId, unitConfigs, unitData } = action.payload;
-            Object.keys(state.step6.unitData).forEach(id => {
-                if (id.startsWith(`${typeId}-`)) {
-                    delete state.step6.unitData[id];
-                }
-            });
+            const { typeId, unitConfigs } = action.payload;
             state.step3.unitConfigs[typeId] = unitConfigs;
-            Object.assign(state.step6.unitData, unitData);
         },
         resetForm: () => initialState,
     },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
     View,
     Text,
@@ -192,13 +192,11 @@ export default function AddProject() {
                 ...step1,
                 selectedTypes: step2.selectedTypes.map(type => ({
                     ...type,
-                    units: step3.unitConfigs[type.id]?.map((unit, idx) => ({
-                        ...unit,
-                        ...step6.unitData[unit.unitId || `${type.id}-${idx}`]
-                    })) || []
+                    units: step3.unitConfigs[type.id] || []
                 })),
                 legalApprovalsAndStatus: step4,
                 financeGuidelineOwnership: step5,
+                projectMediaAndSubmission: step6,
                 createdAt: new Date().toISOString(),
                 status: 'Active'
             };
@@ -265,22 +263,7 @@ export default function AddProject() {
         }
 
         if (currentStep === 6) {
-            const allUnits = [];
-            step2.selectedTypes.forEach(type => {
-                const configs = step3.unitConfigs[type.id] || [];
-                configs.forEach((unit, idx) => {
-                    allUnits.push(unit.unitId || `${type.id}-${idx}`);
-                });
-            });
-
-            if (allUnits.length === 0) return true;
-
-            // Check if all units have price, at least one image, and agreement
-            return allUnits.some(unitId => {
-                const data = step6.unitData[unitId];
-                if (!data) return true;
-                return !data.sellingPrice || data.images.length === 0 || !data.agreed;
-            });
+            return step6.images.length < 3 || !step6.agreed;
         }
 
         return false;
@@ -292,11 +275,6 @@ export default function AddProject() {
         } else {
             router.back();
         }
-    };
-
-    const handleStepPress = (stepId) => {
-        Keyboard.dismiss();
-        dispatch(setStep(stepId));
     };
 
     return (
@@ -330,13 +308,7 @@ export default function AddProject() {
                         {/* Step Indicator */}
                         <View className="flex-row justify-between items-start mt-8">
                             {steps.map((step) => (
-                                <TouchableOpacity
-                                    key={step.id}
-                                    onPress={() => handleStepPress(step.id)}
-                                    activeOpacity={0.75}
-                                    className="items-center"
-                                    style={{ width: (width - 40) / 6 }}
-                                >
+                                <View key={step.id} className="items-center" style={{ width: (width - 40) / 6 }}>
                                     <View
                                         className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${currentStep === step.id ? 'bg-white' : 'bg-transparent border border-white/40'
                                             }`}
@@ -350,7 +322,7 @@ export default function AddProject() {
                                         }`} numberOfLines={1}>
                                         {step.title}
                                     </Text>
-                                </TouchableOpacity>
+                                </View>
                             ))}
                         </View>
                     </View>
@@ -2708,59 +2680,10 @@ function Step5() {
 // --- Step 6 Component ---
 function Step6() {
     const dispatch = useDispatch();
-    const { step2, step3, step6 } = useSelector((state) => state.project);
-    const [showUnitDropdown, setShowUnitDropdown] = useState(false);
-    const priceRef = useRef(null);
-
-    // Generate all units from step3.unitConfigs
-    const allUnits = useMemo(() => {
-        const units = [];
-        step2.selectedTypes.forEach(type => {
-            const configs = step3.unitConfigs[type.id] || [];
-            configs.forEach((unit, idx) => {
-                units.push({
-                    id: unit.unitId || `${type.id}-${idx}`,
-                    typeId: type.id,
-                    unitIndex: idx,
-                    label: `${unit.propertyNumber || 'N/A'} - ${unit.gridKey || `Unit ${idx + 1}`} (${type.subType.toUpperCase()})`,
-                    subType: type.subType,
-                    mainType: type.mainType,
-                    bhk: unit.bhk || unit.officeType || 'Standard',
-                    price: unit.price || '',
-                    images: unit.images || [],
-                    area: unit.area || '',
-                });
-            });
-        });
-        return units;
-    }, [step2.selectedTypes, step3.unitConfigs]);
-
-    // Initialize first unit if none selected
-    useEffect(() => {
-        if (allUnits.length === 0) return;
-        const selectedExists = allUnits.some(unit => unit.id === step6.currentSelectedUnitId);
-        if (!selectedExists) {
-            dispatch(updateStep6({ currentSelectedUnitId: allUnits[0].id }));
-        }
-    }, [allUnits, step6.currentSelectedUnitId]);
-
-    const currentUnitId = step6.currentSelectedUnitId;
-    const currentSelectedUnit = allUnits.find(unit => unit.id === currentUnitId);
-    const currentData = step6.unitData[currentUnitId] || {
-        images: currentSelectedUnit?.images || [],
-        documents: [],
-        sellingPrice: currentSelectedUnit?.price || '',
-        priceNegotiable: false,
-        taxExclude: false,
-        paymentMode: 'full',
-        agreed: false,
-    };
+    const { step6 } = useSelector((state) => state.project);
 
     const updateField = (field, value) => {
-        dispatch(updateStep6({
-            unitId: currentUnitId,
-            data: { [field]: value }
-        }));
+        dispatch(updateStep6({ [field]: value }));
     };
 
     const pickImages = async () => {
@@ -2771,8 +2694,12 @@ function Step6() {
         });
 
         if (!result.canceled) {
-            updateField('images', [...currentData.images, ...result.assets]);
+            updateField('images', [...step6.images, ...result.assets]);
         }
+    };
+
+    const removeImage = (imageIndex) => {
+        updateField('images', step6.images.filter((_, index) => index !== imageIndex));
     };
 
     const pickDocuments = async () => {
@@ -2782,7 +2709,7 @@ function Step6() {
         });
 
         if (!result.canceled) {
-            updateField('documents', [...currentData.documents, ...result.assets]);
+            updateField('documents', [...step6.documents, ...result.assets]);
         }
     };
 
@@ -2805,68 +2732,13 @@ function Step6() {
         </TouchableOpacity>
     );
 
-    const selectedUnit = allUnits.find(u => u.id === currentUnitId);
-
-    if (allUnits.length === 0) {
-        return (
-            <View className="items-center py-10">
-                <Text className="text-gray-400 font-lato text-center px-10">Please add property types and their quantities in the previous steps.</Text>
-            </View>
-        );
-    }
-
     return (
         <View className="gap-5">
-            <Text className="text-base font-lato-bold text-black">Upload Images & Pricing</Text>
-
-            {/* Unit Selector Dropdown */}
-            <View className="z-[100]">
-                <Text className="text-xs font-lato-bold text-black mb-2">Select Unit to Configure</Text>
-                <TouchableOpacity
-                    onPress={() => setShowUnitDropdown(!showUnitDropdown)}
-                    className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
-                >
-                    <View>
-                        <Text className="text-[13px] font-lato-bold text-black">
-                            {selectedUnit ? selectedUnit.label : 'Select Unit'}
-                        </Text>
-                        <Text className="text-[10px] text-gray-500 font-lato">
-                            {selectedUnit?.bhk}
-                        </Text>
-                    </View>
-                    <Ionicons name={showUnitDropdown ? "chevron-up" : "chevron-down"} size={20} color="#666" />
-                </TouchableOpacity>
-
-                {showUnitDropdown && (
-                    <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[101] overflow-hidden max-h-60">
-                        <ScrollView nestedScrollEnabled={true}>
-                            {allUnits.map((item) => (
-                                <TouchableOpacity
-                                    key={item.id}
-                                    onPress={() => {
-                                        dispatch(updateStep6({ currentSelectedUnitId: item.id }));
-                                        setShowUnitDropdown(false);
-                                    }}
-                                    className={`px-4 py-3 border-b border-gray-50 ${currentUnitId === item.id ? 'bg-[#F4F7FF]' : ''}`}
-                                >
-                                    <Text className={`text-[12px] font-lato-bold ${currentUnitId === item.id ? 'text-[#4A43EC]' : 'text-gray-800'}`}>
-                                        {item.label}
-                                    </Text>
-                                    <Text className="text-[10px] text-gray-500 font-lato mt-0.5">
-                                        {item.bhk}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
-                )}
-            </View>
-
-            <View className="h-[1px] bg-gray-100 my-1" />
+            <Text className="text-base font-lato-bold text-black">Project Images & Submission</Text>
 
             {/* Image Upload */}
             <View className="mt-1">
-                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload Images for this unit</Text>
+                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload Images for this project</Text>
                 <TouchableOpacity
                     className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-8 items-center justify-center"
                     onPress={pickImages}
@@ -2875,14 +2747,23 @@ function Step6() {
                         <Ionicons name="cloud-upload-outline" size={20} color="#4A43EC" />
                     </View>
                     <Text className="text-xs font-lato-bold text-[#4A43EC]">
-                        {currentData.images.length > 0 ? `${currentData.images.length} Photos Added` : "Add atleast 5 Photos"}
+                        {step6.images.length > 0 ? `${step6.images.length} Photos Added` : "Add at least 3 Photos"}
                     </Text>
                     <Text className="text-[9px] text-gray-400 font-lato mt-0.5">click from camera or browse to upload</Text>
                 </TouchableOpacity>
-                {currentData.images.length > 0 && (
+                {step6.images.length > 0 && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
-                        {currentData.images.map((img, idx) => (
-                            <Image key={idx} source={{ uri: img.uri }} className="w-16 h-16 rounded-lg mr-2" />
+                        {step6.images.map((img, idx) => (
+                            <View key={`${img.uri}-${idx}`} className="mr-2 relative">
+                                <Image source={{ uri: img.uri }} className="w-16 h-16 rounded-lg" />
+                                <TouchableOpacity
+                                    onPress={() => removeImage(idx)}
+                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 items-center justify-center"
+                                    activeOpacity={0.8}
+                                >
+                                    <Ionicons name="close" size={11} color="white" />
+                                </TouchableOpacity>
+                            </View>
                         ))}
                     </ScrollView>
                 )}
@@ -2891,7 +2772,7 @@ function Step6() {
             {/* Document Upload */}
             <View>
                 <View className="flex-row items-center gap-1 mb-2.5">
-                    <Text className="text-xs font-lato-bold text-black">Upload Property Documents</Text>
+                    <Text className="text-xs font-lato-bold text-black">Upload Project Documents</Text>
                     <Text className="text-[9px] text-gray-400 font-lato">(Optional)</Text>
                 </View>
                 <TouchableOpacity
@@ -2902,61 +2783,10 @@ function Step6() {
                         <Ionicons name="document-text-outline" size={20} color="#4A43EC" />
                     </View>
                     <Text className="text-xs font-lato-bold text-[#4A43EC]">
-                        {currentData.documents.length > 0 ? `${currentData.documents.length} Documents Added` : "Upload Documents"}
+                        {step6.documents.length > 0 ? `${step6.documents.length} Documents Added` : "Upload Documents"}
                     </Text>
                     <Text className="text-[9px] text-gray-400 font-lato mt-0.5">click from camera or browse to upload</Text>
                 </TouchableOpacity>
-            </View>
-
-            {/* Price Section */}
-            <View className="mt-1">
-                <Text className="text-xs font-lato-bold text-black mb-2.5">Selling Price</Text>
-                <Pressable onPress={() => priceRef.current?.focus()} className="flex-row bg-white border border-gray-200 rounded-xl px-4 h-12 items-center">
-                    <Text className="text-base font-lato-bold text-gray-500 mr-2">₹</Text>
-                    <TextInput
-                        ref={priceRef}
-                        className="flex-1 text-[13px] font-lato-bold text-black"
-                        placeholder="0.00"
-                        placeholderTextColor="#9CA3AF"
-                        keyboardType="numeric"
-                        value={currentData.sellingPrice}
-                        onChangeText={(v) => updateField('sellingPrice', v)}
-                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                    />
-                </Pressable>
-            </View>
-
-            {/* Checkboxes */}
-            <View>
-                <Checkbox
-                    label="Price Negotiable"
-                    value={currentData.priceNegotiable}
-                    onValueChange={(v) => updateField('priceNegotiable', v)}
-                />
-                <Checkbox
-                    label="Tax and Govt. charges exclude"
-                    value={currentData.taxExclude}
-                    onValueChange={(v) => updateField('taxExclude', v)}
-                />
-            </View>
-
-            {/* Payment Mode */}
-            <View>
-                <Text className="text-xs font-lato-bold text-black mb-3">Preferred Payment Mode</Text>
-                <View className="flex-row gap-3">
-                    <TouchableOpacity
-                        onPress={() => updateField('paymentMode', 'full')}
-                        className={`flex-1 py-2.5 rounded-full border items-center ${currentData.paymentMode === 'full' ? 'bg-[#EBEAFF] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
-                    >
-                        <Text className={`text-[10px] font-lato-bold ${currentData.paymentMode === 'full' ? 'text-[#4A43EC]' : 'text-gray-500'}`}>Full Payment</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => updateField('paymentMode', 'emi')}
-                        className={`flex-1 py-2.5 rounded-full border items-center ${currentData.paymentMode === 'emi' ? 'bg-[#EBEAFF] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
-                    >
-                        <Text className={`text-[10px] font-lato-bold ${currentData.paymentMode === 'emi' ? 'text-[#4A43EC]' : 'text-gray-500'}`}>EMI/ Loan Available</Text>
-                    </TouchableOpacity>
-                </View>
             </View>
 
             {/* Agreement */}
@@ -2964,7 +2794,7 @@ function Step6() {
                 <Text className="text-xs font-lato-bold text-black mb-3">Agreement & Submission</Text>
                 <Checkbox
                     label="I confirm that the provided details are accurate and that I am the legal owner or have the right to list this property for sale."
-                    value={currentData.agreed}
+                    value={step6.agreed}
                     onValueChange={(v) => updateField('agreed', v)}
                 />
             </View>
