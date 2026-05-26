@@ -33,6 +33,7 @@ import {
     resetForm,
 } from "../../store/slices/projectSlice";
 import { addProject } from "../../store/slices/projectsSlice";
+import { addNotification } from "../../store/slices/notificationSlice";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
@@ -202,6 +203,11 @@ export default function AddProject() {
             };
             
             dispatch(addProject(finalProjectData));
+            dispatch(addNotification({
+                title: "Project added successfully",
+                description: `${step1.projectName || "New project"} has been added to your project panel.`,
+                type: "success",
+            }));
             dispatch(resetForm());
             router.push('/success');
         }

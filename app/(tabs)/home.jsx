@@ -9,6 +9,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
 import { updateProject } from "../../store/slices/projectsSlice";
+import { addNotification } from "../../store/slices/notificationSlice";
 
 const profileImg = require("../../assets/images/user_profile.png");
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
@@ -26,6 +27,7 @@ export default function Home() {
     const router = useRouter();
     const dispatch = useDispatch();
     const projectsData = useSelector((state) => state.projects.projects);
+    const notifications = useSelector((state) => state.notifications?.list || []);
     const [activeTab, setActiveTab] = useState("Overview");
 
     const [selectedProjectId, setSelectedProjectId] = useState(projectsData[0]?.id ?? "");
@@ -80,6 +82,7 @@ export default function Home() {
     };
 
     const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
+    const unreadNotifications = notifications.filter(item => !item.watched).length;
 
     useEffect(() => {
         if (!projectsData.length) return;
@@ -242,6 +245,11 @@ export default function Home() {
             area: editArea.trim(),
             status: editStatus,
             dimmed: editStatus === "Sold" ? true : false,
+        }));
+        dispatch(addNotification({
+            title: "Inventory updated",
+            description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
+            type: "inventory",
         }));
         setIsInventoryEditVisible(false);
         setInventoryEditTarget(null);
@@ -731,15 +739,19 @@ export default function Home() {
                             style={{
                                 paddingTop: Math.max(insets.top, 20) + 7,
                                 paddingHorizontal: 20,
-                                paddingBottom: 50,
+                                paddingBottom: 40,
                                 overflow: "visible"
                             }}
                         >
                             {/* Profile & Notification */}
                             <View className="flex-row justify-between items-center mb-4">
                                 <View className="flex-row items-center">
-                                    <View className="w-10 h-10 rounded-2xl overflow-hidden bg-gray-200 border-2 border-white/20">
-                                        <Image source={profileImg} className="w-full h-full" />
+                                    <View className="w-[46px] h-[46px] relative">
+                                        <Image
+                                            source={profileImg}
+                                            className="w-[50px] h-[50px] rounded-full border-2 border-white"
+                                            resizeMode="cover"
+                                        />
                                     </View>
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
@@ -751,8 +763,18 @@ export default function Home() {
                                         <Text className="text-white/70 text-[9px] font-lato">{mockData.user.date}</Text>
                                     </View>
                                 </View>
-                                <TouchableOpacity className="w-8 h-8 rounded-full bg-white/10 items-center justify-center">
+                                <TouchableOpacity
+                                    className="w-8 h-8 rounded-full bg-white/10 items-center justify-center relative"
+                                    onPress={() => router.push("/(screens)/notifications")}
+                                >
                                     <Ionicons name="notifications-outline" size={18} color="white" />
+                                    {unreadNotifications > 0 && (
+                                        <View className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 items-center justify-center px-1">
+                                            <Text className="text-[8px] font-lato-bold text-white">
+                                                {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                                            </Text>
+                                        </View>
+                                    )}
                                 </TouchableOpacity>
                             </View>
 

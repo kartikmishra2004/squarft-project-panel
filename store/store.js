@@ -3,6 +3,7 @@ import appReducer from './slices/appSlice';
 import authReducer from './slices/authSlice';
 import projectReducer from './slices/projectSlice';
 import projectsReducer from './slices/projectsSlice';
+import notificationReducer from './slices/notificationSlice';
 
 export const store = configureStore({
     reducer: {
@@ -10,5 +11,6 @@ export const store = configureStore({
         auth: authReducer,
         project: projectReducer,
         projects: projectsReducer,
+        notifications: notificationReducer,
     },
 });

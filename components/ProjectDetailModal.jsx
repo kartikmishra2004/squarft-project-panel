@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Image, TouchableOpacity, Dimensions, Modal as RNModal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, Image, TouchableOpacity, Dimensions, TextInput } from "react-native";
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -91,7 +91,6 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const sheetRef = useRef(null);
     const [sheetView, setSheetView] = useState("property");
     const [paymentPlan, setPaymentPlan] = useState(() => buildPaymentPlan(variant));
-    const [collectModalVisible, setCollectModalVisible] = useState(false);
     const [activeMilestoneIndex, setActiveMilestoneIndex] = useState(null);
     const [collectAmount, setCollectAmount] = useState("");
     const [collectError, setCollectError] = useState("");
@@ -101,7 +100,6 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         if (visible) {
             setSheetView("property");
             setPaymentPlan(buildPaymentPlan(variant));
-            setCollectModalVisible(false);
             setActiveMilestoneIndex(null);
             setCollectAmount("");
             setCollectError("");
@@ -110,7 +108,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         }
 
         sheetRef.current?.dismiss();
-    }, [visible]);
+    }, [visible, variant]);
 
     if (!project || !variant) return null;
 
@@ -124,11 +122,11 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         setActiveMilestoneIndex(milestoneIndex);
         setCollectAmount(String(Math.max(1, Math.round(milestone.totalAmount - milestone.collectedAmount))));
         setCollectError("");
-        setCollectModalVisible(true);
+        setSheetView("collect");
     };
 
     const closeCollectForm = () => {
-        setCollectModalVisible(false);
+        setSheetView("schedule");
         setActiveMilestoneIndex(null);
         setCollectAmount("");
         setCollectError("");
@@ -144,11 +142,18 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
             return;
         }
 
+        const selectedMilestone = paymentPlan[milestoneIndex];
+        const selectedRemaining = Math.max(selectedMilestone.totalAmount - selectedMilestone.collectedAmount, 0);
+        if (amount > selectedRemaining) {
+            setCollectError(`Amount cannot exceed ${formatAmount(selectedRemaining)}`);
+            return;
+        }
+
         const nextPlan = paymentPlan.map((milestone, index) => {
             if (index !== milestoneIndex) return milestone;
             return {
                 ...milestone,
-                collectedAmount: Math.min(milestone.totalAmount, milestone.collectedAmount + amount),
+                collectedAmount: milestone.collectedAmount + amount,
             };
         });
 
@@ -158,17 +163,22 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         if (typeof onVariantUpdate === "function") {
             onVariantUpdate({
                 ...variant,
-                paymentSchedule: nextPlan.map((milestone) => ({
-                    title: milestone.title,
-                    amount: formatAmount(milestone.totalAmount),
-                    totalAmount: milestone.totalAmount,
-                    collectedAmount: milestone.collectedAmount,
-                    status: milestone.collectedAmount >= milestone.totalAmount ? "Paid" : "Upcoming",
-                    tone: milestone.collectedAmount >= milestone.totalAmount ? "success" : "warning",
-                    detail: milestone.collectedAmount >= milestone.totalAmount
-                        ? `Collected: ${formatAmount(milestone.collectedAmount)}`
-                        : `Due: ${milestone.dueDetail}`,
-                })),
+                paymentSchedule: nextPlan.map((milestone) => {
+                    const remainingAmount = Math.max(milestone.totalAmount - milestone.collectedAmount, 0);
+                    const isPaid = remainingAmount === 0;
+
+                    return {
+                        title: milestone.title,
+                        amount: formatAmount(milestone.totalAmount),
+                        totalAmount: milestone.totalAmount,
+                        collectedAmount: milestone.collectedAmount,
+                        status: isPaid ? "Paid" : "Upcoming",
+                        tone: isPaid ? "success" : "warning",
+                        detail: isPaid
+                            ? `Collected: ${formatAmount(milestone.collectedAmount)}`
+                            : `Remaining: ${formatAmount(remainingAmount)}`,
+                    };
+                }),
                 dealValue: formatAmount(summary.totalAmount),
                 received: formatAmount(summary.collectedAmount),
                 pending: formatAmount(summary.pendingAmount),
@@ -255,7 +265,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
             amount: formatAmount(milestone.totalAmount),
             detail: status === "Paid"
                 ? `Collected: ${formatAmount(milestone.collectedAmount)}`
-                : `Due: ${milestone.dueDetail}`,
+                : `Remaining: ${formatAmount(remainingAmount)}`,
         };
     });
 
@@ -490,7 +500,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                             </View>
                         </View>
                     </>
-                ) : (
+                ) : sheetView === "schedule" ? (
                     <>
                         <View className="px-3 pb-1.5">
                             <View className="flex-row items-center justify-between mb-2">
@@ -561,46 +571,38 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                             </View>
                         </View>
                     </>
-                )}
+                ) : (
+                    <View className="px-5 pb-2">
+                        <View className="flex-row items-center justify-between mb-4">
+                            <TouchableOpacity
+                                onPress={closeCollectForm}
+                                className="w-8 h-8 rounded-full bg-[#F3F4F8] items-center justify-center"
+                                activeOpacity={0.85}
+                            >
+                                <Ionicons name="arrow-back" size={14} color="#1F2937" />
+                            </TouchableOpacity>
+                            <View className="flex-1 ml-3">
+                                <Text className="text-[16px] font-lato-bold text-[#1F2937]">Collect Payment</Text>
+                                <Text className="mt-0.5 text-[10px] font-lato text-[#8E98AA]" numberOfLines={1}>
+                                    {paymentMilestones[activeMilestoneIndex]?.title || "Milestone"} · {title}
+                                </Text>
+                            </View>
+                        </View>
 
-                <View className="px-5 pt-3 border-t border-gray-100 mt-1" style={{ paddingBottom: 8 }}>
-                    {sheetView === "property" ? (
-                        <TouchableOpacity
-                            onPress={onClose}
-                            className="rounded-2xl py-4 items-center flex-row justify-center gap-2"
-                            style={{ backgroundColor: "#4A43EC" }}
-                        >
-                            <MaterialCommunityIcons name="check-circle-outline" size={18} color="#fff" />
-                            <Text className="text-white text-[15px] font-lato-bold">Close</Text>
-                        </TouchableOpacity>
-                    ) : (
-                        <TouchableOpacity
-                            onPress={goToProperty}
-                            className="rounded-2xl py-3 items-center flex-row justify-center gap-2"
-                            style={{ backgroundColor: "#4A43EC" }}
-                        >
-                            <Ionicons name="arrow-back" size={14} color="#fff" />
-                            <Text className="text-white text-[12px] font-lato-bold">Back to Property Details</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            </BottomSheetScrollView>
-
-            <RNModal transparent visible={collectModalVisible} animationType="fade" onRequestClose={closeCollectForm}>
-                <KeyboardAvoidingView
-                    className="flex-1"
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                >
-                    <View className="flex-1 bg-black/45 justify-end px-5 pb-6">
-                        <TouchableOpacity activeOpacity={1} className="absolute inset-0" onPress={closeCollectForm} />
-                        <View className="bg-white rounded-[24px] p-4">
-                            <Text className="text-[16px] font-lato-bold text-[#1F2937]">Collect Payment</Text>
-                            <Text className="mt-1 text-[11px] font-lato text-[#6B7280]">
+                        <View className="rounded-[18px] border border-[#E6E0FF] bg-[#F8F6FF] p-4">
+                            <Text className="text-[12px] font-lato text-[#6B7280]">
                                 Enter the amount to collect for {paymentMilestones[activeMilestoneIndex]?.title || "this milestone"}.
                             </Text>
 
+                            <View className="mt-4 rounded-[14px] bg-white border border-[#ECE8FF] p-3">
+                                <Text className="text-[10px] font-lato-bold text-[#6B7280] uppercase mb-1">Pending Amount</Text>
+                                <Text className="text-[18px] font-lato-bold text-[#4A43EC]">
+                                    {formatAmount(paymentMilestones[activeMilestoneIndex]?.remainingAmount || 0)}
+                                </Text>
+                            </View>
+
                             <View className="mt-4">
-                                <Text className="text-[10px] font-lato-bold text-[#6B7280] uppercase mb-1">Amount</Text>
+                                <Text className="text-[10px] font-lato-bold text-[#6B7280] uppercase mb-1.5">Amount</Text>
                                 <TextInput
                                     value={collectAmount}
                                     onChangeText={(value) => {
@@ -615,25 +617,47 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                 />
                                 {collectError ? <Text className="mt-1 text-[11px] text-red-500">{collectError}</Text> : null}
                             </View>
-
-                            <View className="mt-4 flex-row gap-3">
-                                <TouchableOpacity
-                                    onPress={closeCollectForm}
-                                    className="flex-1 h-12 rounded-2xl items-center justify-center border border-gray-200"
-                                >
-                                    <Text className="text-[13px] font-lato-bold text-[#374151]">Cancel</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    onPress={handleSaveCollection}
-                                    className="flex-1 h-12 rounded-2xl items-center justify-center bg-[#4A43EC]"
-                                >
-                                    <Text className="text-[13px] font-lato-bold text-white">Save</Text>
-                                </TouchableOpacity>
-                            </View>
                         </View>
                     </View>
-                </KeyboardAvoidingView>
-            </RNModal>
+                )}
+
+                <View className="px-5 pt-3 border-t border-gray-100 mt-1" style={{ paddingBottom: 8 }}>
+                    {sheetView === "property" ? (
+                        <TouchableOpacity
+                            onPress={onClose}
+                            className="rounded-2xl py-4 items-center flex-row justify-center gap-2"
+                            style={{ backgroundColor: "#4A43EC" }}
+                        >
+                            <MaterialCommunityIcons name="check-circle-outline" size={18} color="#fff" />
+                            <Text className="text-white text-[15px] font-lato-bold">Close</Text>
+                        </TouchableOpacity>
+                    ) : sheetView === "schedule" ? (
+                        <TouchableOpacity
+                            onPress={goToProperty}
+                            className="rounded-2xl py-3 items-center flex-row justify-center gap-2"
+                            style={{ backgroundColor: "#4A43EC" }}
+                        >
+                            <Ionicons name="arrow-back" size={14} color="#fff" />
+                            <Text className="text-white text-[12px] font-lato-bold">Back to Property Details</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <View className="flex-row gap-3">
+                            <TouchableOpacity
+                                onPress={closeCollectForm}
+                                className="flex-1 rounded-2xl py-3 items-center justify-center border border-gray-200 bg-white"
+                            >
+                                <Text className="text-[12px] font-lato-bold text-[#374151]">Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={handleSaveCollection}
+                                className="flex-1 rounded-2xl py-3 items-center justify-center bg-[#4A43EC]"
+                            >
+                                <Text className="text-[12px] font-lato-bold text-white">Save</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                </View>
+            </BottomSheetScrollView>
         </BottomSheetModal>
     );
 }
