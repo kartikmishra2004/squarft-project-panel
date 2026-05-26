@@ -2,21 +2,33 @@ import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, Keyb
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
+import { useDispatch, useSelector } from "react-redux";
 import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
+import { updateProject } from "../../store/slices/projectsSlice";
 
-const projectImg = require("../../assets/images/project_main.png");
 const profileImg = require("../../assets/images/user_profile.png");
+const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
+const INVENTORY_TABS = [
+    { key: "apartment", label: "Apartment" },
+    { key: "villa", label: "Villa" },
+    { key: "rowhouse", label: "Rowhouse" },
+    { key: "plot", label: "Plot" },
+    { key: "shop", label: "Shop" },
+    { key: "showroom", label: "Showroom" }
+];
+const STATUS_OPTIONS = ["Available", "Booked", "Sold"];
 
 export default function Home() {
     const router = useRouter();
+    const dispatch = useDispatch();
+    const projectsData = useSelector((state) => state.projects.projects);
     const [activeTab, setActiveTab] = useState("Overview");
 
-    const [projectsData, setProjectsData] = useState(mockData.projects);
-    const [selectedProjectId, setSelectedProjectId] = useState(mockData.projects[0]?.id ?? "");
+    const [selectedProjectId, setSelectedProjectId] = useState(projectsData[0]?.id ?? "");
     const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
     const [isProjectDetailVisible, setIsProjectDetailVisible] = useState(false);
     const [selectedDeal, setSelectedDeal] = useState(null);
@@ -30,16 +42,9 @@ export default function Home() {
     const [selectedTower, setSelectedTower] = useState("tower-a");
     const [selectedPlotStack, setSelectedPlotStack] = useState("stack-a");
     const [selectedPlotUnit, setSelectedPlotUnit] = useState("A-1202");
-    const tabs = ["Overview", "Inventory", "Visits", "Deals"];
-    const inventoryTabs = [
-        { key: "apartment", label: "Apartment" },
-        { key: "villa", label: "Villa" },
-        { key: "rowhouse", label: "Rowhouse" },
-        { key: "plot", label: "Plot" },
-        { key: "shop", label: "Shop" },
-        { key: "showroom", label: "Showroom" }
-    ];
-    const statusOptions = ["Available", "Booked", "Sold"];
+    const tabs = HOME_TABS;
+    const inventoryTabs = INVENTORY_TABS;
+    const statusOptions = STATUS_OPTIONS;
     const insets = useSafeAreaInsets();
     const headerAnimation = useRef(new Animated.Value(1)).current;
     const expandedHeaderHeight = Math.max(insets.top, 20) + 221;
@@ -76,6 +81,13 @@ export default function Home() {
 
     const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
 
+    useEffect(() => {
+        if (!projectsData.length) return;
+        if (!projectsData.some(project => project.id === selectedProjectId)) {
+            setSelectedProjectId(projectsData[0].id);
+        }
+    }, [projectsData, selectedProjectId]);
+
     const getInventoryDealTemplate = (inventoryTypeValue, unit) => {
         const deals = selectedProject.deals || [];
         const propertyLabel = (unit?.title || unit?.meta || inventoryTypeValue || "").toLowerCase();
@@ -94,97 +106,122 @@ export default function Home() {
         return typeMatchMap[inventoryTypeValue] || deals[0] || null;
     };
 
+    const getProjectStats = (project) => {
+        const deals = project.deals || [];
+        const toNumber = (value) => Number(String(value || '').replace(/[^0-9.]/g, '')) || 0;
+        const formatAmount = (amount) => {
+            if (!amount) return "₹0";
+            if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(amount % 10000000 === 0 ? 0 : 2)} Cr`;
+            if (amount >= 100000) return `₹${(amount / 100000).toFixed(amount % 100000 === 0 ? 0 : 2)} L`;
+            return `₹${amount.toLocaleString("en-IN")}`;
+        };
+
+        return {
+            totalReceived: formatAmount(deals.reduce((sum, deal) => sum + toNumber(deal.received), 0)),
+            upcomingAmount: formatAmount(deals.reduce((sum, deal) => sum + toNumber(deal.pending || deal.nextDueAmount), 0)),
+            toBeReleased: formatAmount(deals.reduce((sum, deal) => sum + toNumber(deal.registryAmount), 0)),
+        };
+    };
+
+    const getProjectImageSource = (project) => {
+        const firstImage = project.projectImages?.[0];
+        return firstImage?.uri ? { uri: firstImage.uri } : null;
+    };
+    const projectImageSource = getProjectImageSource(selectedProject);
+    const projectImageCount = selectedProject.projectImages?.length || 0;
+    const projectImagesLabel = projectImageCount > 0 ? `1/${projectImageCount}` : "0/0";
+
     const updateInventoryUnit = (target, updater) => {
-        setProjectsData((currentProjects) => currentProjects.map((project) => {
-            if (project.id !== selectedProjectId) return project;
+        const project = projectsData.find(item => item.id === selectedProjectId);
+        if (!project) return;
 
-            const inventory = project.inventory || {};
+        const inventory = project.inventory || {};
+        let nextProject = project;
 
-            if (target.inventoryType === "apartment") {
-                return {
-                    ...project,
-                    inventory: {
-                        ...inventory,
-                        apartment: {
-                            ...inventory.apartment,
-                            towers: inventory.apartment?.towers?.map((tower) => {
-                                if (tower.key !== target.towerKey) return tower;
+        if (target.inventoryType === "apartment") {
+            nextProject = {
+                ...project,
+                inventory: {
+                    ...inventory,
+                    apartment: {
+                        ...inventory.apartment,
+                        towers: inventory.apartment?.towers?.map((tower) => {
+                            if (tower.key !== target.towerKey) return tower;
 
-                                return {
-                                    ...tower,
-                                    sections: tower.sections.map((section, sectionIndex) => {
-                                        if (sectionIndex !== target.sectionIndex) return section;
+                            return {
+                                ...tower,
+                                sections: tower.sections.map((section, sectionIndex) => {
+                                    if (sectionIndex !== target.sectionIndex) return section;
 
-                                        return {
-                                            ...section,
-                                            units: section.units.map((unit, unitIndex) => {
-                                                if (unitIndex !== target.unitIndex) return unit;
-                                                return updater(unit);
-                                            }),
-                                        };
-                                    }),
-                                };
-                            }),
-                        },
+                                    return {
+                                        ...section,
+                                        units: section.units.map((unit, unitIndex) => {
+                                            if (unitIndex !== target.unitIndex) return unit;
+                                            return updater(unit);
+                                        }),
+                                    };
+                                }),
+                            };
+                        }),
                     },
-                };
-            }
+                },
+            };
+        }
 
-            if (target.inventoryType === "villa" || target.inventoryType === "rowhouse" || target.inventoryType === "shop" || target.inventoryType === "showroom") {
-                return {
-                    ...project,
-                    inventory: {
-                        ...inventory,
-                        [target.inventoryType]: {
-                            ...inventory[target.inventoryType],
-                            sections: inventory[target.inventoryType]?.sections?.map((section, sectionIndex) => {
-                                if (sectionIndex !== target.sectionIndex) return section;
+        if (target.inventoryType === "villa" || target.inventoryType === "rowhouse" || target.inventoryType === "shop" || target.inventoryType === "showroom") {
+            nextProject = {
+                ...project,
+                inventory: {
+                    ...inventory,
+                    [target.inventoryType]: {
+                        ...inventory[target.inventoryType],
+                        sections: inventory[target.inventoryType]?.sections?.map((section, sectionIndex) => {
+                            if (sectionIndex !== target.sectionIndex) return section;
 
-                                return {
-                                    ...section,
-                                    units: section.units.map((unit, unitIndex) => {
-                                        if (unitIndex !== target.unitIndex) return unit;
-                                        return updater(unit);
-                                    }),
-                                };
-                            }),
-                        },
+                            return {
+                                ...section,
+                                units: section.units.map((unit, unitIndex) => {
+                                    if (unitIndex !== target.unitIndex) return unit;
+                                    return updater(unit);
+                                }),
+                            };
+                        }),
                     },
-                };
-            }
+                },
+            };
+        }
 
-            if (target.inventoryType === "plot") {
-                return {
-                    ...project,
-                    inventory: {
-                        ...inventory,
-                        plot: {
-                            ...inventory.plot,
-                            stacks: inventory.plot?.stacks?.map((stack) => {
-                                if (stack.key !== target.stackKey) return stack;
+        if (target.inventoryType === "plot") {
+            nextProject = {
+                ...project,
+                inventory: {
+                    ...inventory,
+                    plot: {
+                        ...inventory.plot,
+                        stacks: inventory.plot?.stacks?.map((stack) => {
+                            if (stack.key !== target.stackKey) return stack;
 
-                                return {
-                                    ...stack,
-                                    levels: stack.levels.map((level, levelIndex) => {
-                                        if (levelIndex !== target.levelIndex) return level;
+                            return {
+                                ...stack,
+                                levels: stack.levels.map((level, levelIndex) => {
+                                    if (levelIndex !== target.levelIndex) return level;
 
-                                        return {
-                                            ...level,
-                                            cards: level.cards.map((card, cardIndex) => {
-                                                if (cardIndex !== target.cardIndex) return card;
-                                                return updater(card);
-                                            }),
-                                        };
-                                    }),
-                                };
-                            }),
-                        },
+                                    return {
+                                        ...level,
+                                        cards: level.cards.map((card, cardIndex) => {
+                                            if (cardIndex !== target.cardIndex) return card;
+                                            return updater(card);
+                                        }),
+                                    };
+                                }),
+                            };
+                        }),
                     },
-                };
-            }
+                },
+            };
+        }
 
-            return project;
-        }));
+        dispatch(updateProject(nextProject));
     };
 
     const openInventoryEdit = (unit, target) => {
@@ -216,15 +253,11 @@ export default function Home() {
         setActiveTab(tab);
     };
 
-    const getPlotStatusStyle = (status) => {
-        switch (status) {
-            case "Booked":
-                return "bg-emerald-100 text-emerald-700";
-            case "Sold":
-                return "bg-slate-100 text-slate-500";
-            default:
-                return "bg-gray-100 text-gray-500";
-        }
+    const handleProjectSelect = (projectId) => {
+        setSelectedProjectId(projectId);
+        setIsProjectDropdownOpen(false);
+        setSelectedDeal(null);
+        setIsProjectDetailVisible(false);
     };
 
     const getPropertyDetailText = (inventoryTypeValue, item) => {
@@ -372,11 +405,18 @@ export default function Home() {
         </View>
     );
 
+    const EmptyState = ({ message }) => (
+        <View className="bg-white rounded-[16px] border border-gray-100 py-10 px-5 items-center">
+            <Ionicons name="file-tray-outline" size={24} color="#9CA3AF" />
+            <Text className="mt-2 text-gray-400 font-lato text-center">{message}</Text>
+        </View>
+    );
+
     const renderInventoryBoxes = () => {
         const inventoryLabel = inventoryTabs.find((tab) => tab.key === inventoryType)?.label || "Inventory";
 
         if (inventoryType === "apartment") {
-            if (!selectedInventory.towers?.length) return null;
+            if (!selectedInventory.towers?.length) return <EmptyState message="No apartment inventory available for this project yet." />;
 
             return (
                 <View>
@@ -425,7 +465,9 @@ export default function Home() {
                                 },
                             }));
 
-                            if (!sectionUnits.length) return null;
+                            if (!sectionUnits.length) return (
+                                <EmptyState key={`${selectedTowerData?.key}-${sectionLabel}`} message={`No units available in ${sectionLabel}.`} />
+                            );
 
                             return (
                                 <View key={`${selectedTowerData?.key}-${sectionLabel}`} className="mb-4">
@@ -468,7 +510,7 @@ export default function Home() {
                 })),
             }));
 
-            if (!rangeGroups.length) return null;
+            if (!rangeGroups.length) return <EmptyState message="No plot inventory available for this project yet." />;
 
             return (
                 <View>
@@ -481,7 +523,7 @@ export default function Home() {
                             {rangeGroup.rows.map((row) => (
                                 <View key={row.key} className="mb-3">
                                     <Text className="mb-2 text-[11px] font-lato-bold text-gray-500">{row.label}</Text>
-                                    {renderCardGrid(row.cards, row.key)}
+                                    {row.cards.length ? renderCardGrid(row.cards, row.key) : <EmptyState message={`No plots available in ${row.label}.`} />}
                                 </View>
                             ))}
                         </View>
@@ -513,7 +555,7 @@ export default function Home() {
             };
         });
 
-        if (!sectionGroups.length) return null;
+        if (!sectionGroups.length) return <EmptyState message={`No ${inventoryLabel.toLowerCase()} inventory available for this project yet.`} />;
 
         return (
             <View>
@@ -525,7 +567,7 @@ export default function Home() {
                                 {inventoryType === "shop" || inventoryType === "showroom" ? "Section Wise" : "Range Wise"}
                             </Text>
                         </View>
-                        {renderCardGrid(sectionGroup.units, sectionGroup.key)}
+                        {sectionGroup.units.length ? renderCardGrid(sectionGroup.units, sectionGroup.key) : <EmptyState message={`No units available in ${sectionGroup.label}.`} />}
                     </View>
                 ))}
             </View>
@@ -551,6 +593,8 @@ export default function Home() {
             possession: unit.possession || selectedProject.possession,
             amenities: unit.amenities || selectedProject.amenities,
             progress: unit.progress ?? 0,
+            images: unit.images || selectedProject.projectImages || [],
+            totalImages: unit.images?.length || selectedProject.projectImages?.length || 0,
             followUps: selectedProject.visits?.followUps || [],
             showDealSummary: isBookedOrSoldUnit,
             showFollowUps: unit.status === "Available",
@@ -561,28 +605,35 @@ export default function Home() {
     const handleDealVariantUpdate = (updatedDeal) => {
         setSelectedDeal(updatedDeal);
 
-        setProjectsData((currentProjects) => currentProjects.map((project) => {
-            if (project.id !== selectedProjectId || !Array.isArray(project.deals)) {
-                return project;
-            }
+        const project = projectsData.find(item => item.id === selectedProjectId);
+        if (!project || !Array.isArray(project.deals)) return;
 
-            return {
-                ...project,
-                deals: project.deals.map((deal) => {
-                    const sameDeal =
-                        deal.title === updatedDeal?.title &&
-                        deal.bookedBy === updatedDeal?.bookedBy &&
-                        deal.mobile === updatedDeal?.mobile;
+        dispatch(updateProject({
+            ...project,
+            deals: project.deals.map((deal) => {
+                const sameDeal =
+                    deal.title === updatedDeal?.title &&
+                    deal.bookedBy === updatedDeal?.bookedBy &&
+                    deal.mobile === updatedDeal?.mobile;
 
-                    return sameDeal ? { ...deal, ...updatedDeal } : deal;
-                }),
-            };
+                return sameDeal ? { ...deal, ...updatedDeal } : deal;
+            }),
         }));
     };
 
     const projectOptions = projectsData;
     const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
     const dealsData = selectedProject.deals || [];
+    const projectStats = getProjectStats(selectedProject);
+    const availableInventoryTabs = useMemo(() => inventoryTabs.filter((tab) => {
+        const inventory = selectedProject.inventory?.[tab.key];
+        return Boolean(
+            inventory?.towers?.length ||
+            inventory?.sections?.length ||
+            inventory?.stacks?.length
+        );
+    }), [inventoryTabs, selectedProject.inventory]);
+    const availableInventoryKeys = availableInventoryTabs.map(tab => tab.key).join('|');
     const selectedInventory = selectedProject.inventory?.[inventoryType] || { sections: [] };
     const selectedTowerData = selectedInventory.towers?.find((tower) => tower.key === selectedTower) || selectedInventory.towers?.[0] || null;
     const selectedPlotData = selectedInventory.stacks?.find((stack) => stack.key === selectedPlotStack) || selectedInventory.stacks?.[0] || null;
@@ -590,6 +641,12 @@ export default function Home() {
         || selectedPlotData?.levels.flatMap((level) => level.cards || []).find((card) => card.active)
         || selectedPlotData?.levels.flatMap((level) => level.cards || []).find((card) => card.unit)
         || null;
+
+    useEffect(() => {
+        if (availableInventoryTabs.length && !availableInventoryTabs.some(tab => tab.key === inventoryType)) {
+            setInventoryType(availableInventoryTabs[0].key);
+        }
+    }, [availableInventoryKeys, availableInventoryTabs, inventoryType]);
 
     useEffect(() => {
         if (inventoryType === "apartment") {
@@ -654,9 +711,10 @@ export default function Home() {
             <Animated.View
                 style={{
                     height: animatedHeaderHeight,
-                    overflow: "hidden",
+                    overflow: isProjectDropdownOpen ? "visible" : "hidden",
                     position: "relative",
-                    zIndex: isProjectDropdownOpen ? 20 : 1,
+                    zIndex: isProjectDropdownOpen ? 999999 : 1,
+                    elevation: isProjectDropdownOpen ? 999999 : 1,
                 }}
             >
                 <Animated.View
@@ -715,7 +773,7 @@ export default function Home() {
                                     {isProjectDropdownOpen ? (
                                         <View
                                             className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                            style={{ zIndex: 10000, elevation: 50 }}
+                                            style={{ zIndex: 999999, elevation: 999999, borderWidth: 1.5, borderColor: "#4A43EC" }}
                                         >
                                             {projectOptions.map((project) => {
                                                 const isSelected = project.id === selectedProjectId;
@@ -725,8 +783,7 @@ export default function Home() {
                                                         key={project.id}
                                                         activeOpacity={0.85}
                                                         onPress={() => {
-                                                            setSelectedProjectId(project.id);
-                                                            setIsProjectDropdownOpen(false);
+                                                            handleProjectSelect(project.id);
                                                         }}
                                                         className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
                                                     >
@@ -760,7 +817,7 @@ export default function Home() {
                                         <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
                                     </View>
                                     <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{mockData.stats.totalReceived}</Text>
+                                        <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{projectStats.totalReceived}</Text>
                                     </View>
                                 </View>
 
@@ -769,7 +826,7 @@ export default function Home() {
                                         <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
                                     </View>
                                     <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#10B981] text-[13px] font-lato-bold">{mockData.stats.upcomingAmount}</Text>
+                                        <Text className="text-[#10B981] text-[13px] font-lato-bold">{projectStats.upcomingAmount}</Text>
                                     </View>
                                 </View>
 
@@ -778,7 +835,7 @@ export default function Home() {
                                         <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
                                     </View>
                                     <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#EF4444] text-[13px] font-lato-bold">{mockData.stats.toBeReleased}</Text>
+                                        <Text className="text-[#EF4444] text-[13px] font-lato-bold">{projectStats.toBeReleased}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -844,10 +901,47 @@ export default function Home() {
                             >
                                 <Ionicons name="chevron-back" size={20} color="#1A1A1A" />
                             </TouchableOpacity>
-                            <TouchableOpacity className="flex-row items-center">
-                                <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1">Serenity Reserve</Text>
-                                <Ionicons name="chevron-down" size={16} color="#1A1A1A" />
-                            </TouchableOpacity>
+                            <View className="relative flex-1 mx-3 items-center" style={{ zIndex: 50, elevation: 50 }}>
+                                <TouchableOpacity
+                                    activeOpacity={0.85}
+                                    onPress={() => setIsProjectDropdownOpen((current) => !current)}
+                                    className="flex-row items-center max-w-full"
+                                >
+                                    <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1" numberOfLines={1}>
+                                        {selectedProject?.title || "Select Project"}
+                                    </Text>
+                                    <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
+                                </TouchableOpacity>
+
+                                {isProjectDropdownOpen ? (
+                                    <View
+                                        className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
+                                        style={{ zIndex: 999999, elevation: 999999, maxHeight: 240, borderWidth: 1.5, borderColor: "#4A43EC" }}
+                                    >
+                                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                                            {projectOptions.map((project) => {
+                                                const isSelected = project.id === selectedProjectId;
+
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={project.id}
+                                                        activeOpacity={0.85}
+                                                        onPress={() => handleProjectSelect(project.id)}
+                                                        className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
+                                                    >
+                                                        <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
+                                                            {project.title}
+                                                        </Text>
+                                                        <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                                            {project.location || "Location pending"}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </ScrollView>
+                                    </View>
+                                ) : null}
+                            </View>
                             <View className="w-10" />
                         </View>
                     </View>
@@ -879,15 +973,31 @@ export default function Home() {
                         <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
                             <View className="flex-row h-36">
                                 <View className="flex-[2] relative">
-                                    <Image source={projectImg} className="w-full h-full" />
-                                    <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
-                                        <Text className="text-white text-[8px] font-lato">{selectedProject.developer}</Text>
-                                    </View>
+                                    {projectImageSource ? (
+                                        <Image source={projectImageSource} className="w-full h-full" />
+                                    ) : (
+                                        <View className="w-full h-full bg-[#F4F7FF] items-center justify-center px-4">
+                                            <Ionicons name="image-outline" size={26} color="#9CA3AF" />
+                                            <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
+                                        </View>
+                                    )}
+                                    {projectImageSource && (
+                                        <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
+                                            <Text className="text-white text-[8px] font-lato">{selectedProject.developer}</Text>
+                                        </View>
+                                    )}
                                 </View>
                                 <View className="flex-1 ml-0.5 bg-gray-200 relative">
-                                    <Image source={projectImg} className="w-full h-full opacity-60" resizeMode="cover" />
+                                    {projectImageSource ? (
+                                        <Image source={projectImageSource} className="w-full h-full opacity-60" resizeMode="cover" />
+                                    ) : (
+                                        <View className="w-full h-full bg-gray-100 items-center justify-center px-2">
+                                            <Ionicons name="image-outline" size={20} color="#9CA3AF" />
+                                            <Text className="mt-1 text-[8px] font-lato-bold text-gray-400 text-center">No Image</Text>
+                                        </View>
+                                    )}
                                     <View className="absolute bottom-2 right-2 bg-black/50 px-1.5 py-0.5 rounded-md">
-                                        <Text className="text-white text-[8px] font-lato-bold">{selectedProject.imagesCount}</Text>
+                                        <Text className="text-white text-[8px] font-lato-bold">{projectImagesLabel}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -912,31 +1022,34 @@ export default function Home() {
 
                                 <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
                                     <View className="flex-row">
-                                        {selectedProject.apartments.map((apt, idx) => (
+                                        {(selectedProject.apartments || []).map((apt, idx) => (
                                             <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
                                                 <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
                                                 <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
                                             </View>
                                         ))}
+                                        {(selectedProject.apartments || []).length === 0 && (
+                                            <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
+                                        )}
                                     </View>
                                 </View>
 
                                 <View className="flex-row justify-between mb-4">
                                     <View className="flex-1 bg-[#EEF4FF] border border-[#DDE8FF] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#2563EB] text-[8px] font-lato-bold uppercase">Total</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.total}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.total || 0}</Text>
                                     </View>
                                     <View className="flex-1 bg-[#ECFBF6] border border-[#D7F5E8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#10B981] text-[8px] font-lato-bold uppercase">Avail</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.avail}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.avail || 0}</Text>
                                     </View>
                                     <View className="flex-1 bg-[#FFF3EF] border border-[#FFE1D6] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#EF4444] text-[8px] font-lato-bold uppercase">Sold</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.sold}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.sold || 0}</Text>
                                     </View>
                                     <View className="flex-1 bg-[#FFF8EA] border border-[#FDECC8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units.booked}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.booked || 0}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -944,21 +1057,29 @@ export default function Home() {
                     </View>
                 ) : activeTab === "Inventory" ? (
                     <View className="p-4">
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-5">
-                            {inventoryTabs.map((tab) => (
-                                <TouchableOpacity
-                                    key={tab.key}
-                                    onPress={() => setInventoryType(tab.key)}
-                                    className={`px-[18px] py-1.5 rounded-full mr-2.5 ${inventoryType === tab.key ? "bg-[#3D30F2]" : "bg-white border border-gray-100"}`}
-                                >
-                                    <Text className={`font-lato-bold text-[11px] ${inventoryType === tab.key ? "text-white" : "text-gray-400"}`}>
-                                        {tab.label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
+                        {availableInventoryTabs.length > 0 ? (
+                            <>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-5">
+                                    {availableInventoryTabs.map((tab) => (
+                                        <TouchableOpacity
+                                            key={tab.key}
+                                            onPress={() => setInventoryType(tab.key)}
+                                            className={`px-[18px] py-1.5 rounded-full mr-2.5 ${inventoryType === tab.key ? "bg-[#3D30F2]" : "bg-white border border-gray-100"}`}
+                                        >
+                                            <Text className={`font-lato-bold text-[11px] ${inventoryType === tab.key ? "text-white" : "text-gray-400"}`}>
+                                                {tab.label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
 
-                        {renderInventoryBoxes()}
+                                {renderInventoryBoxes()}
+                            </>
+                        ) : (
+                            <View className="py-12 items-center">
+                                <Text className="text-gray-400 font-lato text-center">No inventory added for this project yet.</Text>
+                            </View>
+                        )}
                     </View>
                 ) : activeTab === "Visits" ? (
                     <View className="px-5 pt-5">
@@ -976,6 +1097,11 @@ export default function Home() {
                                     <Text className="mt-1 text-[10px] font-lato-bold text-[#22C55E]">↑ {metric.delta.replace("+", "")}</Text>
                                 </View>
                             ))}
+                            {visitsData.metrics.length === 0 && (
+                                <View className="flex-1 bg-white rounded-[16px] border border-gray-100 py-8 px-5">
+                                    <Text className="text-gray-400 font-lato text-center">No visit metrics available for this project yet.</Text>
+                                </View>
+                            )}
                         </View>
 
                         <View className="flex-row items-center justify-between mb-3">
@@ -1022,11 +1148,16 @@ export default function Home() {
                                     </View>
                                 </View>
                             ))}
+                            {visitsData.followUps.length === 0 && (
+                                <View className="bg-white rounded-[16px] border border-gray-100 py-8 px-5">
+                                    <Text className="text-gray-400 font-lato text-center">No follow-ups available for this project yet.</Text>
+                                </View>
+                            )}
                         </View>
                     </View>
                 ) : activeTab === "Deals" ? (
                     <View className="px-5 pt-5 pb-4">
-                        {dealsData.map((deal) => (
+                        {dealsData.length > 0 ? dealsData.map((deal) => (
                             <TouchableOpacity
                                 key={deal.title}
                                 activeOpacity={0.9}
@@ -1089,7 +1220,11 @@ export default function Home() {
                                     </View>
                                 </View>
                             </TouchableOpacity>
-                        ))}
+                        )) : (
+                            <View className="bg-white rounded-[16px] border border-gray-100 py-10 px-5">
+                                <Text className="text-gray-400 font-lato text-center">No deals available for this project yet.</Text>
+                            </View>
+                        )}
                     </View>
                 ) : (
                     <View className="p-10 items-center">

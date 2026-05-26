@@ -186,6 +186,7 @@ const projectSlice = createSlice({
                                 officeType: subType === 'office' ? (config.type || 'Co-working') : '',
                                 area: (override.customArea || config.area || '0').toString(),
                                 areaUnit: subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
+                                price: (override.customPrice || config.price || '').toString().replace(/,/g, ''),
                                 images: config.images || [],
                                 brochure: config.brochure || null,
                                 amenities: (config.amenities || []).filter(Boolean).length > 0 ? (config.amenities || []).filter(Boolean) : [config.name || 'Standard'],

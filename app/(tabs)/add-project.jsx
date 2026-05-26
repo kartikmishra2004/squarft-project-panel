@@ -1334,7 +1334,6 @@ function Step3() {
             }
 
             const unitConfigs = [];
-            const unitData = {};
 
             data.forEach((row, index) => {
                 if (!row['Property Number']) return;
@@ -1346,24 +1345,15 @@ function Step3() {
                     officeType: row['Office Type'] || '',
                     area: row['Area'] || '',
                     areaUnit: row['Area Unit'] || 'Sq-ft',
+                    price: row['Selling Price'] || '',
                     amenities: [''],
                     propertyNumber: row['Property Number'] || '',
                     hasShop: false,
                     extraCharges: [{ title: '', amount: '' }]
                 });
-
-                unitData[`${type.id}-${index}`] = {
-                    images: [],
-                    documents: [],
-                    sellingPrice: row['Selling Price'] || '',
-                    priceNegotiable: row['Price Negotiable']?.toLowerCase() === 'true',
-                    taxExclude: row['Tax Exclude']?.toLowerCase() === 'true',
-                    paymentMode: row['Payment Mode'] || 'full',
-                    agreed: true,
-                };
             });
 
-            dispatch(bulkUploadSubtype({ typeId: type.id, unitConfigs, unitData }));
+            dispatch(bulkUploadSubtype({ typeId: type.id, unitConfigs }));
             alert(`Bulk upload successful! Added ${unitConfigs.length} units for ${type.subType}.`);
         } catch (error) {
             console.error(error);
@@ -2237,8 +2227,39 @@ const OptionGroup = ({ label, options, value, onChange }) => (
     </View>
 );
 
+const getInputTypeProps = (label = "", placeholder = "", keyboardType = "default") => {
+    if (keyboardType !== "default") return { keyboardType };
+
+    const text = `${label} ${placeholder}`.toLowerCase();
+    if (text.includes("date") || text.includes("time")) {
+        return {
+            keyboardType: Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric",
+            inputMode: "numeric",
+        };
+    }
+    if (
+        text.includes("amount") ||
+        text.includes("price") ||
+        text.includes("percentage") ||
+        text.includes("number of months") ||
+        text.includes("guideline year") ||
+        text.includes("year") ||
+        text.includes("contact") ||
+        text.includes("pincode") ||
+        text.includes("value")
+    ) {
+        return {
+            keyboardType: "numeric",
+            inputMode: "numeric",
+        };
+    }
+
+    return { keyboardType: "default" };
+};
+
 const FieldInput = ({ label, value, onChangeText, placeholder, keyboardType = "default", multiline = false }) => {
     const inputRef = useRef(null);
+    const inputTypeProps = getInputTypeProps(label, placeholder, keyboardType);
     return (
         <View>
             <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
@@ -2252,7 +2273,8 @@ const FieldInput = ({ label, value, onChangeText, placeholder, keyboardType = "d
                     placeholder={placeholder}
                     placeholderTextColor="#9CA3AF"
                     value={value}
-                    keyboardType={keyboardType}
+                    keyboardType={inputTypeProps.keyboardType}
+                    inputMode={inputTypeProps.inputMode}
                     multiline={multiline}
                     scrollEnabled={false}
                     returnKeyType={multiline ? "default" : "done"}

@@ -3,8 +3,6 @@ import { View, Text, Image, TouchableOpacity, Dimensions, Modal as RNModal, Text
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
-const projectFallbackImage = require("../assets/images/project_main.png");
-
 const { width } = Dimensions.get("window");
 
 const AMENITY_ICONS = {
@@ -188,7 +186,9 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     };
 
     const title = variant.type || variant.propertyType || variant.title || "Property";
-    const priceLabel = formatAmount(paymentSummaryState.totalAmount) || variant.priceRange || variant.footerTotal || project.avgPrice || "Contact for price";
+    const priceLabel = paymentSummaryState.totalAmount > 0
+        ? formatAmount(paymentSummaryState.totalAmount)
+        : variant.price || variant.priceRange || variant.footerTotal || project.avgPrice || "Contact for price";
     const possession = variant.possession || project.possession || "—";
     const avgPrice = variant.avgPricePerSqft || project.avgPrice || "—";
     const area = variant.area || project.area || "—";
@@ -201,14 +201,22 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const pending = formatAmount(paymentSummaryState.pendingAmount);
     const nextDue = paymentSummaryState.nextDueLabel;
     const dealStatus = paymentSummaryState.allPaid ? "Paid" : "Upcoming";
-    const totalImages = variant.totalImages || project.totalImages || 1;
-    const heroImage = project.imageMain || projectFallbackImage;
-    const heroThumb = variant.image || project.imageThumb || heroImage;
+    const normalizeImage = (image) => {
+        if (!image) return null;
+        if (typeof image === "string") return { uri: image };
+        return image.uri ? { uri: image.uri } : null;
+    };
+    const propertyImages = (variant.images?.length ? variant.images : project.projectImages || [])
+        .map(normalizeImage)
+        .filter(Boolean);
+    const totalImages = propertyImages.length;
+    const heroImage = propertyImages[0] || null;
+    const heroThumb = propertyImages[1] || propertyImages[0] || null;
     const amenitiesList = variant.amenities?.length
         ? variant.amenities
         : project.amenities?.length
             ? project.amenities
-            : ["Gymnasium", "Swimming Pool", "24/7 Security", "Power Backup"];
+            : [];
 
     const stats = [
         { label: "AREA", value: area },
@@ -290,10 +298,24 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                         <View className="mx-5 rounded-3xl overflow-hidden border border-[#E8ECF4] bg-white">
                             <View style={{ height: 170, overflow: "hidden" }}>
                                 <View style={{ flex: 1, flexDirection: "row" }}>
-                                    <Image source={heroImage} style={{ flex: 1.35, height: 170 }} resizeMode="cover" />
+                                    {heroImage ? (
+                                        <Image source={heroImage} style={{ flex: 1.35, height: 170 }} resizeMode="cover" />
+                                    ) : (
+                                        <View style={{ flex: 1.35, height: 170, backgroundColor: "#F4F7FF", alignItems: "center", justifyContent: "center", paddingHorizontal: 16 }}>
+                                            <Ionicons name="image-outline" size={28} color="#9CA3AF" />
+                                            <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
+                                        </View>
+                                    )}
                                     <View style={{ width: 2, backgroundColor: "#fff" }} />
                                     <View style={{ flex: 1, height: 170, position: "relative" }}>
-                                        <Image source={heroThumb} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                                        {heroThumb ? (
+                                            <Image source={heroThumb} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                                        ) : (
+                                            <View style={{ width: "100%", height: "100%", backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center", paddingHorizontal: 10 }}>
+                                                <Ionicons name="image-outline" size={22} color="#9CA3AF" />
+                                                <Text className="mt-1 text-[9px] font-lato-bold text-gray-400 text-center">No Image</Text>
+                                            </View>
+                                        )}
                                         <View
                                             style={{
                                                 position: "absolute",
@@ -305,7 +327,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                                 paddingVertical: 2,
                                             }}
                                         >
-                                            <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>1/{totalImages}</Text>
+                                            <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>{totalImages > 0 ? `1/${totalImages}` : "0/0"}</Text>
                                         </View>
                                     </View>
                                 </View>
@@ -374,11 +396,17 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
 
                                 <View className="bg-white border border-gray-100 rounded-2xl p-4 px-5 mb-2">
                                     <Text className="text-[15px] font-lato text-[#1A1A1A] mb-4">World-Class Amenities</Text>
-                                    <View className="flex-row flex-wrap">
-                                        {amenitiesList.map((item, index) => (
-                                            <AmenityItem key={`${item}-${index}`} label={item} />
-                                        ))}
-                                    </View>
+                                    {amenitiesList.length > 0 ? (
+                                        <View className="flex-row flex-wrap">
+                                            {amenitiesList.map((item, index) => (
+                                                <AmenityItem key={`${item}-${index}`} label={item} />
+                                            ))}
+                                        </View>
+                                    ) : (
+                                        <View className="bg-[#F8FAFC] rounded-2xl border border-gray-100 py-5 px-4">
+                                            <Text className="text-[12px] font-lato text-gray-400 text-center">No amenities available for this property yet.</Text>
+                                        </View>
+                                    )}
                                 </View>
 
                                 {showDealSummary ? (
@@ -417,8 +445,9 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                             <Text className="text-[11px] font-lato text-[#6C63F0]">Visits</Text>
                                         </View>
 
-                                        <View className="space-y-2">
-                                            {followUps.map((item) => (
+                                        {followUps.length > 0 ? (
+                                            <View className="space-y-2">
+                                                {followUps.map((item) => (
                                                 <View key={`${item.name}-${item.time}`} className="bg-white rounded-[14px] border border-[#E6E0FF] px-3 py-2.5 mb-2">
                                                     <View className="flex-row items-start">
                                                         <View className="w-8 h-8 rounded-full bg-[#E8ECFF] items-center justify-center mr-3 mt-0.5">
@@ -449,8 +478,13 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                                         </View>
                                                     </View>
                                                 </View>
-                                            ))}
-                                        </View>
+                                                ))}
+                                            </View>
+                                        ) : (
+                                            <View className="bg-white rounded-[14px] border border-[#E6E0FF] px-3 py-5">
+                                                <Text className="text-[12px] font-lato text-gray-400 text-center">No follow-ups available for this property yet.</Text>
+                                            </View>
+                                        )}
                                     </View>
                                 ) : null}
                             </View>
