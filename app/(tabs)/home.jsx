@@ -1,9 +1,7 @@
-import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform, Animated, Easing, ActivityIndicator } from "react-native";
 import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform, Animated, Easing, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
@@ -461,15 +459,56 @@ export default function Home() {
 
     // Get the backend project UUID for the currently selected project
     const getBackendProjectId = useCallback(() => {
-        const selected = projectsData.find(p => p.id === selectedProjectId);
-        if (!selected) return null;
+        console.log('🔍 [HOME] Getting backend project ID...');
+        console.log('🔍 [HOME] Selected project ID from Redux:', selectedProjectId);
+        console.log('🔍 [HOME] Projects data count:', projectsData.length);
+        console.log('🔍 [HOME] Backend projects count:', backendProjects.length);
         
-        // Try to find matching backend project by title or other identifying info
+        // First, check if selectedProjectId is already a valid UUID from backend
+        const directMatch = backendProjects.find(bp => bp.id === selectedProjectId);
+        if (directMatch) {
+            console.log('✅ [HOME] Selected ID is already a backend UUID:', directMatch.name);
+            return selectedProjectId;
+        }
+        
+        // If not, try to find by matching with projectsData
+        const selected = projectsData.find(p => p.id === selectedProjectId);
+        if (!selected) {
+            console.log('⚠️ [HOME] No selected project found in projectsData');
+            
+            // Fallback: use first backend project if available
+            if (backendProjects.length > 0) {
+                console.log('⚠️ [HOME] Using first backend project as fallback:', backendProjects[0].name || backendProjects[0].title);
+                return backendProjects[0].id;
+            }
+            
+            return null;
+        }
+        
+        console.log('🔍 [HOME] Selected project title:', selected.title);
+        
+        // Try to find matching backend project by title or name
         const backendProject = backendProjects.find(bp => 
-            bp.title === selected.title || bp.id === selectedProjectId
+            bp.name === selected.title || 
+            bp.title === selected.title
         );
         
-        return backendProject?.id || null;
+        if (backendProject) {
+            console.log('✅ [HOME] Found matching backend project:', backendProject.name || backendProject.title);
+            console.log('✅ [HOME] Backend project UUID:', backendProject.id);
+            return backendProject.id;
+        } else {
+            console.log('⚠️ [HOME] No matching backend project found');
+            console.log('⚠️ [HOME] Available backend projects:', backendProjects.map(bp => bp.name || bp.title));
+            
+            // Fallback: use first backend project if available
+            if (backendProjects.length > 0) {
+                console.log('⚠️ [HOME] Using first backend project as fallback:', backendProjects[0].name || backendProjects[0].title);
+                return backendProjects[0].id;
+            }
+            
+            return null;
+        }
     }, [selectedProjectId, projectsData, backendProjects]);
 
     // Load visit data when selected project changes (not just when tab changes)
