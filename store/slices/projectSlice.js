@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const initialState = {
     currentStep: 1,
+    projectId: null, // set after API creates the draft
     step1: {
         projectName: '',
         location: '',
@@ -20,6 +21,7 @@ const initialState = {
     step3: {
         unitConfigs: {}, // Keyed by typeId, value is array of unit detail objects
         builderData: {}, // Keyed by typeId, value is visual builder state
+        uploadModes: {}, // Keyed by typeId: 'manual' | 'bulk'
     },
     step4: {
         possessionStatus: '',
@@ -235,6 +237,13 @@ const projectSlice = createSlice({
             state.step3.unitConfigs[typeId] = unitConfigs;
         },
         resetForm: () => initialState,
+        setProjectId: (state, action) => {
+            state.projectId = action.payload;
+        },
+        setUploadMode: (state, action) => {
+            const { typeId, mode } = action.payload;
+            state.step3.uploadModes[typeId] = mode;
+        },
     },
 });
 
@@ -253,6 +262,8 @@ export const {
     bulkUploadProject,
     bulkUploadSubtype,
     resetForm,
+    setProjectId,
+    setUploadMode,
 } = projectSlice.actions;
 
 export default projectSlice.reducer;

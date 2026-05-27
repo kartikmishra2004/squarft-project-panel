@@ -1,7 +1,9 @@
+import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform, Animated, Easing, ActivityIndicator } from "react-native";
 import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform, Animated, Easing, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
@@ -10,6 +12,7 @@ import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
 import { updateProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
+import { projectOverviewApi } from "../../services/api";
 import { visitService } from "../../services/visitService";
 import { projectService } from "../../services/projectService";
 
@@ -33,7 +36,7 @@ export default function Home() {
     const notifications = useSelector((state) => state.notifications?.list || []);
     const [activeTab, setActiveTab] = useState("Overview");
 
-    const [selectedProjectId, setSelectedProjectId] = useState(projectsData[0]?.id ?? "");
+    const [selectedProjectId, setSelectedProjectId] = useState("");
     const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
     const [isProjectDetailVisible, setIsProjectDetailVisible] = useState(false);
     const [selectedDeal, setSelectedDeal] = useState(null);
@@ -47,6 +50,11 @@ export default function Home() {
     const [selectedTower, setSelectedTower] = useState("tower-a");
     const [selectedPlotStack, setSelectedPlotStack] = useState("stack-a");
     const [selectedPlotUnit, setSelectedPlotUnit] = useState("A-1202");
+
+    // API state
+    const [projectsList, setProjectsList] = useState([]);
+    const [overviewData, setOverviewData] = useState(null);
+    const [overviewLoading, setOverviewLoading] = useState(false);
     const [selectedRangeByType, setSelectedRangeByType] = useState({});
     
     // Visits state
@@ -95,15 +103,42 @@ export default function Home() {
         }
     };
 
+    // Fetch project list for dropdown
+    const fetchProjectsList = useCallback(async () => {
+        try {
+            const res = await projectOverviewApi.getProjectsList();
+            const list = res.data?.data || [];
+            setProjectsList(list);
+            if (list.length > 0) {
+                setSelectedProjectId(list[0].id);
+            }
+        } catch (error) {
+            console.error('Failed to fetch projects list:', error);
+        }
+    }, []);
+
+    // Fetch overview for selected project
+    const fetchOverview = useCallback(async (projectId) => {
+        if (!projectId) return;
+        try {
+            setOverviewLoading(true);
+            const res = await projectOverviewApi.getProjectOverview(projectId);
+            setOverviewData(res.data?.data || null);
+        } catch (error) {
+            console.error('Failed to fetch project overview:', error);
+            setOverviewData(null);
+        } finally {
+            setOverviewLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchProjectsList(); }, [fetchProjectsList]);
+    useEffect(() => { fetchOverview(selectedProjectId); }, [selectedProjectId, fetchOverview]);
+
     const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
     const unreadNotifications = notifications.filter(item => !item.watched).length;
 
-    useEffect(() => {
-        if (!projectsData.length) return;
-        if (!projectsData.some(project => project.id === selectedProjectId)) {
-            setSelectedProjectId(projectsData[0].id);
-        }
-    }, [projectsData, selectedProjectId]);
+    
 
     const getInventoryDealTemplate = (inventoryTypeValue, unit) => {
         const deals = selectedProject.deals || [];
@@ -796,10 +831,65 @@ export default function Home() {
         }));
     };
 
-    const projectOptions = projectsData;
+    const projectOptions = projectsList.length > 0
+        ? projectsList.map(p => ({ id: p.id, title: p.name, location: p.city }))
+        : projectsData;
+
+    // Merge API overview into the shape the UI expects
+    const apiHeader = overviewData?.header;
+    const apiInventory = overviewData?.inventory;
+    const apiFinancials = overviewData?.financials;
+    const apiUserProfile = overviewData?.user_profile;
+    const apiMedia = overviewData?.media || [];
+    const apiConfigurations = overviewData?.configurations || [];
+
+    const formatAmount = (amount) => {
+        if (!amount) return "₹0";
+        if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`;
+        if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`;
+        return `₹${Number(amount).toLocaleString("en-IN")}`;
+    };
+
+    const projectStats = apiFinancials ? {
+        totalReceived: formatAmount(apiFinancials.total_received),
+        upcomingAmount: formatAmount(apiFinancials.upcoming_amount),
+        toBeReleased: formatAmount(apiFinancials.to_be_released),
+    } : getProjectStats(selectedProject);
+
+    const displayUserName = apiUserProfile?.name || mockData.user.name;
+    const displayUserDate = apiUserProfile?.date_display || mockData.user.date;
+    const displayUserAvatar = apiUserProfile?.avatar_url || null;
+
+    const displayProjectTitle = apiHeader?.name || selectedProject?.title || "Select Project";
+    const displayProjectLocation = apiHeader?.location || selectedProject?.location || "";
+    const displayPossession = apiHeader?.possession || selectedProject?.possession || "";
+    const displayAvgPrice = apiHeader?.avg_price_per_sqft ? `₹${apiHeader.avg_price_per_sqft}/sqft` : selectedProject?.avgPrice || "";
+    const displayReraApproved = apiHeader?.rera?.is_approved ?? selectedProject?.rera ?? false;
+    const displayReraNumber = apiHeader?.rera?.number || "";
+
+    const displayUnits = apiInventory ? {
+        total: apiInventory.total,
+        avail: apiInventory.available,
+        sold: apiInventory.sold,
+        booked: apiInventory.booked,
+    } : selectedProject?.units || {};
+
+    // Map API configurations to apartments display shape
+    const displayApartments = apiConfigurations.length > 0
+        ? apiConfigurations.map(c => ({
+            type: c.type,
+            price: c.min_price === c.max_price
+                ? formatAmount(c.min_price)
+                : `${formatAmount(c.min_price)} - ${formatAmount(c.max_price)}`,
+        }))
+        : selectedProject?.apartments || [];
+
+    // Cover image from API media or fallback to Redux
+    const displayCoverImage = apiMedia.length > 0 ? { uri: apiMedia[0] } : getProjectImageSource(selectedProject);
+    const displayImageCount = apiMedia.length > 0 ? `1/${apiMedia.length}` : projectImagesLabel;
+
     const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
     const dealsData = selectedProject.deals || [];
-    const projectStats = getProjectStats(selectedProject);
     const availableInventoryTabs = useMemo(() => inventoryTabs.filter((tab) => {
         const inventory = selectedProject.inventory?.[tab.key];
         return Boolean(
@@ -970,12 +1060,12 @@ export default function Home() {
                                     </View>
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
-                                            <Text className="text-white text-[15px] font-lato-bold">{mockData.user.name}</Text>
+                                            <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
                                             {mockData.user.verified && (
                                                 <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
                                             )}
                                         </View>
-                                        <Text className="text-white/70 text-[9px] font-lato">{mockData.user.date}</Text>
+                                        <Text className="text-white/70 text-[9px] font-lato">{displayUserDate}</Text>
                                     </View>
                                 </View>
                                 <TouchableOpacity
@@ -1003,7 +1093,7 @@ export default function Home() {
                                     >
                                         <Ionicons name="chevron-down" size={16} color="#4A43EC" />
                                         <Text className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]" numberOfLines={1}>
-                                            {selectedProject?.title || "Select Project"}
+                                            {displayProjectTitle}
                                         </Text>
                                     </TouchableOpacity>
 
@@ -1150,7 +1240,7 @@ export default function Home() {
                                     className="flex-row items-center max-w-full"
                                 >
                                     <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1" numberOfLines={1}>
-                                        {selectedProject?.title || "Select Project"}
+                                        {displayProjectTitle}
                                     </Text>
                                     <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
                                 </TouchableOpacity>
@@ -1213,64 +1303,70 @@ export default function Home() {
                 {activeTab === "Overview" ? (
                     <View className="pt-2">
                         <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
-                            <View className="flex-row h-36">
-                                <View className="flex-[2] relative">
-                                    {projectImageSource ? (
-                                        <Image source={projectImageSource} className="w-full h-full" />
-                                    ) : (
-                                        <View className="w-full h-full bg-[#F4F7FF] items-center justify-center px-4">
-                                            <Ionicons name="image-outline" size={26} color="#9CA3AF" />
-                                            <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
-                                        </View>
-                                    )}
-                                    {projectImageSource && (
-                                        <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
-                                            <Text className="text-white text-[8px] font-lato">{selectedProject.developer}</Text>
-                                        </View>
-                                    )}
+                            {overviewLoading ? (
+                                <View className="h-36 items-center justify-center">
+                                    <ActivityIndicator size="small" color="#4A43EC" />
                                 </View>
-                                <View className="flex-1 ml-0.5 bg-gray-200 relative">
-                                    {projectImageSource ? (
-                                        <Image source={projectImageSource} className="w-full h-full opacity-60" resizeMode="cover" />
-                                    ) : (
-                                        <View className="w-full h-full bg-gray-100 items-center justify-center px-2">
-                                            <Ionicons name="image-outline" size={20} color="#9CA3AF" />
-                                            <Text className="mt-1 text-[8px] font-lato-bold text-gray-400 text-center">No Image</Text>
+                            ) : (
+                                <View className="flex-row h-36">
+                                    <View className="flex-[2] relative">
+                                        {displayCoverImage ? (
+                                            <Image source={displayCoverImage} className="w-full h-full" resizeMode="cover" />
+                                        ) : (
+                                            <View className="w-full h-full bg-[#F4F7FF] items-center justify-center px-4">
+                                                <Ionicons name="image-outline" size={26} color="#9CA3AF" />
+                                                <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
+                                            </View>
+                                        )}
+                                        {displayCoverImage && (
+                                            <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
+                                                <Text className="text-white text-[8px] font-lato">{selectedProject.developer}</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                    <View className="flex-1 ml-0.5 bg-gray-200 relative">
+                                        {displayCoverImage ? (
+                                            <Image source={displayCoverImage} className="w-full h-full opacity-60" resizeMode="cover" />
+                                        ) : (
+                                            <View className="w-full h-full bg-gray-100 items-center justify-center px-2">
+                                                <Ionicons name="image-outline" size={20} color="#9CA3AF" />
+                                                <Text className="mt-1 text-[8px] font-lato-bold text-gray-400 text-center">No Image</Text>
+                                            </View>
+                                        )}
+                                        <View className="absolute bottom-2 right-2 bg-black/50 px-1.5 py-0.5 rounded-md">
+                                            <Text className="text-white text-[8px] font-lato-bold">{displayImageCount}</Text>
                                         </View>
-                                    )}
-                                    <View className="absolute bottom-2 right-2 bg-black/50 px-1.5 py-0.5 rounded-md">
-                                        <Text className="text-white text-[8px] font-lato-bold">{projectImagesLabel}</Text>
                                     </View>
                                 </View>
-                            </View>
+                            )}
 
                             <View className="p-3">
                                 <View className="flex-row items-center mb-1.5">
-                                    <Text className="text-gray-400 text-[9px] font-lato">Possession: {selectedProject.possession}</Text>
+                                    <Text className="text-gray-400 text-[9px] font-lato">Possession: {displayPossession}</Text>
                                     <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
-                                    <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {selectedProject.avgPrice}</Text>
+                                    <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {displayAvgPrice}</Text>
                                 </View>
 
                                 <View className="flex-row items-center justify-between mb-0.5">
-                                    <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{selectedProject.title}</Text>
-                                    {selectedProject.rera && (
+                                    <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{displayProjectTitle}</Text>
+                                    {displayReraApproved && (
                                         <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
                                             <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
                                             <Ionicons name="checkmark-circle" size={9} color="#10B981" />
                                         </View>
                                     )}
                                 </View>
-                                <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{selectedProject.location}</Text>
+                                <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
 
                                 <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
                                     <View className="flex-row">
-                                        {(selectedProject.apartments || []).map((apt, idx) => (
+                                        {displayApartments.map((apt, idx) => (
                                             <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
                                                 <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
                                                 <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
                                             </View>
                                         ))}
-                                        {(selectedProject.apartments || []).length === 0 && (
+                                        {displayApartments.length === 0 && (
                                             <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
                                         )}
                                     </View>
@@ -1279,19 +1375,19 @@ export default function Home() {
                                 <View className="flex-row justify-between mb-4">
                                     <View className="flex-1 bg-[#EEF4FF] border border-[#DDE8FF] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#2563EB] text-[8px] font-lato-bold uppercase">Total</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.total || 0}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.total || 0}</Text>
                                     </View>
                                     <View className="flex-1 bg-[#ECFBF6] border border-[#D7F5E8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#10B981] text-[8px] font-lato-bold uppercase">Avail</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.avail || 0}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.avail || 0}</Text>
                                     </View>
                                     <View className="flex-1 bg-[#FFF3EF] border border-[#FFE1D6] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#EF4444] text-[8px] font-lato-bold uppercase">Sold</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.sold || 0}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.sold || 0}</Text>
                                     </View>
                                     <View className="flex-1 bg-[#FFF8EA] border border-[#FDECC8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
                                         <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{selectedProject.units?.booked || 0}</Text>
+                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.booked || 0}</Text>
                                     </View>
                                 </View>
                             </View>
