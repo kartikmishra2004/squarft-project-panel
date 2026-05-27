@@ -31,9 +31,12 @@ import {
     updateStep6,
     bulkUploadSubtype,
     resetForm,
+    setProjectId,
+    setUploadMode,
 } from "../../store/slices/projectSlice";
 import { addProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
+import { projectFormApi } from "../../services/api";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
@@ -125,8 +128,10 @@ const OWNERSHIP_TYPES = [
 export default function AddProject() {
     const dispatch = useDispatch();
     const { currentStep, step1, step2, step3, step4, step5, step6 } = useSelector((state) => state.project);
+    const projectId = useSelector((state) => state.project.projectId);
     const scrollRef = useRef(null);
     const [step1Errors, setStep1Errors] = useState({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
         scrollRef.current?.scrollToPosition?.(0, 0, false);
@@ -174,7 +179,7 @@ export default function AddProject() {
         return { valid: Object.keys(errors).length === 0, errors };
     };
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (currentStep === 1) {
             const { valid, errors } = validateStep1Fields(step1);
             if (!valid) {
@@ -182,34 +187,263 @@ export default function AddProject() {
                 return;
             }
             setStep1Errors({});
+
+            // If draft already created (user went back), skip re-creating
+            if (projectId) {
+                dispatch(setStep(2));
+                return;
+            }
+
+            try {
+                setIsSubmitting(true);
+                const res = await projectFormApi.createDraft({
+                    name: step1.projectName,
+                    location: step1.location,
+                    city: step1.city,
+                    state: step1.state,
+                    pincode: step1.pincode,
+                    sales_officer_name: step1.salesOfficerName,
+                    sales_officer_contact: step1.salesOfficerContact,
+                    responsible_person_name: step1.responsiblePersonName,
+                    responsible_person_contact: step1.responsiblePersonContact,
+                });
+                dispatch(setProjectId(res.data.data.project_id));
+                dispatch(setStep(2));
+            } catch (error) {
+                const msg = error.response?.data?.message || "Failed to save project. Please try again.";
+                setStep1Errors({ api: msg });
+            } finally {
+                setIsSubmitting(false);
+            }
+            return;
+        }
+
+        if (currentStep === 2) {
+            if (!projectId) {
+                setStep1Errors({ api: "Project ID missing. Please go back to step 1." });
+                return;
+            }
+            try {
+                setIsSubmitting(true);
+                const property_types = step2.selectedTypes.map(t => ({
+                    main_type: t.mainType,
+                    sub_type: t.subType,
+                }));
+                await projectFormApi.configurePropertyTypes(projectId, { property_types });
+                dispatch(setStep(3));
+            } catch (error) {
+                console.error("Step 2 API error:", error);
+                const msg = error.response?.data?.message || "Failed to save property types. Please try again.";
+                setStep1Errors({ api: msg });
+            } finally {
+                setIsSubmitting(false);
+            }
+            return;
+        }
+
+        if (currentStep === 3) {
+            if (!projectId) {
+                dispatch(setStep(4));
+                return;
+            }
+            try {
+                setIsSubmitting(true);
+
+                await Promise.all(
+                    step2.selectedTypes.map(async (type) => {
+                        const units = step3.unitConfigs[type.id] || [];
+                        if (units.length === 0) return;
+
+                        // If bulk mode — CSV already uploaded to server, skip variant/sync
+                        const isBulk = step3.uploadModes?.[type.id] === 'bulk';
+                        if (isBulk) return;
+
+                        // Group units by unique variant key (bhk/officeType + area + price)
+                        const variantMap = {};
+                        units.forEach((unit) => {
+                            const variantKey = `${unit.bhk || unit.officeType || 'standard'}_${unit.area}_${unit.price || '0'}`;
+                            if (!variantMap[variantKey]) {
+                                variantMap[variantKey] = { blueprint: unit, units: [] };
+                            }
+                            variantMap[variantKey].units.push(unit);
+                        });
+
+                        // Create one variant per unique combo, then sync its units
+                        await Promise.all(
+                            Object.entries(variantMap).map(async ([, { blueprint, units: variantUnits }]) => {
+                                const variantPayload = {
+                                    category_type: blueprint.bhk || blueprint.officeType || type.subType,
+                                    variant_name: `${type.subType} - ${blueprint.bhk || blueprint.officeType || 'Standard'}`,
+                                    area_sqft: parseFloat(blueprint.area) || 0,
+                                    selling_price: parseFloat((blueprint.price || '').toString().replace(/,/g, '')) || 0,
+                                    property_type: type.mainType,
+                                    property_subtype: type.subType,
+                                    listing_type: 'buy',
+                                    images: blueprint.images || [],
+                                };
+
+                                const variantRes = await projectFormApi.createVariant(projectId, variantPayload);
+                                const variantId = variantRes.data.data.variant_id;
+
+                                // Group this variant's units by block/tower
+                                const blockMap = {};
+                                variantUnits.forEach((unit) => {
+                                    const blockName = unit.tower || 'Block A';
+                                    if (!blockMap[blockName]) blockMap[blockName] = [];
+                                    blockMap[blockName].push({
+                                        variant_id: variantId,
+                                        unit_number: unit.propertyNumber,
+                                        floor: unit.floor || null,
+                                    });
+                                });
+
+                                await Promise.all(
+                                    Object.entries(blockMap).map(([block_name, blockUnits]) =>
+                                        projectFormApi.syncGridUnits(projectId, {
+                                            property_subtype: type.subType,
+                                            block_name,
+                                            units: blockUnits,
+                                        })
+                                    )
+                                );
+                            })
+                        );
+                    })
+                );
+
+                dispatch(setStep(4));
+            } catch (error) {
+                console.error("Step 3 API error:", error);
+                dispatch(setStep(4));
+            } finally {
+                setIsSubmitting(false);
+            }
+            return;
         }
 
         if (currentStep < 6) {
+            // Step 4 Next → call step4-finalize
+            if (currentStep === 4) {
+                if (!projectId) { dispatch(setStep(5)); return; }
+                try {
+                    setIsSubmitting(true);
+                    const approvals = {
+                        tncp: {
+                            is_approved: step4.approvals.tncp.status === 'Yes',
+                            expected_time: step4.approvals.tncp.expectedTime || null,
+                        },
+                        municipal: {
+                            is_approved: step4.approvals.buildingPermission.status === 'Yes',
+                            expected_time: step4.approvals.buildingPermission.expectedTime || null,
+                        },
+                        rera: {
+                            is_approved: step4.approvals.rera.status === 'Yes',
+                            rera_id: step4.approvals.rera.registrationNumber || null,
+                            expected_time: step4.approvals.rera.expectedTime || null,
+                        },
+                        bank_loan: {
+                            is_approved: step5.loanAvailable === 'Yes',
+                            banks: step5.tieUpBankName || step5.bankNameList || null,
+                        },
+                    };
+                    await projectFormApi.finalizeStep4(projectId, {
+                        possession_status: step4.possessionStatus || null,
+                        development_progress: parseInt(step4.developmentCompletionPercentage) || 0,
+                        development_checklist: step4.currentDevelopmentStage || [],
+                        variant_possessions: [],
+                        amenity_ids: [],
+                        bank_account: null,
+                        approvals,
+                    });
+                    dispatch(setStep(5));
+                } catch (error) {
+                    console.error("Step 4 API error:", error);
+                    const msg = error.response?.data?.message || "Failed to save approvals. Please try again.";
+                    setStep1Errors({ api: msg });
+                } finally {
+                    setIsSubmitting(false);
+                }
+                return;
+            }
+
+            // Step 5 Next → call step5-finalize
+            if (currentStep === 5) {
+                if (!projectId) { dispatch(setStep(6)); return; }
+                try {
+                    setIsSubmitting(true);
+                    await projectFormApi.finalizeStep5(projectId, {
+                        brokerage: { type: 'none', value: 0, terms: null },
+                        incentives: { customer: null, broker: null },
+                        settings: { visibility: 'public', status: 'active' },
+                        assignments: { sales_officer_id: null, branch_manager_id: null },
+                        video_url: null,
+                    });
+                    dispatch(setStep(6));
+                } catch (error) {
+                    console.error("Step 5 API error:", error);
+                    // Non-blocking — proceed to step 6
+                    dispatch(setStep(6));
+                } finally {
+                    setIsSubmitting(false);
+                }
+                return;
+            }
+
             dispatch(setStep(currentStep + 1));
         } else {
-            // Final Step (Submit)
-            const finalProjectData = {
-                id: Date.now().toString(),
-                ...step1,
-                selectedTypes: step2.selectedTypes.map(type => ({
-                    ...type,
-                    units: step3.unitConfigs[type.id] || []
-                })),
-                legalApprovalsAndStatus: step4,
-                financeGuidelineOwnership: step5,
-                projectMediaAndSubmission: step6,
-                createdAt: new Date().toISOString(),
-                status: 'Active'
-            };
-            
-            dispatch(addProject(finalProjectData));
-            dispatch(addNotification({
-                title: "Project added successfully",
-                description: `${step1.projectName || "New project"} has been added to your project panel.`,
-                type: "success",
-            }));
-            dispatch(resetForm());
-            router.push('/success');
+            // Step 6 Submit → upload images then call step6-finalize
+            if (!projectId) {
+                setStep1Errors({ api: "Project ID missing. Cannot submit." });
+                return;
+            }
+
+            try {
+                setIsSubmitting(true);
+
+                // Upload each image as multipart and collect returned URLs
+                const mediaItems = [];
+                for (let i = 0; i < step6.images.length; i++) {
+                    const img = step6.images[i];
+                    // If already a remote URL (re-upload scenario), use as-is
+                    if (img.uri?.startsWith('http')) {
+                        mediaItems.push({ media_type: 'image', url: img.uri, is_cover: i === 0, sort_order: i });
+                        continue;
+                    }
+                    const formData = new FormData();
+                    formData.append('file', {
+                        uri: img.uri,
+                        name: img.fileName || `image_${i}.jpg`,
+                        type: img.mimeType || 'image/jpeg',
+                    });
+                    const uploadRes = await projectFormApi.uploadMedia(projectId, formData);
+                    const url = uploadRes.data?.data?.url || uploadRes.data?.url;
+                    if (url) {
+                        mediaItems.push({ media_type: 'image', url, is_cover: i === 0, sort_order: i });
+                    }
+                }
+
+                await projectFormApi.finalizeStep6(projectId, { media: mediaItems });
+
+                dispatch(addProject({
+                    id: projectId,
+                    ...step1,
+                    status: 'Active',
+                    createdAt: new Date().toISOString(),
+                }));
+                dispatch(addNotification({
+                    title: "Project added successfully",
+                    description: `${step1.projectName || "New project"} has been added to your project panel.`,
+                    type: "success",
+                }));
+                dispatch(resetForm());
+                router.push('/success');
+            } catch (error) {
+                console.error("Submit error:", error);
+                const msg = error.response?.data?.message || "Failed to submit project. Please try again.";
+                setStep1Errors({ api: msg });
+            } finally {
+                setIsSubmitting(false);
+            }
         }
     };
 
@@ -367,15 +601,18 @@ export default function AddProject() {
                                 {/* Next Button */}
                                 <View className="mt-8 mb-4">
                                     <TouchableOpacity
-                                        className={`py-4 rounded-xl items-center ${isNextDisabled() ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
+                                        className={`py-4 rounded-xl items-center ${isSubmitting ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
                                         activeOpacity={0.8}
                                         onPress={handleNext}
-                                        disabled={isNextDisabled()}
+                                        disabled={isSubmitting}
                                     >
                                         <Text className="text-white text-sm font-lato-bold">
-                                            {currentStep === 6 ? "Submit" : "Next"}
+                                            {isSubmitting ? "Please wait..." : currentStep === 6 ? "Submit" : "Next"}
                                         </Text>
                                     </TouchableOpacity>
+                                    {step1Errors.api && (
+                                        <Text className="text-[11px] text-red-500 mt-2 text-center">{step1Errors.api}</Text>
+                                    )}
                                 </View>
                             </View>
                         </KeyboardAwareScrollView>
@@ -832,7 +1069,7 @@ function Step3() {
     
     // Use the first selected type as the default active tab if available
     const [activeTypeTab, setActiveTypeTab] = useState(step2.selectedTypes[0]?.id);
-    const [uploadModes, setUploadModes] = useState({}); // { [typeId]: 'manual' | 'bulk' }
+    const uploadModes = step3.uploadModes || {};
     const [openUploadModeDropdown, setOpenUploadModeDropdown] = useState(false);
     const [openGridModeDropdown, setOpenGridModeDropdown] = useState(false);
 
@@ -1322,29 +1559,45 @@ function Step3() {
     };
 
     const handleBulkUpload = async (type) => {
+        if (!projectId) {
+            alert("Project not saved yet. Please complete Step 1 first.");
+            return;
+        }
         try {
             const result = await DocumentPicker.getDocumentAsync({
-                type: "text/comma-separated-values",
-                copyToCacheDirectory: true
+                type: ["text/csv", "text/comma-separated-values", "application/csv", "application/vnd.ms-excel"],
+                copyToCacheDirectory: true,
             });
 
             if (result.canceled) return;
 
-            const fileUri = result.assets[0].uri;
-            const content = await FileSystem.readAsStringAsync(fileUri);
-            const data = parseCSV(content);
+            const asset = result.assets[0];
 
-            if (data.length === 0) {
-                alert("The CSV file is empty.");
+            // Validate CSV extension
+            const fileName = asset.name || asset.uri || '';
+            if (!fileName.toLowerCase().endsWith('.csv')) {
+                alert("Invalid file type. Please upload a CSV file only.");
                 return;
             }
 
-            const unitConfigs = [];
+            const formData = new FormData();
+            formData.append('csv_file', {
+                uri: asset.uri,
+                name: asset.name || `${type.subType}_upload.csv`,
+                type: 'text/csv',
+            });
+            formData.append('property_subtype', type.subType);
+            formData.append('listing_type', 'buy');
 
-            data.forEach((row, index) => {
-                if (!row['Property Number']) return;
+            const res = await projectFormApi.uploadCsvUnits(projectId, formData);
+            const totalUnits = res.data.data?.total_units_inserted || 0;
 
-                unitConfigs.push({
+            // Also parse locally to update Redux state for UI preview
+            const content = await FileSystem.readAsStringAsync(asset.uri);
+            const data = parseCSV(content);
+            const unitConfigs = data
+                .filter(row => row['Property Number'])
+                .map(row => ({
                     tower: row['Tower'] || '',
                     floor: row['Floor'] || '',
                     bhk: row['BHK'] || '',
@@ -1355,15 +1608,15 @@ function Step3() {
                     amenities: [''],
                     propertyNumber: row['Property Number'] || '',
                     hasShop: false,
-                    extraCharges: [{ title: '', amount: '' }]
-                });
-            });
+                    extraCharges: [{ title: '', amount: '' }],
+                }));
 
             dispatch(bulkUploadSubtype({ typeId: type.id, unitConfigs }));
-            alert(`Bulk upload successful! Added ${unitConfigs.length} units for ${type.subType}.`);
+            alert(`✓ ${totalUnits} units uploaded successfully for ${type.subType}.`);
         } catch (error) {
-            console.error(error);
-            alert("Error uploading CSV. Please check the format.");
+            console.error("CSV Upload error:", error);
+            const msg = error.response?.data?.message || "Failed to upload CSV. Please check the file format and try again.";
+            alert(msg);
         }
     };
 
@@ -1435,7 +1688,7 @@ function Step3() {
                             <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[61] overflow-hidden">
                                 <TouchableOpacity
                                     onPress={() => {
-                                        setUploadModes(prev => ({ ...prev, [activeType.id]: 'manual' }));
+                                        dispatch(setUploadMode({ typeId: activeType.id, mode: 'manual' }));
                                         setOpenUploadModeDropdown(false);
                                     }}
                                     className={`px-4 py-3 border-b border-gray-50 ${uploadModes[activeType.id] !== 'bulk' ? 'bg-[#F4F7FF]' : ''}`}
@@ -1444,7 +1697,7 @@ function Step3() {
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     onPress={() => {
-                                        setUploadModes(prev => ({ ...prev, [activeType.id]: 'bulk' }));
+                                        dispatch(setUploadMode({ typeId: activeType.id, mode: 'bulk' }));
                                         setOpenUploadModeDropdown(false);
                                     }}
                                     className={`px-4 py-3 ${uploadModes[activeType.id] === 'bulk' ? 'bg-[#F4F7FF]' : ''}`}

@@ -67,4 +67,31 @@ api.interceptors.response.use(
   }
 );
 
+// Project Form APIs
+export const projectFormApi = {
+    createDraft: (data) => api.post('/api/v1/project-panel/form/draft', data),
+    configurePropertyTypes: (projectId, data) => api.put(`/api/v1/project-panel/form/${projectId}/property-types`, data),
+    createVariant: (projectId, data) => api.post(`/api/v1/project-panel/form/${projectId}/variants`, data),
+    syncGridUnits: (projectId, data) => api.post(`/api/v1/project-panel/form/${projectId}/units/sync`, data),
+    uploadCsvUnits: (projectId, formData) => api.post(
+        `/api/v1/project-panel/form/${projectId}/units/upload-csv`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 30000 }
+    ),
+    finalizeStep4: (projectId, data) => api.put(`/api/v1/project-panel/form/${projectId}/step4-finalize`, data),
+    finalizeStep5: (projectId, data) => api.put(`/api/v1/project-panel/form/${projectId}/step5-finalize`, data),
+    finalizeStep6: (projectId, data) => api.put(`/api/v1/project-panel/form/${projectId}/step6-finalize`, data),
+    uploadMedia: (projectId, formData) => api.post(
+        `/api/v1/project-panel/form/${projectId}/media`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }
+    ),
+};
+
+// Project Overview APIs
+export const projectOverviewApi = {
+    getProjectsList: () => api.get('/api/v1/project-panel/overview/list'),
+    getProjectOverview: (projectId) => api.get(`/api/v1/project-panel/overview/${projectId}`),
+};
+
 export default api;
