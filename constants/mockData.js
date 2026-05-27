@@ -51,7 +51,7 @@ export const mockData = {
                 },
                 followUps: [
                     { initials: "RS", type: "Site Visit", time: "Today 4:30 PM", name: "Rahul Sharma", project: "Serenity Reserve • 3 BHK", salesperson: "Sales Officer: Amit Verma", tone: "indigo", action: "Update" },
-                    { initials: "PK", type: "Payment Disc.", time: "Tomorrow 11 AM", name: "Priya Kulkarni", project: "Serenity Reserve • 4 BHK", salesperson: "Sales Officer: Riya Joshi", tone: "orange", action: "Update" }
+                    { initials: "PK", type: "Meeting", time: "Tomorrow 11 AM", name: "Priya Kulkarni", project: "Serenity Reserve • 4 BHK", salesperson: "Sales Officer: Riya Joshi", tone: "orange", action: "Update" }
                 ]
             },
             deals: [
@@ -79,7 +79,7 @@ export const mockData = {
                         { title: "Token", amount: "₹51,000", detail: "22 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Booking Amount", amount: "₹10,00,000", detail: "30 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Agreement", amount: "₹20,00,000", detail: "Due: 15 June 2026", status: "Upcoming", tone: "warning" },
-                        { title: "Registry", amount: "₹40,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                        { title: "Registry", amount: "₹40,00,000", detail: "Due: Later", status: "Upcoming", tone: "warning" },
                     ],
                     title: "Tower A • Unit A-302",
                     contactLine: "Rahul Sharma • 98XXXX01",
@@ -118,7 +118,7 @@ export const mockData = {
                         { title: "Token", amount: "₹42,000", detail: "24 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Booking Amount", amount: "₹10,00,000", detail: "30 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Agreement", amount: "₹8,00,000", detail: "Due: 22 June 2026", status: "Upcoming", tone: "warning" },
-                        { title: "Registry", amount: "₹24,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                        { title: "Registry", amount: "₹24,00,000", detail: "Due: Later", status: "Upcoming", tone: "warning" },
                     ],
                     title: "Shop G-12",
                     contactLine: "Priya Kulkarni • 98XXXX12",
@@ -157,12 +157,12 @@ export const mockData = {
                         { title: "Token", amount: "₹75,000", detail: "18 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Booking Amount", amount: "₹15,00,000", detail: "25 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Agreement", amount: "₹30,00,000", detail: "Due: 15 July 2026", status: "Upcoming", tone: "warning" },
-                        { title: "Registry", amount: "₹44,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                        { title: "Registry", amount: "₹44,00,000", detail: "Due: Later", status: "Upcoming", tone: "warning" },
                     ],
                     title: "Tower C • Unit C-505",
                     contactLine: "Aman Verma • 98XXXX34",
                     topStatus: "Agreement",
-                    footerStatus: "Pending",
+                    footerStatus: "Upcoming",
                     footerTotal: "₹96,00,000 Total",
                     footerDue: "Next Due: 15 July 2026",
                     progress: 72,
@@ -196,7 +196,7 @@ export const mockData = {
                         { title: "Token", amount: "₹1,25,000", detail: "20 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Booking Amount", amount: "₹20,00,000", detail: "28 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Agreement", amount: "₹35,00,000", detail: "Due: 30 June 2026", status: "Upcoming", tone: "warning" },
-                        { title: "Registry", amount: "₹45,00,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                        { title: "Registry", amount: "₹45,00,000", detail: "Due: Later", status: "Upcoming", tone: "warning" },
                     ],
                     title: "Villa V-07",
                     contactLine: "Neha Kapoor • 98XXXX78",
@@ -224,14 +224,20 @@ export const mockData = {
                                     rowLabel: "FLOOR 1",
                                     units: [
                                         { id: "#1201", status: "Available", title: "3 BHK + Study", price: "₹2.55 Cr", area: "1,850 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
-                                        { id: "#1202", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                                        { id: "#1202", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1203", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1204", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1205", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
                                     ]
                                 },
                                 {
                                     rowLabel: "FLOOR 2",
                                     units: [
                                         { id: "#1101", status: "Sold", title: "3 BHK + Study", price: "₹2.55 Cr", area: "1,850 Sq.Ft", ctaLabel: "LOCKED", ctaVariant: "disabled", actionIcon: "eye", dimmed: true },
-                                        { id: "#1102", status: "Available", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" }
+                                        { id: "#1102", status: "Available", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                        { id: "#1206", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1207", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                        { id: "#1208", status: "Booked", title: "2 BHK Premium", price: "₹1.72 Cr", area: "1,250 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
                                     ]
                                 }
                             ]
@@ -244,7 +250,7 @@ export const mockData = {
                                     rowLabel: "FLOOR 1",
                                     units: [
                                         { id: "#2201", status: "Available", title: "4 BHK Premium", price: "₹3.25 Cr", area: "2,150 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
-                                        { id: "#2202", status: "Tokened", title: "3 BHK Premium", price: "₹2.48 Cr", area: "1,650 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                                        { id: "#2202", status: "Sold", title: "3 BHK Premium", price: "₹2.48 Cr", area: "1,650 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
                                     ]
                                 },
                                 {
@@ -290,7 +296,7 @@ export const mockData = {
                         {
                             rowLabel: "ROW 2",
                             units: [
-                                { id: "V-03", status: "Tokened", title: "5 BHK Villa", price: "₹5.20 Cr", area: "4,100 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                { id: "V-03", status: "Sold", title: "5 BHK Villa", price: "₹5.20 Cr", area: "4,100 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
                                 { id: "V-04", status: "Available", title: "3 BHK Villa", price: "₹3.35 Cr", area: "2,900 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" }
                             ]
                         }
@@ -309,7 +315,7 @@ export const mockData = {
                             rowLabel: "ROW 2",
                             units: [
                                 { id: "R-03", status: "Sold", title: "4 BHK Rowhouse", price: "₹3.45 Cr", area: "2,400 Sq.Ft", ctaLabel: "LOCKED", ctaVariant: "disabled", actionIcon: "eye", dimmed: true },
-                                { id: "R-04", status: "Tokened", title: "3 BHK Rowhouse", price: "₹2.88 Cr", area: "2,000 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                                { id: "R-04", status: "Sold", title: "3 BHK Rowhouse", price: "₹2.88 Cr", area: "2,000 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
                             ]
                         }
                     ]
@@ -331,9 +337,9 @@ export const mockData = {
                                 {
                                     level: 11,
                                     cards: [
-                                        { unit: "A-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" },
-                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "In Process", status: "In Process", active: false, icon: "hourglass-outline" },
-                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" }
+                                        { unit: "A-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Sold", active: false, icon: "lock-closed" },
+                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Booked", active: false, icon: "hourglass-outline" },
+                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Sold", active: false, icon: "lock-closed" }
                                     ]
                                 },
                                 {
@@ -357,8 +363,8 @@ export const mockData = {
                                 {
                                     level: 11,
                                     cards: [
-                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "In Process", status: "In Process", active: false, icon: "hourglass-outline" },
-                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" },
+                                        { unit: "B-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Booked", active: false, icon: "hourglass-outline" },
+                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Sold", active: false, icon: "lock-closed" },
                                         { unit: "D-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Available", active: false, icon: "checkmark-circle" }
                                     ]
                                 },
@@ -383,9 +389,9 @@ export const mockData = {
                                 {
                                     level: 11,
                                     cards: [
-                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" },
-                                        { unit: "D-1101", meta: "3 BHK • 1450 sq.ft.", price: "In Process", status: "In Process", active: false, icon: "hourglass-outline" },
-                                        { unit: "E-1101", meta: "3 BHK • 1450 sq.ft.", price: "Reserved", status: "Reserved", active: false, icon: "lock-closed" }
+                                        { unit: "C-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Sold", active: false, icon: "lock-closed" },
+                                        { unit: "D-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Booked", active: false, icon: "hourglass-outline" },
+                                        { unit: "E-1101", meta: "3 BHK • 1450 sq.ft.", price: "₹84,00,000", status: "Sold", active: false, icon: "lock-closed" }
                                     ]
                                 },
                                 {
@@ -408,8 +414,26 @@ export const mockData = {
                         {
                             rowLabel: "ROW 2",
                             units: [
-                                { id: "S-03", status: "Tokened", title: "Retail Shop", price: "₹1.18 Cr", area: "1,300 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                { id: "S-03", status: "Sold", title: "Retail Shop", price: "₹1.18 Cr", area: "1,300 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
                                 { id: "S-04", status: "Available", title: "Bank Space", price: "₹1.32 Cr", area: "1,450 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" }
+                            ]
+                        }
+                    ]
+                }
+                , showroom: {
+                    sections: [
+                        {
+                            rowLabel: "SECTION 1",
+                            units: [
+                                { id: "SR-01", status: "Available", title: "Showroom", price: "₹1.48 Cr", area: "1,200 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                { id: "SR-02", status: "Booked", title: "Showroom", price: "₹1.62 Cr", area: "1,340 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                            ]
+                        },
+                        {
+                            rowLabel: "SECTION 2",
+                            units: [
+                                { id: "SR-03", status: "Sold", title: "Showroom", price: "₹1.74 Cr", area: "1,420 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" },
+                                { id: "SR-04", status: "Available", title: "Showroom", price: "₹1.55 Cr", area: "1,280 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" }
                             ]
                         }
                     ]
@@ -452,7 +476,7 @@ export const mockData = {
                     ]
                 },
                 followUps: [
-                    { initials: "AS", type: "Site Visit", time: "Today 2:00 PM", name: "Amit Sharma", project: "Royal Palms • 2 BHK", salesperson: "Sales Officer: Neha Rao", tone: "indigo", action: "Update" }
+                    { initials: "AS", type: "Meeting", time: "Today 2:00 PM", name: "Amit Sharma", project: "Royal Palms • 2 BHK", salesperson: "Sales Officer: Neha Rao", tone: "indigo", action: "Update" }
                 ]
             },
             deals: [
@@ -480,7 +504,7 @@ export const mockData = {
                         { title: "Token", amount: "₹75,000", detail: "16 May 2026 • Received by SquarFT", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Booking Amount", amount: "₹10,00,000", detail: "30 May 2026", status: "Paid", tone: "success", actionLabel: "View Receipt" },
                         { title: "Agreement", amount: "₹15,00,000", detail: "Due: 20 June 2026", status: "Upcoming", tone: "warning" },
-                        { title: "Registry", amount: "₹36,60,000", detail: "Due: Later", status: "Pending", tone: "danger" },
+                        { title: "Registry", amount: "₹36,60,000", detail: "Due: Later", status: "Upcoming", tone: "warning" },
                     ],
                     title: "Tower B • Unit B-202",
                     contactLine: "Amit Sharma • 97XXXX45",
@@ -536,7 +560,7 @@ export const mockData = {
                             rowLabel: "ROW 1",
                             units: [
                                 { id: "R-01", status: "Available", title: "3 BHK Rowhouse", price: "₹2.62 Cr", area: "2,000 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
-                                { id: "R-02", status: "Tokened", title: "3 BHK Rowhouse", price: "₹2.71 Cr", area: "2,100 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                                { id: "R-02", status: "Sold", title: "3 BHK Rowhouse", price: "₹2.71 Cr", area: "2,100 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
                             ]
                         }
                     ]
@@ -551,7 +575,7 @@ export const mockData = {
                                     level: 12,
                                     cards: [
                                         { unit: "A-1201", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Available", active: true, icon: "checkmark-circle" },
-                                        { unit: "A-1202", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Reserved", active: false, icon: "lock-closed" }
+                                        { unit: "A-1202", meta: "Plot • 1200 sq.ft.", price: "₹54,00,000", status: "Sold", active: false, icon: "lock-closed" }
                                     ]
                                 }
                             ]
@@ -565,6 +589,17 @@ export const mockData = {
                             units: [
                                 { id: "S-01", status: "Available", title: "Retail Shop", area: "900 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
                                 { id: "S-02", status: "Booked", title: "Cafe Space", area: "760 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
+                            ]
+                        }
+                    ]
+                }
+                , showroom: {
+                    sections: [
+                        {
+                            rowLabel: "SECTION 1",
+                            units: [
+                                { id: "SR-01", status: "Available", title: "Showroom", area: "950 Sq.Ft", ctaLabel: "BLOCK", ctaVariant: "primary", actionIcon: "edit" },
+                                { id: "SR-02", status: "Booked", title: "Showroom", area: "1,040 Sq.Ft", ctaLabel: "DETAILS", ctaVariant: "secondary", actionIcon: "edit" }
                             ]
                         }
                     ]

@@ -1,6 +1,6 @@
-import { Text, View, TextInput, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { Link, router } from "expo-router";
+import { router } from "expo-router";
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +12,7 @@ import {
     setPassword,
     setConfirmPassword,
     setCompanyName,
+    setCompanyType,
     setReraNumber,
     setLocation,
     setLoading,
@@ -22,8 +23,7 @@ import {
     setToken
 } from "../../store/slices/authSlice";
 import { authService } from "../../services/authService";
-
-const logo = require("../../assets/icons/app-icon.png");
+import AuthHeader from "../../components/AuthHeader";
 
 export default function Register() {
     const dispatch = useDispatch();
@@ -38,7 +38,10 @@ export default function Register() {
         location,
         loading
     } = useSelector((state) => state.auth);
+    const companyType = useSelector((state) => state.auth.companyType);
     const [showPassword, setShowPassword] = useState(false);
+    const [showCompanyTypeDropdown, setShowCompanyTypeDropdown] = useState(false);
+    const companyTypes = ["Builder", "Marketing"];
 
     const handleRegister = async () => {
         // Clear previous errors
@@ -49,6 +52,7 @@ export default function Register() {
             firstName,
             lastName,
             companyName,
+            companyType,
             reraNumber,
             mobile,
             location,
@@ -119,6 +123,7 @@ export default function Register() {
                 first_name: firstName,
                 last_name: lastName,
                 company_name: companyName,
+                company_type: companyType,
                 rera_number: reraNumber,
                 phone: mobile,
                 location: location,
@@ -237,18 +242,12 @@ export default function Register() {
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
                 >
-                    <View className="bg-[#4A43EC] pt-12 pb-8 px-7">
-                        <View style={{ width: 60, height: 60, overflow: 'hidden' }} className="mb-4 mt-2" >
-                            <Image source={logo} style={{ width: 110, height: 110, margin: -30 }} resizeMode="contain" />
-                        </View>
-                        <Text className="text-white text-[32px] font-lato-bold mb-1">Register</Text>
-                        <View className="flex-row items-center">
-                            <Text className="text-white/80 text-[14px]">Already have an account? </Text>
-                            <Link href="/login">
-                                <Text className="text-white text-[14px] font-lato-bold underline ">Log in</Text>
-                            </Link>
-                        </View>
-                    </View>
+                    <AuthHeader
+                        title="Register"
+                        subtitle="Already have an account? "
+                        actionLabel="Log in"
+                        actionHref="/login"
+                    />
 
                     <View className="px-6 pt-6">
                         {/* First Name */}
@@ -285,6 +284,37 @@ export default function Register() {
                                 placeholderTextColor="#aaa"
                                 className="text-[15px] text-black font-lato"
                             />
+                        </View>
+
+                        {/* Company Type */}
+                        <View className="z-[100]">
+                            <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Company Type</Text>
+                            <TouchableOpacity
+                                onPress={() => setShowCompanyTypeDropdown(!showCompanyTypeDropdown)}
+                                className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between mb-4"
+                            >
+                                <Text className="text-[15px] text-black font-lato">{companyType ? companyType : 'Select Company Type'}</Text>
+                                <Ionicons name={showCompanyTypeDropdown ? "chevron-up" : "chevron-down"} size={20} color="#666" />
+                            </TouchableOpacity>
+
+                            {showCompanyTypeDropdown && (
+                                <View className="absolute top-[56px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[101] overflow-hidden">
+                                    {companyTypes.map((item) => (
+                                        <TouchableOpacity
+                                            key={item}
+                                            onPress={() => {
+                                                dispatch(setCompanyType(item));
+                                                setShowCompanyTypeDropdown(false);
+                                            }}
+                                            className={`px-4 py-3 border-b border-gray-50`}
+                                        >
+                                            <Text className={`text-[13px] font-lato ${companyType === item ? 'text-[#4A43EC]' : 'text-gray-800'}`}>
+                                                {item}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
                         </View>
 
                         {/* RERA Number */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
     View,
     Text,
@@ -12,6 +12,7 @@ import {
     Pressable,
     Keyboard,
     TouchableWithoutFeedback,
+    PanResponder,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -26,13 +27,18 @@ import {
     updatePropertyType,
     updateBuilderData,
     updateStep4,
+    updateStep4Approval,
+    updateStep5,
+    updateStep6,
     bulkUploadSubtype,
     resetForm,
 } from "../../store/slices/projectSlice";
 import { addProject } from "../../store/slices/projectsSlice";
+import { addNotification } from "../../store/slices/notificationSlice";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 
 const { width } = Dimensions.get("window");
 
@@ -75,7 +81,9 @@ const steps = [
     { id: 1, title: "Basic Details" },
     { id: 2, title: "Property Type" },
     { id: 3, title: "Property Detail" },
-    { id: 4, title: "Image & Price" },
+    { id: 4, title: "Approvals" },
+    { id: 5, title: "Finance" },
+    { id: 6, title: "Image & Price" },
 ];
 
 const ANDROID_KEYBOARD_EXTRA_SCROLL = 72;
@@ -85,34 +93,215 @@ const IOS_KEYBOARD_EXTRA_HEIGHT = 66;
 const ANDROID_CONTENT_BOTTOM_PADDING = 180;
 const IOS_CONTENT_BOTTOM_PADDING = 140;
 const RANGE_BASED_SUB_TYPES = new Set(["plot", "villa", "rowhouse"]);
+const DEVELOPMENT_STAGE_OPTIONS = [
+    "Road work completed",
+    "Drainage work completed",
+    "Electricity work completed",
+    "Water line completed",
+    "Boundary wall completed",
+    "Garden / Park work completed",
+    "Street lights completed",
+    "Main gate completed",
+    "Clubhouse / Amenities work completed",
+    "Work in progress",
+    "Other",
+];
+const APPROVAL_STATUS_OPTIONS = ["Yes", "No"];
+const OPTIONAL_APPROVAL_STATUS_OPTIONS = ["Yes", "No", "Not Applicable"];
+const TIME_TO_APPROVAL_OPTIONS = ["3 months", "6 months", "12 months", "18 months", "24 months", "24+ months"];
+const GUIDELINE_VALUE_UNITS = ["Per Sq. Ft.", "Per Sq. Meter", "Per Acre", "Per Hectare"];
+const OWNERSHIP_TYPES = [
+    "Owned Project",
+    "Joint Venture Project",
+    "Development Agreement Project",
+    "Collaboration Project",
+    "Other",
+];
 
 export default function AddProject() {
     const dispatch = useDispatch();
-    const { currentStep, step1, step2, step3, step4 } = useSelector((state) => state.project);
+    const { currentStep, step1, step2, step3, step4, step5, step6 } = useSelector((state) => state.project);
     const scrollRef = useRef(null);
+    const [step1Errors, setStep1Errors] = useState({});
+    const [stepErrors, setStepErrors] = useState({});
 
     useEffect(() => {
         scrollRef.current?.scrollToPosition?.(0, 0, false);
         scrollRef.current?.scrollTo?.({ y: 0, animated: false });
     }, [currentStep]);
 
-    const handleNext = () => {
-        if (currentStep === 1) {
-            const {
-                location, city, state, pincode,
-                salesOfficerName, salesOfficerContact, salesVerified,
-                responsiblePersonName, responsiblePersonContact, responsibleVerified
-            } = step1;
+    useEffect(() => {
+        setStepErrors(prev => {
+            if (!prev[currentStep]) return prev;
+            const next = { ...prev };
+            delete next[currentStep];
+            return next;
+        });
+    }, [currentStep, step2, step3, step4, step5, step6]);
 
-            if (!location || !city || !state || !pincode ||
-                !salesOfficerName || !salesOfficerContact || !salesVerified ||
-                !responsiblePersonName || !responsiblePersonContact || !responsibleVerified) {
-                // You can add an alert here if you want
-                return;
-            }
+    const validateStep1Fields = (values) => {
+        const errors = {};
+
+        if (!values.projectName || values.projectName.trim().length < 3) {
+            errors.projectName = 'Project name must be at least 3 characters';
         }
 
-        if (currentStep < 4) {
+        if (!values.location || values.location.trim().length === 0) {
+            errors.location = 'Location is required';
+        }
+
+        if (!values.city || values.city.trim().length === 0) {
+            errors.city = 'City is required';
+        }
+
+        if (!values.state || values.state.trim().length === 0) {
+            errors.state = 'State is required';
+        }
+
+        if (!values.pincode || !/^[0-9]{5,6}$/.test(values.pincode.trim())) {
+            errors.pincode = 'Enter a valid pincode (5-6 digits)';
+        }
+
+        const nameValidator = (v) => v && v.trim().length >= 2;
+        if (!nameValidator(values.salesOfficerName)) {
+            errors.salesOfficerName = 'Enter sales officer name';
+        }
+        if (!/^[0-9]{10}$/.test((values.salesOfficerContact || '').trim())) {
+            errors.salesOfficerContact = 'Enter a valid 10-digit contact number';
+        }
+
+        if (!nameValidator(values.responsiblePersonName)) {
+            errors.responsiblePersonName = 'Enter responsible person name';
+        }
+        if (!/^[0-9]{10}$/.test((values.responsiblePersonContact || '').trim())) {
+            errors.responsiblePersonContact = 'Enter a valid 10-digit contact number';
+        }
+
+        return { valid: Object.keys(errors).length === 0, errors };
+    };
+
+    const validateCurrentStep = () => {
+        if (currentStep === 1) {
+            const { valid, errors } = validateStep1Fields(step1);
+            return { valid, errors };
+        }
+
+        if (currentStep === 2) {
+            const messages = [];
+            if (step2.selectedTypes.length === 0) messages.push("Select at least one property type before moving ahead.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 3) {
+            const messages = [];
+            if (step2.selectedTypes.length === 0) {
+                messages.push("Go back and select at least one property type.");
+            } else {
+                step2.selectedTypes.forEach(type => {
+                    const typeLabel = `${type.mainType || "Property"} ${type.subType || ""}`.trim();
+                    const configs = step3.unitConfigs[type.id] || [];
+                    if (configs.length === 0) {
+                        messages.push(`Add at least one unit for ${typeLabel}.`);
+                        return;
+                    }
+
+                    configs.forEach((unit, index) => {
+                        const unitLabel = `${typeLabel} unit ${index + 1}`;
+                        if (!unit.area || !unit.propertyNumber) messages.push(`Fill area and property number for ${unitLabel}.`);
+                        if (type.subType === 'apartment' && (!unit.tower || !unit.floor || !unit.bhk)) {
+                            messages.push(`Fill tower, floor, and BHK for ${unitLabel}.`);
+                        }
+                        if ((type.subType === 'villa' || type.subType === 'rowhouse') && !unit.bhk) {
+                            messages.push(`Select BHK for ${unitLabel}.`);
+                        }
+                        if (type.subType === 'office' && !unit.officeType) {
+                            messages.push(`Select office type for ${unitLabel}.`);
+                        }
+                    });
+                });
+            }
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 4) {
+            const percentage = Number(step4.developmentCompletionPercentage);
+            const messages = [];
+            if (!step4.projectLaunchStatus) messages.push("Select project launch status.");
+            if (step4.projectLaunchStatus === "Already Launched" && !step4.projectLaunchDate) messages.push("Select project launch date.");
+            if (step4.projectLaunchStatus === "Upcoming Launch" && !step4.expectedLaunchDate) messages.push("Select expected launch date.");
+            if (!step4.possessionStatus) messages.push("Select possession status.");
+            if (step4.possessionStatus === "Possession Pending" && !step4.expectedPossessionDate) messages.push("Select expected possession date.");
+            if (step4.developmentCompletionPercentage === '' || Number.isNaN(percentage) || percentage < 0 || percentage > 100) messages.push("Set development completion percentage.");
+            if (step4.currentDevelopmentStage.length === 0) messages.push("Select current development stage.");
+            if (step4.currentDevelopmentStage.includes("Other") && !step4.otherDevelopmentStage) messages.push("Mention the other development stage.");
+            if (!step4.approvals.diversion.status) messages.push("Answer diversion approval status.");
+            if (step4.approvals.diversion.status === "No" && !step4.approvals.diversion.expectedTime) messages.push("Select expected time for diversion approval.");
+            if (!step4.approvals.tncp.status) messages.push("Answer TNCP approval status.");
+            if (!step4.approvals.developmentPermission.status) messages.push("Answer development permission approval status.");
+            if (step4.approvals.developmentPermission.status === "No" && !step4.approvals.developmentPermission.expectedTime) messages.push("Select expected time for development permission.");
+            if (step4.approvals.developmentPermission.status === "Yes" && !step4.approvals.developmentPermission.permissionDate) messages.push("Select development permission approved date.");
+            if (!step4.approvals.rera.status) messages.push("Answer RERA approval status.");
+            if (step4.approvals.rera.status === "Yes" && (!step4.approvals.rera.registrationNumber || !step4.approvals.rera.registrationDate)) messages.push("Fill RERA registration number and registration date.");
+            if (step4.approvals.rera.status === "No" && (!step4.approvals.rera.reasonNotAvailable || !step4.approvals.rera.expectedTime)) messages.push("Fill RERA reason and expected approval date.");
+            if (!step4.approvals.buildingPermission.status) messages.push("Answer building permission approval status.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 5) {
+            const messages = [];
+            if (!step5.guidelineValueAmount || !step5.guidelineValueUnit || !step5.guidelineYear) messages.push("Fill guideline value amount, unit, and year.");
+            if (!step5.registryChargesAvailable) messages.push("Answer registry charges availability.");
+            if (step5.registryChargesAvailable === "Yes" && (!step5.registryChargesMaleBuyer || !step5.registryChargesFemaleBuyer || !step5.otherGovernmentCharges)) messages.push("Fill all registry and government charge details.");
+            if (!step5.loanAvailable) messages.push("Answer whether loan is available.");
+            if (step5.loanAvailable === "Yes" && (!step5.bankTieUpAvailable || !step5.loanApprovalStatus || !(step5.tieUpBankName || step5.bankNameList))) messages.push("Fill loan tie-up, approval status, and bank name/list.");
+            if (!step5.ownershipType) messages.push("Select project ownership type.");
+            if (step5.ownershipType === "Owned Project" && (!step5.ownedOwnerCompanyName || step5.ownedDocuments.length === 0)) messages.push("Fill owner/company name and upload ownership document.");
+            if (step5.ownershipType === "Joint Venture Project" && (!step5.jvLandOwnerName || !step5.jvDeveloperBuilderName)) messages.push("Fill joint venture land owner and developer/builder names.");
+            if (step5.ownershipType === "Development Agreement Project" && (!step5.developmentLandOwnerName || !step5.developmentDeveloperName || !step5.developmentAgreementAvailable || step5.developmentAgreementDocuments.length === 0)) messages.push("Fill development agreement details and upload agreement document.");
+            if (step5.ownershipType === "Other" && (!step5.otherOwnershipType || step5.ownershipSupportingDocuments.length === 0)) messages.push("Mention ownership type and upload supporting document.");
+            if (!step5.titleVerificationStatus) messages.push("Select title verification status.");
+            if (step5.titleVerificationStatus === "Yes" && (!step5.titleVerificationDoneBy || !step5.titleVerificationDate || step5.titleReportDocuments.length === 0)) messages.push("Fill title verification details and upload title report.");
+            if (step5.titleVerificationStatus === "Under Process" && !step5.titleExpectedCompletionDate) messages.push("Select title verification expected completion date.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        if (currentStep === 6) {
+            const messages = [];
+            if (step6.images.length < 3) messages.push("Upload at least 3 project photos.");
+            if ((step6.videos || []).length < 1) messages.push("Upload at least 1 project video.");
+            if ((step6.videos || []).length > 2) messages.push("Keep project videos to a maximum of 2.");
+            if (step6.documents.length === 0) messages.push("Upload project brochure.");
+            if (!step6.agreed) messages.push("Confirm the agreement before submitting.");
+            return { valid: messages.length === 0, errors: { messages } };
+        }
+
+        return { valid: true, errors: { messages: [] } };
+    };
+
+    const handleNext = () => {
+        const { valid, errors } = validateCurrentStep();
+        if (!valid) {
+            if (currentStep === 1) {
+                setStep1Errors(errors);
+            } else {
+                setStepErrors(prev => ({ ...prev, [currentStep]: errors }));
+            }
+            scrollRef.current?.scrollToPosition?.(0, 0, true);
+            scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+            return;
+        }
+
+        if (currentStep === 1) {
+            setStep1Errors({});
+        } else {
+            setStepErrors(prev => {
+                const next = { ...prev };
+                delete next[currentStep];
+                return next;
+            });
+        }
+
+        if (currentStep < 6) {
             dispatch(setStep(currentStep + 1));
         } else {
             // Final Step (Submit)
@@ -121,83 +310,24 @@ export default function AddProject() {
                 ...step1,
                 selectedTypes: step2.selectedTypes.map(type => ({
                     ...type,
-                    units: step3.unitConfigs[type.id]?.map((unit, idx) => ({
-                        ...unit,
-                        ...step4.unitData[unit.unitId || `${type.id}-${idx}`]
-                    })) || []
+                    units: step3.unitConfigs[type.id] || []
                 })),
+                legalApprovalsAndStatus: step4,
+                financeGuidelineOwnership: step5,
+                projectMediaAndSubmission: step6,
                 createdAt: new Date().toISOString(),
                 status: 'Active'
             };
             
             dispatch(addProject(finalProjectData));
+            dispatch(addNotification({
+                title: "Project added successfully",
+                description: `${step1.projectName || "New project"} has been added to your project panel.`,
+                type: "success",
+            }));
             dispatch(resetForm());
             router.push('/success');
         }
-    };
-
-    const isNextDisabled = () => {
-        if (currentStep === 1) {
-            const {
-                projectName, location, city, state, pincode,
-                salesOfficerName, salesOfficerContact, salesVerified,
-                responsiblePersonName, responsiblePersonContact, responsibleVerified
-            } = step1;
-            return !projectName || !location || !city || !state || !pincode ||
-                !salesOfficerName || !salesOfficerContact || !salesVerified ||
-                !responsiblePersonName || !responsiblePersonContact || !responsibleVerified;
-        }
-
-        if (currentStep === 2) {
-            return step2.selectedTypes.length === 0;
-        }
-
-        if (currentStep === 3) {
-            if (step2.selectedTypes.length === 0) return true;
-            
-            // Check if all selected types have at least one unit and all units are filled
-            return step2.selectedTypes.some(type => {
-                const configs = step3.unitConfigs[type.id] || [];
-                if (configs.length === 0) return true;
-                
-                return configs.some(unit => {
-                    const baseFields = !unit.area || !unit.propertyNumber;
-                    if (baseFields) return true;
-
-                    if (type.subType === 'apartment') {
-                        if (!unit.tower || !unit.floor || !unit.bhk) return true;
-                    }
-                    if (type.subType === 'villa' || type.subType === 'rowhouse') {
-                        if (!unit.bhk) return true;
-                    }
-                    if (type.subType === 'office') {
-                        if (!unit.officeType) return true;
-                    }
-                    return false;
-                });
-            });
-        }
-
-        if (currentStep === 4) {
-            const allUnits = [];
-            step2.selectedTypes.forEach(type => {
-                const configs = step3.unitConfigs[type.id] || [];
-                configs.forEach((_, idx) => {
-                    allUnits.push(`${type.id}-${idx}`);
-                });
-            });
-
-            if (allUnits.length === 0) return true;
-
-            // Check if all units have price, at least one image, and agreement
-            return allUnits.some(unitId => {
-                const data = step4.unitData[unitId];
-                if (!data) return true;
-                return !data.sellingPrice || data.images.length === 0 || !data.agreed;
-            });
-        }
-
-        return false;
     };
 
     const handleBack = () => {
@@ -239,7 +369,7 @@ export default function AddProject() {
                         {/* Step Indicator */}
                         <View className="flex-row justify-between items-start mt-8">
                             {steps.map((step) => (
-                                <View key={step.id} className="items-center" style={{ width: (width - 40) / 4 }}>
+                                <View key={step.id} className="items-center" style={{ width: (width - 40) / 6 }}>
                                     <View
                                         className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${currentStep === step.id ? 'bg-white' : 'bg-transparent border border-white/40'
                                             }`}
@@ -270,33 +400,34 @@ export default function AddProject() {
                                 paddingBottom: Platform.OS === "android" ? ANDROID_CONTENT_BOTTOM_PADDING : IOS_CONTENT_BOTTOM_PADDING,
                                 flexGrow: 1,
                             }}
-                            keyboardShouldPersistTaps="handled"
-                            keyboardDismissMode="on-drag"
+                            keyboardShouldPersistTaps="always"
+                            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                             enableOnAndroid
                             extraScrollHeight={Platform.OS === "android" ? ANDROID_KEYBOARD_EXTRA_SCROLL : IOS_KEYBOARD_EXTRA_SCROLL}
                             extraHeight={Platform.OS === "android" ? ANDROID_KEYBOARD_EXTRA_HEIGHT : IOS_KEYBOARD_EXTRA_HEIGHT}
                             viewIsInsideTabBar={Platform.OS === "android"}
                             enableAutomaticScroll
-                            keyboardOpeningTime={250}
+                            keyboardOpeningTime={Platform.OS === "android" ? 0 : 250}
                             enableResetScrollToCoords={false}
                             nestedScrollEnabled={Platform.OS === "android"}
                         >
                             <View>
-                                {currentStep === 1 && <Step1 />}
-                                {currentStep === 2 && <Step2 />}
-                                {currentStep === 3 && <Step3 />}
-                                {currentStep === 4 && <Step4 />}
+                                {currentStep === 1 && <Step1 errors={step1Errors} setErrors={setStep1Errors} />}
+                                {currentStep === 2 && <Step2 errors={stepErrors[2]} />}
+                                {currentStep === 3 && <Step3 errors={stepErrors[3]} />}
+                                {currentStep === 4 && <Step4 errors={stepErrors[4]} />}
+                                {currentStep === 5 && <Step5 errors={stepErrors[5]} />}
+                                {currentStep === 6 && <Step6 errors={stepErrors[6]} />}
 
                                 {/* Next Button */}
                                 <View className="mt-8 mb-4">
                                     <TouchableOpacity
-                                        className={`py-4 rounded-xl items-center ${isNextDisabled() ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
+                                        className="py-4 rounded-xl items-center bg-[#4A43EC]"
                                         activeOpacity={0.8}
                                         onPress={handleNext}
-                                        disabled={isNextDisabled()}
                                     >
                                         <Text className="text-white text-sm font-lato-bold">
-                                            {currentStep === 4 ? "Submit" : "Next"}
+                                            {currentStep === 6 ? "Submit" : "Next"}
                                         </Text>
                                     </TouchableOpacity>
                                 </View>
@@ -307,17 +438,40 @@ export default function AddProject() {
     );
 }
 
+const StepErrorSummary = ({ errors }) => {
+    const messages = errors?.messages || [];
+    if (messages.length === 0) return null;
+
+    return (
+        <View className="bg-red-50 border border-red-100 rounded-2xl p-4 gap-2">
+            <View className="flex-row items-center gap-2">
+                <Ionicons name="alert-circle-outline" size={18} color="#EF4444" />
+                <Text className="text-xs font-lato-bold text-red-600">Please fill these required details</Text>
+            </View>
+            {messages.map((message, index) => (
+                <Text key={`${message}-${index}`} className="text-[11px] text-red-500 font-lato">
+                    {index + 1}. {message}
+                </Text>
+            ))}
+        </View>
+    );
+};
+
 // --- Step 1 Component ---
-function Step1() {
+function Step1({ errors = {}, setErrors }) {
     const dispatch = useDispatch();
     const { step1 } = useSelector((state) => state.project);
-
     const updateField = (field, value) => {
         dispatch(updateStep1({ [field]: value }));
+        if (setErrors) {
+            setErrors(prev => {
+                if (!prev) return {};
+                const copy = { ...prev };
+                delete copy[field];
+                return copy;
+            });
+        }
     };
-
-    const salesOtpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
-    const responsibleOtpRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
     const projectNameRef = useRef(null);
     const locationRef = useRef(null);
     const cityRef = useRef(null);
@@ -328,42 +482,6 @@ function Step1() {
     const respNameRef = useRef(null);
     const respContactRef = useRef(null);
 
-    const verifyOtp = (type) => {
-        const field = type === 'sales' ? 'salesOfficerOtp' : 'responsiblePersonOtp';
-        const otpStr = step1[field].join('');
-
-        if (otpStr === "1234") {
-            dispatch(updateStep1({
-                [type === 'sales' ? 'salesVerified' : 'responsibleVerified']: true,
-                [type === 'sales' ? 'salesOtpError' : 'responsibleOtpError']: false
-            }));
-        } else {
-            dispatch(updateStep1({
-                [type === 'sales' ? 'salesVerified' : 'responsibleVerified']: false,
-                [type === 'sales' ? 'salesOtpError' : 'responsibleOtpError']: true
-            }));
-        }
-    };
-
-    const handleOtpChange = (index, value, type) => {
-        const field = type === 'sales' ? 'salesOfficerOtp' : 'responsiblePersonOtp';
-        const refs = type === 'sales' ? salesOtpRefs : responsibleOtpRefs;
-
-        const newOtp = [...step1[field]];
-        newOtp[index] = value;
-        updateField(field, newOtp);
-
-        if (value && index < 3) {
-            refs[index + 1].current?.focus();
-        }
-    };
-
-    const handleKeyPress = (e, index, type) => {
-        if (e.nativeEvent.key === 'Backspace' && !step1[type === 'sales' ? 'salesOfficerOtp' : 'responsiblePersonOtp'][index] && index > 0) {
-            const refs = type === 'sales' ? salesOtpRefs : responsibleOtpRefs;
-            refs[index - 1].current?.focus();
-        }
-    };
 
     return (
         <View className="gap-6">
@@ -381,6 +499,9 @@ function Step1() {
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
                 </Pressable>
+                {errors.projectName && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.projectName}</Text>
+                )}
             </View>
 
             {/* Location */}
@@ -400,6 +521,9 @@ function Step1() {
                         <Ionicons name="locate" size={16} color="#4A43EC" />
                     </View>
                 </Pressable>
+                {errors.location && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.location}</Text>
+                )}
             </View>
 
             {/* City, State, Pincode */}
@@ -417,6 +541,9 @@ function Step1() {
                             style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                         />
                     </Pressable>
+                    {errors.city && (
+                        <Text className="text-[11px] text-red-500 mt-1">{errors.city}</Text>
+                    )}
                 </View>
                 <View className="flex-1">
                     <Text className="text-xs font-lato-bold text-black mb-1.5">State</Text>
@@ -431,6 +558,9 @@ function Step1() {
                             style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                         />
                     </Pressable>
+                    {errors.state && (
+                        <Text className="text-[11px] text-red-500 mt-1">{errors.state}</Text>
+                    )}
                 </View>
                 <View className="flex-1">
                     <Text className="text-xs font-lato-bold text-black mb-1.5">Pincode</Text>
@@ -446,6 +576,9 @@ function Step1() {
                             style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                         />
                     </Pressable>
+                    {errors.pincode && (
+                        <Text className="text-[11px] text-red-500 mt-1">{errors.pincode}</Text>
+                    )}
                 </View>
             </View>
 
@@ -466,6 +599,9 @@ function Step1() {
                         <Ionicons name="person" size={16} color="#4A43EC" />
                     </View>
                 </Pressable>
+                {errors.salesOfficerName && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.salesOfficerName}</Text>
+                )}
             </View>
 
             <View>
@@ -481,62 +617,12 @@ function Step1() {
                         onChangeText={(v) => updateField('salesOfficerContact', v)}
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
-                    <TouchableOpacity onPress={() => updateField('salesOtpSent', true)}>
-                        <Text className="text-[10px] font-lato-bold text-[#4A43EC]">
-                            {step1.salesOtpSent ? "Resend OTP" : "Send OTP"}
-                        </Text>
-                    </TouchableOpacity>
                 </Pressable>
+                {errors.salesOfficerContact && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.salesOfficerContact}</Text>
+                )}
             </View>
-
-            {step1.salesOtpSent && (
-                <View>
-                    <View className="flex-row items-center gap-2 mb-4">
-                        <Text className="text-sm font-lato-bold text-black">Enter OTP</Text>
-                        {step1.salesVerified && (
-                            <View className="bg-green-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="checkmark-circle" size={10} color="#10B981" />
-                                <Text className="text-[8px] text-[#10B981] font-lato-bold ml-1">Verified</Text>
-                            </View>
-                        )}
-                        {step1.salesOtpError && !step1.salesVerified && (
-                            <View className="bg-red-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="alert-circle" size={10} color="#EF4444" />
-                                <Text className="text-[8px] text-[#EF4444] font-lato-bold ml-1">Invalid OTP</Text>
-                            </View>
-                        )}
-                    </View>
-                    <View className="flex-row gap-3">
-                        {[0, 1, 2, 3].map((i) => (
-                            <View
-                                key={i}
-                                className={`w-14 h-14 bg-white border rounded-xl items-center justify-center ${step1.salesVerified ? 'border-green-500 bg-green-50' : step1.salesOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
-                            >
-                                <TextInput
-                                    ref={salesOtpRefs[i]}
-                                    className="text-lg font-lato-bold text-black text-center w-full h-full"
-                                    maxLength={1}
-                                    keyboardType="number-pad"
-                                    value={step1.salesOfficerOtp[i]}
-                                    onChangeText={(v) => handleOtpChange(i, v, 'sales')}
-                                    onKeyPress={(e) => handleKeyPress(e, i, 'sales')}
-                                    editable={!step1.salesVerified}
-                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                />
-                            </View>
-                        ))}
-                    </View>
-
-                    {!step1.salesVerified && (
-                        <TouchableOpacity
-                            onPress={() => verifyOtp('sales')}
-                            className="bg-[#4A43EC] mt-3 py-3.5 rounded-xl items-center"
-                        >
-                            <Text className="text-white text-[13px] font-lato-bold">Verify OTP</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            )}
+            
 
             {/* Responsible Person Section */}
             <View>
@@ -552,6 +638,9 @@ function Step1() {
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
                 </Pressable>
+                {errors.responsiblePersonName && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.responsiblePersonName}</Text>
+                )}
             </View>
 
             <View>
@@ -567,62 +656,12 @@ function Step1() {
                         onChangeText={(v) => updateField('responsiblePersonContact', v)}
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
-                    <TouchableOpacity onPress={() => updateField('responsibleOtpSent', true)}>
-                        <Text className="text-[10px] font-lato-bold text-[#4A43EC]">
-                            {step1.responsibleOtpSent ? "Resend OTP" : "Send OTP"}
-                        </Text>
-                    </TouchableOpacity>
                 </Pressable>
+                {errors.responsiblePersonContact && (
+                    <Text className="text-[11px] text-red-500 mt-1">{errors.responsiblePersonContact}</Text>
+                )}
             </View>
-
-            {step1.responsibleOtpSent && (
-                <View>
-                    <View className="flex-row items-center gap-2 mb-4">
-                        <Text className="text-sm font-lato-bold text-black">Enter OTP</Text>
-                        {step1.responsibleVerified && (
-                            <View className="bg-green-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="checkmark-circle" size={10} color="#10B981" />
-                                <Text className="text-[8px] text-[#10B981] font-lato-bold ml-1">Verified</Text>
-                            </View>
-                        )}
-                        {step1.responsibleOtpError && !step1.responsibleVerified && (
-                            <View className="bg-red-100 px-2 py-0.5 rounded-full flex-row items-center">
-                                <Ionicons name="alert-circle" size={10} color="#EF4444" />
-                                <Text className="text-[8px] text-[#EF4444] font-lato-bold ml-1">Invalid OTP</Text>
-                            </View>
-                        )}
-                    </View>
-                    <View className="flex-row gap-3">
-                        {[0, 1, 2, 3].map((i) => (
-                            <View
-                                key={i}
-                                className={`w-14 h-14 bg-white border rounded-xl items-center justify-center ${step1.responsibleVerified ? 'border-green-500 bg-green-50' : step1.responsibleOtpError ? 'border-red-500 bg-red-50' : 'border-gray-200'}`}
-                            >
-                                <TextInput
-                                    ref={responsibleOtpRefs[i]}
-                                    className="text-lg font-lato-bold text-black text-center w-full h-full"
-                                    maxLength={1}
-                                    keyboardType="number-pad"
-                                    value={step1.responsiblePersonOtp[i]}
-                                    onChangeText={(v) => handleOtpChange(i, v, 'responsible')}
-                                    onKeyPress={(e) => handleKeyPress(e, i, 'responsible')}
-                                    editable={!step1.responsibleVerified}
-                                    style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                                />
-                            </View>
-                        ))}
-                    </View>
-
-                    {!step1.responsibleVerified && (
-                        <TouchableOpacity
-                            onPress={() => verifyOtp('responsible')}
-                            className="bg-[#4A43EC] mt-3 py-3.5 rounded-xl items-center"
-                        >
-                            <Text className="text-white text-[13px] font-lato-bold">Verify OTP</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
-            )}
+            
         </View>
     );
 }
@@ -659,7 +698,7 @@ const parseCSV = (text) => {
 };
 
 // --- Step 2 Component ---
-function Step2() {
+function Step2({ errors }) {
     const { width } = Dimensions.get('window');
     const dispatch = useDispatch();
     const { step2 } = useSelector((state) => state.project);
@@ -728,6 +767,7 @@ function Step2() {
 
     return (
         <View className="gap-5">
+            <StepErrorSummary errors={errors} />
             <Text className="text-base font-lato-bold text-black">Configure Property Types</Text>
 
             {/* Added Types List */}
@@ -859,7 +899,7 @@ const getDefaultBuilderState = (subType) => {
 };
 
 // --- Step 3 Component ---
-function Step3() {
+function Step3({ errors }) {
     const dispatch = useDispatch();
     const { step2, step3 } = useSelector((state) => state.project);
     const { width } = Dimensions.get('window');
@@ -1374,7 +1414,6 @@ function Step3() {
             }
 
             const unitConfigs = [];
-            const unitData = {};
 
             data.forEach((row, index) => {
                 if (!row['Property Number']) return;
@@ -1386,24 +1425,15 @@ function Step3() {
                     officeType: row['Office Type'] || '',
                     area: row['Area'] || '',
                     areaUnit: row['Area Unit'] || 'Sq-ft',
+                    price: row['Selling Price'] || '',
                     amenities: [''],
                     propertyNumber: row['Property Number'] || '',
                     hasShop: false,
                     extraCharges: [{ title: '', amount: '' }]
                 });
-
-                unitData[`${type.id}-${index}`] = {
-                    images: [],
-                    documents: [],
-                    sellingPrice: row['Selling Price'] || '',
-                    priceNegotiable: row['Price Negotiable']?.toLowerCase() === 'true',
-                    taxExclude: row['Tax Exclude']?.toLowerCase() === 'true',
-                    paymentMode: row['Payment Mode'] || 'full',
-                    agreed: true,
-                };
             });
 
-            dispatch(bulkUploadSubtype({ typeId: type.id, unitConfigs, unitData }));
+            dispatch(bulkUploadSubtype({ typeId: type.id, unitConfigs }));
             alert(`Bulk upload successful! Added ${unitConfigs.length} units for ${type.subType}.`);
         } catch (error) {
             console.error(error);
@@ -1429,6 +1459,7 @@ function Step3() {
 
     return (
         <View className="gap-6">
+            <StepErrorSummary errors={errors} />
             <Text className="text-base font-lato-bold text-black">Configure Units (Project Engine)</Text>
 
             {/* Subtypes Tabs */}
@@ -2253,62 +2284,630 @@ function Step3() {
     );
 }
 
-// --- Step 4 Component ---
-function Step4() {
-    const dispatch = useDispatch();
-    const { step2, step3, step4 } = useSelector((state) => state.project);
-    const [showUnitDropdown, setShowUnitDropdown] = useState(false);
-    const priceRef = useRef(null);
+const FormSection = ({ title, children }) => (
+    <View className="bg-white border border-gray-100 rounded-2xl p-4 gap-4">
+        <Text className="text-sm font-lato-bold text-black">{title}</Text>
+        {children}
+    </View>
+);
 
-    // Generate all units from step3.unitConfigs
-    const allUnits = useMemo(() => {
-        const units = [];
-        step2.selectedTypes.forEach(type => {
-            const configs = step3.unitConfigs[type.id] || [];
-            configs.forEach((unit, idx) => {
-                units.push({
-                    id: unit.unitId || `${type.id}-${idx}`,
-                    typeId: type.id,
-                    unitIndex: idx,
-                    label: `${unit.propertyNumber || 'N/A'} - ${unit.gridKey || `Unit ${idx + 1}`} (${type.subType.toUpperCase()})`,
-                    subType: type.subType,
-                    mainType: type.mainType,
-                    bhk: unit.bhk || unit.officeType || 'Standard',
-                    price: unit.price || '',
-                    images: unit.images || [],
-                    area: unit.area || '',
-                });
-            });
+const OptionGroup = ({ label, options, value, onChange }) => (
+    <View>
+        {label ? <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text> : null}
+        <View className="flex-row flex-wrap gap-2">
+            {options.map(option => (
+                <TouchableOpacity
+                    key={option}
+                    onPress={() => onChange(option)}
+                    className={`px-3 py-2 rounded-full border ${value === option ? 'bg-[#EBEAFF] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
+                >
+                    <Text className={`text-[11px] font-lato-bold ${value === option ? 'text-[#4A43EC]' : 'text-gray-500'}`}>{option}</Text>
+                </TouchableOpacity>
+            ))}
+        </View>
+    </View>
+);
+
+const getInputTypeProps = (label = "", placeholder = "", keyboardType = "default") => {
+    if (keyboardType !== "default") return { keyboardType };
+
+    const text = `${label} ${placeholder}`.toLowerCase();
+    if (text.includes("date") || text.includes("time")) {
+        return {
+            keyboardType: Platform.OS === "ios" ? "numbers-and-punctuation" : "numeric",
+            inputMode: "numeric",
+        };
+    }
+    if (
+        text.includes("amount") ||
+        text.includes("price") ||
+        text.includes("percentage") ||
+        text.includes("number of months") ||
+        text.includes("guideline year") ||
+        text.includes("year") ||
+        text.includes("contact") ||
+        text.includes("pincode") ||
+        text.includes("value")
+    ) {
+        return {
+            keyboardType: "numeric",
+            inputMode: "numeric",
+        };
+    }
+
+    return { keyboardType: "default" };
+};
+
+const FieldInput = ({ label, value, onChangeText, placeholder, keyboardType = "default", multiline = false }) => {
+    const inputRef = useRef(null);
+    const inputTypeProps = getInputTypeProps(label, placeholder, keyboardType);
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+            <Pressable
+                onPress={() => inputRef.current?.focus()}
+                className={`bg-white border border-gray-200 rounded-xl px-4 ${multiline ? 'min-h-[88px] py-3' : 'h-12 justify-center'}`}
+            >
+                <TextInput
+                    ref={inputRef}
+                    className="text-[13px] text-gray-800 font-lato-medium"
+                    placeholder={placeholder}
+                    placeholderTextColor="#9CA3AF"
+                    value={value}
+                    keyboardType={inputTypeProps.keyboardType}
+                    inputMode={inputTypeProps.inputMode}
+                    multiline={multiline}
+                    scrollEnabled={false}
+                    returnKeyType={multiline ? "default" : "done"}
+                    blurOnSubmit={!multiline}
+                    onChangeText={onChangeText}
+                    style={{ paddingVertical: 0, textAlignVertical: multiline ? 'top' : 'center', includeFontPadding: false }}
+                />
+            </Pressable>
+        </View>
+    );
+};
+
+const formatDateValue = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
+
+const parseDateValue = (value) => {
+    if (!value) return new Date();
+    const [year, month, day] = value.split("-").map(Number);
+    if (!year || !month || !day) return new Date();
+    return new Date(year, month - 1, day);
+};
+
+const DateFieldInput = ({ label, value, onChangeText, placeholder }) => {
+    const selectedDate = parseDateValue(value);
+    const displayValue = value || placeholder || "Select date";
+
+    if (Platform.OS === "web") {
+        return (
+            <View>
+                <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+                <View className="bg-white border border-gray-200 rounded-xl h-12 justify-center overflow-hidden">
+                    {React.createElement("input", {
+                        type: "date",
+                        value: value || "",
+                        onChange: (event) => onChangeText(event.target.value),
+                        "aria-label": label,
+                        style: {
+                            height: "100%",
+                            border: "0",
+                            paddingLeft: 16,
+                            paddingRight: 16,
+                            fontSize: 13,
+                            color: "#1F2937",
+                            fontFamily: "Lato_500Medium",
+                            outline: "none",
+                            backgroundColor: "white",
+                            width: "100%",
+                            cursor: "pointer",
+                            boxSizing: "border-box",
+                        },
+                        placeholder,
+                    })}
+                </View>
+            </View>
+        );
+    }
+
+    if (Platform.OS === "ios") {
+        return (
+            <View>
+                <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+                <View className="bg-white h-12 justify-center overflow-hidden">
+                    <DateTimePicker
+                        value={selectedDate}
+                        mode="date"
+                        display="compact"
+                        themeVariant="light"
+                        textColor="#111827"
+                        accentColor="#4A43EC"
+                        onChange={(event, date) => {
+                            if (date) {
+                                onChangeText(formatDateValue(date));
+                            }
+                        }}
+                    />
+                </View>
+            </View>
+        );
+    }
+
+    const handleNativePress = () => {
+        DateTimePickerAndroid.open({
+            value: selectedDate,
+            mode: "date",
+            display: "calendar",
+            onChange: (event, date) => {
+                if (event.type === "set" && date) {
+                    onChangeText(formatDateValue(date));
+                }
+            },
         });
-        return units;
-    }, [step2.selectedTypes, step3.unitConfigs]);
-
-    // Initialize first unit if none selected
-    useEffect(() => {
-        if (allUnits.length === 0) return;
-        const selectedExists = allUnits.some(unit => unit.id === step4.currentSelectedUnitId);
-        if (!selectedExists) {
-            dispatch(updateStep4({ currentSelectedUnitId: allUnits[0].id }));
-        }
-    }, [allUnits, step4.currentSelectedUnitId]);
-
-    const currentUnitId = step4.currentSelectedUnitId;
-    const currentSelectedUnit = allUnits.find(unit => unit.id === currentUnitId);
-    const currentData = step4.unitData[currentUnitId] || {
-        images: currentSelectedUnit?.images || [],
-        documents: [],
-        sellingPrice: currentSelectedUnit?.price || '',
-        priceNegotiable: false,
-        taxExclude: false,
-        paymentMode: 'full',
-        agreed: false,
     };
 
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+            <TouchableOpacity
+                onPress={handleNativePress}
+                activeOpacity={0.8}
+                className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center"
+            >
+                <Text className={`flex-1 text-[13px] font-lato-medium ${value ? 'text-gray-800' : 'text-gray-400'}`}>
+                    {displayValue}
+                </Text>
+                <Ionicons name="calendar-outline" size={16} color="#4A43EC" />
+            </TouchableOpacity>
+        </View>
+    );
+};
+
+const RangeInput = ({ label, value, onChange }) => {
+    const trackWidthRef = useRef(1);
+    const numericValue = Math.max(0, Math.min(100, Number(value) || 0));
+
+    const setFromLocation = (locationX) => {
+        const nextValue = Math.round(Math.max(0, Math.min(locationX / trackWidthRef.current, 1)) * 100);
+        onChange(String(nextValue));
+    };
+
+    const panResponder = useRef(PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => setFromLocation(event.nativeEvent.locationX),
+        onPanResponderMove: (event) => setFromLocation(event.nativeEvent.locationX),
+    })).current;
+
+    return (
+        <View>
+            <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-xs font-lato-bold text-black">{label}</Text>
+                <Text className="text-xs font-lato-bold text-[#4A43EC]">{numericValue}%</Text>
+            </View>
+            <View
+                className="h-8 justify-center"
+                onLayout={(event) => {
+                    const widthValue = Math.max(1, event.nativeEvent.layout.width);
+                    trackWidthRef.current = widthValue;
+                }}
+                {...panResponder.panHandlers}
+            >
+                <View className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                    <View
+                        className="h-2 rounded-full bg-[#4A43EC]"
+                        style={{ width: `${numericValue}%` }}
+                    />
+                </View>
+                <View
+                    className="absolute w-5 h-5 rounded-full bg-white border-2 border-[#4A43EC]"
+                    style={{ left: `${numericValue}%`, transform: [{ translateX: -10 }] }}
+                />
+            </View>
+        </View>
+    );
+};
+
+const MultiCheckboxGroup = ({ label, options, values, onChange }) => {
+    const toggle = (option) => {
+        const nextValues = values.includes(option)
+            ? values.filter(item => item !== option)
+            : [...values, option];
+        onChange(nextValues);
+    };
+
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text>
+            <View className="gap-2">
+                {options.map(option => {
+                    const selected = values.includes(option);
+                    return (
+                        <TouchableOpacity
+                            key={option}
+                            onPress={() => toggle(option)}
+                            className="flex-row items-center gap-3"
+                            activeOpacity={0.7}
+                        >
+                            <View
+                                className="w-5 h-5 rounded border items-center justify-center"
+                                style={{
+                                    borderColor: selected ? "#4A43EC" : "#D1D5DB",
+                                    backgroundColor: selected ? "#4A43EC" : "white"
+                                }}
+                            >
+                                {selected && <Ionicons name="checkmark" size={14} color="white" />}
+                            </View>
+                            <Text className="text-xs text-gray-600 font-lato-medium flex-1">{option}</Text>
+                        </TouchableOpacity>
+                    );
+                })}
+            </View>
+        </View>
+    );
+};
+
+const DocumentUploadButton = ({ label, documents, onDocumentsPicked }) => {
+    const pickDocuments = async () => {
+        const result = await DocumentPicker.getDocumentAsync({
+            type: "*/*",
+            multiple: true,
+        });
+
+        if (!result.canceled) {
+            onDocumentsPicked([...(documents || []), ...result.assets]);
+        }
+    };
+
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text>
+            <TouchableOpacity
+                onPress={pickDocuments}
+                className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-5 items-center justify-center"
+            >
+                <Ionicons name="document-attach-outline" size={20} color="#4A43EC" />
+                <Text className="text-xs font-lato-bold text-[#4A43EC] mt-2">
+                    {(documents || []).length > 0 ? `${documents.length} Document(s) Added` : "Upload Document"}
+                </Text>
+            </TouchableOpacity>
+        </View>
+    );
+};
+
+function ApprovalBlock({ title, approvalKey, options = APPROVAL_STATUS_OPTIONS, fields }) {
+    const dispatch = useDispatch();
+    const approval = useSelector((state) => state.project.step4.approvals[approvalKey]);
+    const updateApproval = (data) => dispatch(updateStep4Approval({ approvalKey, data }));
+    const renderApprovalField = (field) => {
+        if (field.type === "date") {
+            return (
+                <DateFieldInput
+                    key={field.key}
+                    label={field.label}
+                    placeholder={field.placeholder}
+                    value={approval[field.key]}
+                    onChangeText={(value) => updateApproval({ [field.key]: value })}
+                />
+            );
+        }
+        if (field.type === "select") {
+            return (
+                <OptionGroup
+                    key={field.key}
+                    label={field.label}
+                    options={field.options}
+                    value={approval[field.key]}
+                    onChange={(value) => updateApproval({ [field.key]: value })}
+                />
+            );
+        }
+        return (
+            <FieldInput
+                key={field.key}
+                label={field.label}
+                placeholder={field.placeholder}
+                value={approval[field.key]}
+                keyboardType={field.keyboardType}
+                onChangeText={(value) => updateApproval({ [field.key]: value })}
+            />
+        );
+    };
+
+    return (
+        <View className="gap-4 border-t border-gray-100 pt-4">
+            <Text className="text-xs font-lato-bold text-gray-500">{title}</Text>
+            <OptionGroup
+                label={fields.statusLabel}
+                options={options}
+                value={approval.status}
+                onChange={(value) => updateApproval({ status: value })}
+            />
+
+            {approval.status === "Yes" && (
+                <View className="gap-4">
+                    {fields.yes.map(renderApprovalField)}
+                    {fields.documentLabel ? (
+                        <DocumentUploadButton
+                            label={fields.documentLabel}
+                            documents={approval.documents}
+                            onDocumentsPicked={(documents) => updateApproval({ documents })}
+                        />
+                    ) : null}
+                </View>
+            )}
+
+            {approval.status === "No" && (
+                <View className="gap-4">
+                    {fields.no.map(renderApprovalField)}
+                </View>
+            )}
+        </View>
+    );
+}
+
+function Step4({ errors }) {
+    const dispatch = useDispatch();
+    const { step4 } = useSelector((state) => state.project);
+    const updateField = (field, value) => dispatch(updateStep4({ [field]: value }));
+
+    return (
+        <View className="gap-5">
+            <StepErrorSummary errors={errors} />
+            <Text className="text-base font-lato-bold text-black">Approvals, Permissions & Project Progress</Text>
+
+            <FormSection title="Project Launch Status">
+                <OptionGroup
+                    options={["Already Launched", "Upcoming Launch"]}
+                    value={step4.projectLaunchStatus}
+                    onChange={(value) => updateField("projectLaunchStatus", value)}
+                />
+                {step4.projectLaunchStatus === "Already Launched" && (
+                    <DateFieldInput
+                        label="Project Launch Date"
+                        placeholder="Select project launch date"
+                        value={step4.projectLaunchDate}
+                        onChangeText={(value) => updateField("projectLaunchDate", value)}
+                    />
+                )}
+                {step4.projectLaunchStatus === "Upcoming Launch" && (
+                    <DateFieldInput
+                        label="Expected Launch Date"
+                        placeholder="Select expected launch date"
+                        value={step4.expectedLaunchDate}
+                        onChangeText={(value) => updateField("expectedLaunchDate", value)}
+                    />
+                )}
+            </FormSection>
+
+            <FormSection title="Possession Status">
+                <OptionGroup
+                    options={["Possession Completed", "Possession Pending"]}
+                    value={step4.possessionStatus}
+                    onChange={(value) => updateField("possessionStatus", value)}
+                />
+                {step4.possessionStatus === "Possession Pending" && (
+                    <OptionGroup
+                        label="Expected Possession Date"
+                        options={TIME_TO_APPROVAL_OPTIONS}
+                        value={step4.expectedPossessionDate}
+                        onChange={(value) => updateField("expectedPossessionDate", value)}
+                    />
+                )}
+            </FormSection>
+
+            <FormSection title="Development Progress">
+                <RangeInput
+                    label="Development Completion Percentage"
+                    value={step4.developmentCompletionPercentage}
+                    onChange={(value) => updateField("developmentCompletionPercentage", value)}
+                />
+                <MultiCheckboxGroup
+                    label="Current Development Stage"
+                    options={DEVELOPMENT_STAGE_OPTIONS}
+                    values={step4.currentDevelopmentStage}
+                    onChange={(value) => updateField("currentDevelopmentStage", value)}
+                />
+                {step4.currentDevelopmentStage.includes("Other") && (
+                    <FieldInput
+                        label="Other Development Stage"
+                        placeholder="Mention current development stage"
+                        value={step4.otherDevelopmentStage}
+                        onChangeText={(value) => updateField("otherDevelopmentStage", value)}
+                    />
+                )}
+                <FieldInput
+                    label="Development Remarks"
+                    placeholder="Add current development status or important remarks"
+                    value={step4.developmentRemarks}
+                    multiline
+                    onChangeText={(value) => updateField("developmentRemarks", value)}
+                />
+            </FormSection>
+
+            <FormSection title="Approvals & Permissions">
+                <ApprovalBlock
+                    title="A. Diversion Approval"
+                    approvalKey="diversion"
+                    fields={{
+                        statusLabel: "Is Diversion Approved?",
+                        yes: [],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Diversion Approval", type: "select", options: TIME_TO_APPROVAL_OPTIONS }],
+                    }}
+                />
+                <ApprovalBlock
+                    title="B. TNCP Approval"
+                    approvalKey="tncp"
+                    fields={{
+                        statusLabel: "Is TNCP Approved?",
+                        yes: [
+                            { key: "approvalNumber", label: "TNCP Approval Number", placeholder: "Enter approval number" },
+                        ],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive TNCP Approval", type: "select", options: TIME_TO_APPROVAL_OPTIONS }],
+                        documentLabel: "Upload TNCP Document (Optional)",
+                    }}
+                />
+                <ApprovalBlock
+                    title="C. Development Permission"
+                    approvalKey="developmentPermission"
+                    fields={{
+                        statusLabel: "Is Development Permission Approved?",
+                        yes: [
+                            { key: "permissionNumber", label: "Development Permission Number", placeholder: "Enter permission number" },
+                            { key: "permissionDate", label: "Development Permission Approved Date", placeholder: "Select approved date", type: "date" },
+                        ],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Development Permission", type: "select", options: TIME_TO_APPROVAL_OPTIONS }],
+                        documentLabel: "Upload Development Permission Document",
+                    }}
+                />
+                <ApprovalBlock
+                    title="D. RERA Approval"
+                    approvalKey="rera"
+                    fields={{
+                        statusLabel: "Is the Project RERA Approved?",
+                        yes: [
+                            { key: "registrationNumber", label: "RERA Registration Number", placeholder: "Enter RERA registration number" },
+                            { key: "registrationDate", label: "RERA Registration Date", placeholder: "Select registration date", type: "date" },
+                        ],
+                        no: [
+                            { key: "reasonNotAvailable", label: "Reason for RERA Not Available", placeholder: "Mention reason" },
+                            { key: "expectedTime", label: "Expected Date to Receive RERA Approval", placeholder: "Select expected date", type: "date" },
+                        ],
+                        documentLabel: "Upload RERA Certificate",
+                    }}
+                />
+                <ApprovalBlock
+                    title="E. Building Permission"
+                    approvalKey="buildingPermission"
+                    options={OPTIONAL_APPROVAL_STATUS_OPTIONS}
+                    fields={{
+                        statusLabel: "Is Building Permission Approved?",
+                        yes: [],
+                        no: [],
+                    }}
+                />
+            </FormSection>
+        </View>
+    );
+}
+
+function Step5({ errors }) {
+    const dispatch = useDispatch();
+    const { step5 } = useSelector((state) => state.project);
+    const updateField = (field, value) => dispatch(updateStep5({ [field]: value }));
+
+    return (
+        <View className="gap-5">
+            <StepErrorSummary errors={errors} />
+            <Text className="text-base font-lato-bold text-black">Financial, Guideline & Ownership Verification</Text>
+
+            <FormSection title="Government Guideline Value">
+                <FieldInput label="Guideline Value Amount" placeholder="Example: Rs. 3,500 per sq. ft." keyboardType="numeric" value={step5.guidelineValueAmount} onChangeText={(value) => updateField("guidelineValueAmount", value)} />
+                <OptionGroup label="Guideline Value Unit" options={GUIDELINE_VALUE_UNITS} value={step5.guidelineValueUnit} onChange={(value) => updateField("guidelineValueUnit", value)} />
+                <FieldInput label="Guideline Year" placeholder="Enter guideline year, if required" keyboardType="numeric" value={step5.guidelineYear} onChangeText={(value) => updateField("guidelineYear", value)} />
+            </FormSection>
+
+            <FormSection title="Registry & Stamp Duty Details">
+                <OptionGroup label="Registry Charges Available?" options={["Yes", "No"]} value={step5.registryChargesAvailable} onChange={(value) => updateField("registryChargesAvailable", value)} />
+                {step5.registryChargesAvailable === "Yes" && (
+                    <View className="gap-4">
+                        <FieldInput label="Registry Charges for Male Buyer" placeholder="Percentage / amount" value={step5.registryChargesMaleBuyer} onChangeText={(value) => updateField("registryChargesMaleBuyer", value)} />
+                        <FieldInput label="Registry Charges for Female Buyer" placeholder="Percentage / amount" value={step5.registryChargesFemaleBuyer} onChangeText={(value) => updateField("registryChargesFemaleBuyer", value)} />
+                        <FieldInput label="Other Government Charges, if applicable" placeholder="Percentage / amount" value={step5.otherGovernmentCharges} onChangeText={(value) => updateField("otherGovernmentCharges", value)} />
+                    </View>
+                )}
+            </FormSection>
+
+            <FormSection title="Loan Availability">
+                <OptionGroup label="Is Loan Available on this Project?" options={["Yes", "No"]} value={step5.loanAvailable} onChange={(value) => updateField("loanAvailable", value)} />
+                {step5.loanAvailable === "Yes" && (
+                    <View className="gap-4">
+                        <OptionGroup label="Bank Tie-up Available?" options={["Yes", "No"]} value={step5.bankTieUpAvailable} onChange={(value) => updateField("bankTieUpAvailable", value)} />
+                        <FieldInput label="Tie-up Bank Name" placeholder="Enter bank name" value={step5.tieUpBankName} onChangeText={(value) => updateField("tieUpBankName", value)} />
+                        <FieldInput label="Loan Approval Status" placeholder="Enter loan approval status" value={step5.loanApprovalStatus} onChangeText={(value) => updateField("loanApprovalStatus", value)} />
+                        <FieldInput label="Maximum Loan Percentage, if known" placeholder="Example: 80%" keyboardType="numeric" value={step5.maximumLoanPercentage} onChangeText={(value) => updateField("maximumLoanPercentage", value)} />
+                        <FieldInput label="Required Documents for Loan, if any" placeholder="Mention required documents" multiline value={step5.requiredLoanDocuments} onChangeText={(value) => updateField("requiredLoanDocuments", value)} />
+                        {step5.bankTieUpAvailable === "Yes" && (
+                            <FieldInput label="Bank Name / Bank List" placeholder="Enter bank name / bank list" value={step5.bankNameList} onChangeText={(value) => updateField("bankNameList", value)} />
+                        )}
+                    </View>
+                )}
+            </FormSection>
+
+            <FormSection title="Project Ownership Type">
+                <OptionGroup label="Project Ownership Type" options={OWNERSHIP_TYPES} value={step5.ownershipType} onChange={(value) => updateField("ownershipType", value)} />
+                {step5.ownershipType === "Owned Project" && (
+                    <View className="gap-4">
+                        <FieldInput label="Owner / Company Name" placeholder="Enter owner or company name" value={step5.ownedOwnerCompanyName} onChangeText={(value) => updateField("ownedOwnerCompanyName", value)} />
+                        <DocumentUploadButton label="Ownership Document Upload" documents={step5.ownedDocuments} onDocumentsPicked={(documents) => updateField("ownedDocuments", documents)} />
+                    </View>
+                )}
+                {step5.ownershipType === "Joint Venture Project" && (
+                    <View className="gap-4">
+                        <FieldInput label="Land Owner Name" placeholder="Enter land owner name" value={step5.jvLandOwnerName} onChangeText={(value) => updateField("jvLandOwnerName", value)} />
+                        <FieldInput label="Developer / Builder Name" placeholder="Enter developer / builder name" value={step5.jvDeveloperBuilderName} onChangeText={(value) => updateField("jvDeveloperBuilderName", value)} />
+                        <OptionGroup label="JV Agreement Available?" options={["Yes", "No"]} value={step5.jvAgreementAvailable} onChange={(value) => updateField("jvAgreementAvailable", value)} />
+                        <DocumentUploadButton label="Upload JV Agreement, if available" documents={step5.jvAgreementDocuments} onDocumentsPicked={(documents) => updateField("jvAgreementDocuments", documents)} />
+                        <FieldInput label="Revenue / Area Sharing Details" placeholder="Optional" multiline value={step5.jvRevenueAreaSharingDetails} onChangeText={(value) => updateField("jvRevenueAreaSharingDetails", value)} />
+                    </View>
+                )}
+                {step5.ownershipType === "Development Agreement Project" && (
+                    <View className="gap-4">
+                        <FieldInput label="Land Owner Name" placeholder="Enter land owner name" value={step5.developmentLandOwnerName} onChangeText={(value) => updateField("developmentLandOwnerName", value)} />
+                        <FieldInput label="Developer Name" placeholder="Enter developer name" value={step5.developmentDeveloperName} onChangeText={(value) => updateField("developmentDeveloperName", value)} />
+                        <OptionGroup label="Development Agreement Available?" options={["Yes", "No"]} value={step5.developmentAgreementAvailable} onChange={(value) => updateField("developmentAgreementAvailable", value)} />
+                        <DocumentUploadButton label="Upload Development Agreement" documents={step5.developmentAgreementDocuments} onDocumentsPicked={(documents) => updateField("developmentAgreementDocuments", documents)} />
+                    </View>
+                )}
+                {step5.ownershipType === "Other" && (
+                    <View className="gap-4">
+                        <FieldInput label="Mention Ownership Type" placeholder="Enter ownership type" value={step5.otherOwnershipType} onChangeText={(value) => updateField("otherOwnershipType", value)} />
+                        <DocumentUploadButton label="Upload Supporting Document" documents={step5.ownershipSupportingDocuments} onDocumentsPicked={(documents) => updateField("ownershipSupportingDocuments", documents)} />
+                    </View>
+                )}
+            </FormSection>
+
+            <FormSection title="Land / Project Title Verification">
+                <OptionGroup label="Is Title Verification Completed?" options={["Yes", "No", "Under Process"]} value={step5.titleVerificationStatus} onChange={(value) => updateField("titleVerificationStatus", value)} />
+                {step5.titleVerificationStatus === "Yes" && (
+                    <View className="gap-4">
+                        <FieldInput label="Title Verification Done By" placeholder="Enter verifier name / company" value={step5.titleVerificationDoneBy} onChangeText={(value) => updateField("titleVerificationDoneBy", value)} />
+                        <DateFieldInput label="Title Verification Date" placeholder="Select verification date" value={step5.titleVerificationDate} onChangeText={(value) => updateField("titleVerificationDate", value)} />
+                        <DocumentUploadButton label="Upload Title Report" documents={step5.titleReportDocuments} onDocumentsPicked={(documents) => updateField("titleReportDocuments", documents)} />
+                    </View>
+                )}
+                {step5.titleVerificationStatus === "Under Process" && (
+                    <DateFieldInput label="Expected Completion Date" placeholder="Select expected completion date" value={step5.titleExpectedCompletionDate} onChangeText={(value) => updateField("titleExpectedCompletionDate", value)} />
+                )}
+            </FormSection>
+
+            <FormSection title="Financial Remarks">
+                <FieldInput
+                    label="Financial / Ownership Remarks"
+                    placeholder="Add any important financial, guideline, loan, or ownership-related remarks"
+                    multiline
+                    value={step5.financialOwnershipRemarks}
+                    onChangeText={(value) => updateField("financialOwnershipRemarks", value)}
+                />
+            </FormSection>
+        </View>
+    );
+}
+
+// --- Step 6 Component ---
+function Step6({ errors }) {
+    const dispatch = useDispatch();
+    const { step6 } = useSelector((state) => state.project);
+
     const updateField = (field, value) => {
-        dispatch(updateStep4({
-            unitId: currentUnitId,
-            data: { [field]: value }
-        }));
+        dispatch(updateStep6({ [field]: value }));
     };
 
     const pickImages = async () => {
@@ -2319,8 +2918,35 @@ function Step4() {
         });
 
         if (!result.canceled) {
-            updateField('images', [...currentData.images, ...result.assets]);
+            updateField('images', [...step6.images, ...result.assets]);
         }
+    };
+
+    const removeImage = (imageIndex) => {
+        updateField('images', step6.images.filter((_, index) => index !== imageIndex));
+    };
+
+    const pickVideos = async () => {
+        const currentVideos = step6.videos || [];
+        if (currentVideos.length >= 2) {
+            alert('You can add up to 2 videos for this project.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            allowsMultipleSelection: true,
+            selectionLimit: 2 - currentVideos.length,
+            quality: 0.8,
+        });
+
+        if (!result.canceled) {
+            updateField('videos', [...currentVideos, ...result.assets].slice(0, 2));
+        }
+    };
+
+    const removeVideo = (videoIndex) => {
+        updateField('videos', (step6.videos || []).filter((_, index) => index !== videoIndex));
     };
 
     const pickDocuments = async () => {
@@ -2330,7 +2956,7 @@ function Step4() {
         });
 
         if (!result.canceled) {
-            updateField('documents', [...currentData.documents, ...result.assets]);
+            updateField('documents', [...step6.documents, ...result.assets]);
         }
     };
 
@@ -2353,68 +2979,14 @@ function Step4() {
         </TouchableOpacity>
     );
 
-    const selectedUnit = allUnits.find(u => u.id === currentUnitId);
-
-    if (allUnits.length === 0) {
-        return (
-            <View className="items-center py-10">
-                <Text className="text-gray-400 font-lato text-center px-10">Please add property types and their quantities in the previous steps.</Text>
-            </View>
-        );
-    }
-
     return (
         <View className="gap-5">
-            <Text className="text-base font-lato-bold text-black">Upload Images & Pricing</Text>
-
-            {/* Unit Selector Dropdown */}
-            <View className="z-[100]">
-                <Text className="text-xs font-lato-bold text-black mb-2">Select Unit to Configure</Text>
-                <TouchableOpacity
-                    onPress={() => setShowUnitDropdown(!showUnitDropdown)}
-                    className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
-                >
-                    <View>
-                        <Text className="text-[13px] font-lato-bold text-black">
-                            {selectedUnit ? selectedUnit.label : 'Select Unit'}
-                        </Text>
-                        <Text className="text-[10px] text-gray-500 font-lato">
-                            {selectedUnit?.bhk}
-                        </Text>
-                    </View>
-                    <Ionicons name={showUnitDropdown ? "chevron-up" : "chevron-down"} size={20} color="#666" />
-                </TouchableOpacity>
-
-                {showUnitDropdown && (
-                    <View className="absolute top-[72px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[101] overflow-hidden max-h-60">
-                        <ScrollView nestedScrollEnabled={true}>
-                            {allUnits.map((item) => (
-                                <TouchableOpacity
-                                    key={item.id}
-                                    onPress={() => {
-                                        dispatch(updateStep4({ currentSelectedUnitId: item.id }));
-                                        setShowUnitDropdown(false);
-                                    }}
-                                    className={`px-4 py-3 border-b border-gray-50 ${currentUnitId === item.id ? 'bg-[#F4F7FF]' : ''}`}
-                                >
-                                    <Text className={`text-[12px] font-lato-bold ${currentUnitId === item.id ? 'text-[#4A43EC]' : 'text-gray-800'}`}>
-                                        {item.label}
-                                    </Text>
-                                    <Text className="text-[10px] text-gray-500 font-lato mt-0.5">
-                                        {item.bhk}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    </View>
-                )}
-            </View>
-
-            <View className="h-[1px] bg-gray-100 my-1" />
+            <StepErrorSummary errors={errors} />
+            <Text className="text-base font-lato-bold text-black">Project Images & Submission</Text>
 
             {/* Image Upload */}
             <View className="mt-1">
-                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload Images for this unit</Text>
+                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload Images for this project</Text>
                 <TouchableOpacity
                     className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-8 items-center justify-center"
                     onPress={pickImages}
@@ -2423,25 +2995,63 @@ function Step4() {
                         <Ionicons name="cloud-upload-outline" size={20} color="#4A43EC" />
                     </View>
                     <Text className="text-xs font-lato-bold text-[#4A43EC]">
-                        {currentData.images.length > 0 ? `${currentData.images.length} Photos Added` : "Add atleast 5 Photos"}
+                        {step6.images.length > 0 ? `${step6.images.length} Photos Added` : "Add at least 3 Photos"}
                     </Text>
                     <Text className="text-[9px] text-gray-400 font-lato mt-0.5">click from camera or browse to upload</Text>
                 </TouchableOpacity>
-                {currentData.images.length > 0 && (
+                {step6.images.length > 0 && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
-                        {currentData.images.map((img, idx) => (
-                            <Image key={idx} source={{ uri: img.uri }} className="w-16 h-16 rounded-lg mr-2" />
+                        {step6.images.map((img, idx) => (
+                            <View key={`${img.uri}-${idx}`} className="mr-2 relative">
+                                <Image source={{ uri: img.uri }} className="w-16 h-16 rounded-lg" />
+                                <TouchableOpacity
+                                    onPress={() => removeImage(idx)}
+                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 items-center justify-center"
+                                    activeOpacity={0.8}
+                                >
+                                    <Ionicons name="close" size={11} color="white" />
+                                </TouchableOpacity>
+                            </View>
                         ))}
                     </ScrollView>
                 )}
             </View>
 
+            {/* Video Upload */}
+            <View>
+                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload Project Videos</Text>
+                <TouchableOpacity
+                    className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-8 items-center justify-center"
+                    onPress={pickVideos}
+                >
+                    <View className="w-10 h-10 bg-[#EBEAFF] rounded-full items-center justify-center mb-2.5">
+                        <Ionicons name="videocam-outline" size={20} color="#4A43EC" />
+                    </View>
+                    <Text className="text-xs font-lato-bold text-[#4A43EC]">
+                        {(step6.videos || []).length > 0 ? `${(step6.videos || []).length} Video(s) Added` : "Add 1 to 2 Videos"}
+                    </Text>
+                    <Text className="text-[9px] text-gray-400 font-lato mt-0.5">click from camera or browse to upload</Text>
+                </TouchableOpacity>
+                {(step6.videos || []).length > 0 && (
+                    <View className="gap-2 mt-3">
+                        {(step6.videos || []).map((video, idx) => (
+                            <View key={`${video.uri}-${idx}`} className="flex-row items-center bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                                <Ionicons name="play-circle-outline" size={18} color="#4A43EC" />
+                                <Text className="text-xs text-gray-700 font-lato-medium flex-1 ml-2" numberOfLines={1}>
+                                    {video.fileName || video.name || `Project video ${idx + 1}`}
+                                </Text>
+                                <TouchableOpacity onPress={() => removeVideo(idx)} className="w-7 h-7 rounded-full bg-white items-center justify-center">
+                                    <Ionicons name="close" size={14} color="#6B7280" />
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                    </View>
+                )}
+            </View>
+
             {/* Document Upload */}
             <View>
-                <View className="flex-row items-center gap-1 mb-2.5">
-                    <Text className="text-xs font-lato-bold text-black">Upload Property Documents</Text>
-                    <Text className="text-[9px] text-gray-400 font-lato">(Optional)</Text>
-                </View>
+                <Text className="text-xs font-lato-bold text-black mb-2.5">Upload project brochure</Text>
                 <TouchableOpacity
                     className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-8 items-center justify-center"
                     onPress={pickDocuments}
@@ -2450,61 +3060,10 @@ function Step4() {
                         <Ionicons name="document-text-outline" size={20} color="#4A43EC" />
                     </View>
                     <Text className="text-xs font-lato-bold text-[#4A43EC]">
-                        {currentData.documents.length > 0 ? `${currentData.documents.length} Documents Added` : "Upload Documents"}
+                        {step6.documents.length > 0 ? `${step6.documents.length} Brochure(s) Added` : "Upload project brochure"}
                     </Text>
                     <Text className="text-[9px] text-gray-400 font-lato mt-0.5">click from camera or browse to upload</Text>
                 </TouchableOpacity>
-            </View>
-
-            {/* Price Section */}
-            <View className="mt-1">
-                <Text className="text-xs font-lato-bold text-black mb-2.5">Selling Price</Text>
-                <Pressable onPress={() => priceRef.current?.focus()} className="flex-row bg-white border border-gray-200 rounded-xl px-4 h-12 items-center">
-                    <Text className="text-base font-lato-bold text-gray-500 mr-2">₹</Text>
-                    <TextInput
-                        ref={priceRef}
-                        className="flex-1 text-[13px] font-lato-bold text-black"
-                        placeholder="0.00"
-                        placeholderTextColor="#9CA3AF"
-                        keyboardType="numeric"
-                        value={currentData.sellingPrice}
-                        onChangeText={(v) => updateField('sellingPrice', v)}
-                        style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
-                    />
-                </Pressable>
-            </View>
-
-            {/* Checkboxes */}
-            <View>
-                <Checkbox
-                    label="Price Negotiable"
-                    value={currentData.priceNegotiable}
-                    onValueChange={(v) => updateField('priceNegotiable', v)}
-                />
-                <Checkbox
-                    label="Tax and Govt. charges exclude"
-                    value={currentData.taxExclude}
-                    onValueChange={(v) => updateField('taxExclude', v)}
-                />
-            </View>
-
-            {/* Payment Mode */}
-            <View>
-                <Text className="text-xs font-lato-bold text-black mb-3">Preferred Payment Mode</Text>
-                <View className="flex-row gap-3">
-                    <TouchableOpacity
-                        onPress={() => updateField('paymentMode', 'full')}
-                        className={`flex-1 py-2.5 rounded-full border items-center ${currentData.paymentMode === 'full' ? 'bg-[#EBEAFF] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
-                    >
-                        <Text className={`text-[10px] font-lato-bold ${currentData.paymentMode === 'full' ? 'text-[#4A43EC]' : 'text-gray-500'}`}>Full Payment</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => updateField('paymentMode', 'emi')}
-                        className={`flex-1 py-2.5 rounded-full border items-center ${currentData.paymentMode === 'emi' ? 'bg-[#EBEAFF] border-[#4A43EC]' : 'bg-white border-gray-200'}`}
-                    >
-                        <Text className={`text-[10px] font-lato-bold ${currentData.paymentMode === 'emi' ? 'text-[#4A43EC]' : 'text-gray-500'}`}>EMI/ Loan Available</Text>
-                    </TouchableOpacity>
-                </View>
             </View>
 
             {/* Agreement */}
@@ -2512,7 +3071,7 @@ function Step4() {
                 <Text className="text-xs font-lato-bold text-black mb-3">Agreement & Submission</Text>
                 <Checkbox
                     label="I confirm that the provided details are accurate and that I am the legal owner or have the right to list this property for sale."
-                    value={currentData.agreed}
+                    value={step6.agreed}
                     onValueChange={(v) => updateField('agreed', v)}
                 />
             </View>
