@@ -84,7 +84,7 @@ export const authService = {
       await AsyncStorage.removeItem('authToken');
       await AsyncStorage.removeItem('userData');
     } catch (error) {
-      console.error('⚠️ [AUTH SERVICE] Logout error:', error.message);
+      console.log('⚠️ [AUTH SERVICE] Logout error:', error.message);
     }
   },
 
@@ -93,7 +93,7 @@ export const authService = {
     try {
       return await AsyncStorage.getItem('authToken');
     } catch (error) {
-      console.error('⚠️ [AUTH SERVICE] Get token error:', error.message);
+      console.log('⚠️ [AUTH SERVICE] Get token error:', error.message);
       return null;
     }
   },
@@ -104,7 +104,7 @@ export const authService = {
       const userData = await AsyncStorage.getItem('userData');
       return userData ? JSON.parse(userData) : null;
     } catch (error) {
-      console.error('⚠️ [AUTH SERVICE] Get user data error:', error.message);
+      console.log('⚠️ [AUTH SERVICE] Get user data error:', error.message);
       return null;
     }
   },
@@ -115,7 +115,7 @@ export const authService = {
       const token = await AsyncStorage.getItem('authToken');
       return !!token;
     } catch (error) {
-      console.warn('⚠️ [AUTH SERVICE] isAuthenticated error:', error.message);
+      console.log('⚠️ [AUTH SERVICE] isAuthenticated error:', error.message);
       return false;
     }
   },

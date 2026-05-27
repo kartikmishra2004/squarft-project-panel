@@ -601,10 +601,10 @@ export default function AddProject() {
                                 {/* Next Button */}
                                 <View className="mt-8 mb-4">
                                     <TouchableOpacity
-                                        className={`py-4 rounded-xl items-center ${isSubmitting ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
+                                        className={`py-4 rounded-xl items-center ${isNextDisabled() || isSubmitting ? 'bg-gray-300' : 'bg-[#4A43EC]'}`}
                                         activeOpacity={0.8}
                                         onPress={handleNext}
-                                        disabled={isSubmitting}
+                                        disabled={isNextDisabled() || isSubmitting}
                                     >
                                         <Text className="text-white text-sm font-lato-bold">
                                             {isSubmitting ? "Please wait..." : currentStep === 6 ? "Submit" : "Next"}
