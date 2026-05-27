@@ -152,7 +152,7 @@ export default function Register() {
                                         throw new Error('Login response was not successful');
                                     }
                                 } catch (loginErr) {
-                                    console.error(' [REGISTER PAGE] Auto-login error:', loginErr);
+                                    console.log(' [REGISTER PAGE] Auto-login error:', loginErr);
                                     Alert.alert(
                                         'Login Required',
                                         'Account created successfully but auto-login failed. Please login manually.',
@@ -173,7 +173,7 @@ export default function Register() {
                 Alert.alert('Registration Failed', 'Invalid response from server. Please try again.');
             }
         } catch (err) {
-            console.error(' [REGISTER PAGE] Registration error caught:', err);
+            console.log(' [REGISTER PAGE] Registration error caught:', err);
             
             const errorStatus = err?.status || err?.response?.status;
             const errorMessage = err?.message || err?.response?.data?.message || 'Registration failed. Please try again.';

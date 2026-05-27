@@ -33,7 +33,7 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
-    console.error(' [API REQUEST ERROR]', error);
+    console.log(' [API REQUEST ERROR]', error);
     return Promise.reject(error);
   }
 );
@@ -46,7 +46,7 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
-    console.error(' [API RESPONSE ERROR]', {
+    console.log(' [API RESPONSE ERROR]', {
       url: error.config?.url,
       status: error.response?.status,
       data: error.response?.data,

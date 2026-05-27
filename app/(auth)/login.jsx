@@ -59,7 +59,7 @@ export default function Login() {
                 Alert.alert('Login Failed', 'Invalid response from server. Please try again.');
             }
         } catch (err) {
-            console.error(' [LOGIN PAGE] Login error caught:', err);
+            console.log(' [LOGIN PAGE] Login error caught:', err);
             
             // Get error details safely
             const errorStatus = err?.status;
