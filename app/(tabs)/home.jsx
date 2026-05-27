@@ -1,8 +1,8 @@
-import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform, Animated, Easing } from "react-native";
+import { Text, View, ScrollView, Image, TouchableOpacity, Modal, TextInput, KeyboardAvoidingView, Platform, Animated, Easing, ActivityIndicator, Alert, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
@@ -10,6 +10,8 @@ import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
 import { updateProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
+import { visitService } from "../../services/visitService";
+import { projectService } from "../../services/projectService";
 
 const profileImg = require("../../assets/images/user_profile.png");
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
@@ -46,6 +48,16 @@ export default function Home() {
     const [selectedPlotStack, setSelectedPlotStack] = useState("stack-a");
     const [selectedPlotUnit, setSelectedPlotUnit] = useState("A-1202");
     const [selectedRangeByType, setSelectedRangeByType] = useState({});
+    
+    // Visits state
+    const [visitStats, setVisitStats] = useState(null);
+    const [upcomingVisits, setUpcomingVisits] = useState([]);
+    const [visitsLoading, setVisitsLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    const [realProjectId, setRealProjectId] = useState(null);
+    const [projectsLoading, setProjectsLoading] = useState(true);
+    const [backendProjects, setBackendProjects] = useState([]);
+    
     const tabs = HOME_TABS;
     const inventoryTabs = INVENTORY_TABS;
     const statusOptions = STATUS_OPTIONS;
@@ -268,6 +280,9 @@ export default function Home() {
         setIsProjectDropdownOpen(false);
         setSelectedDeal(null);
         setIsProjectDetailVisible(false);
+        // Clear visit data when switching projects
+        setVisitStats(null);
+        setUpcomingVisits([]);
     };
 
     const getPropertyDetailText = (inventoryTypeValue, item) => {
@@ -340,6 +355,114 @@ export default function Home() {
                 return "muted";
         }
     };
+
+    // Fetch backend projects and store the mapping
+    const fetchBackendProjects = useCallback(async () => {
+        try {
+            setProjectsLoading(true);
+            console.log('🔵 [HOME] Fetching backend projects');
+            
+            const response = await projectService.listProjects();
+            
+            if (response.data && response.data.length > 0) {
+                setBackendProjects(response.data);
+                console.log('✅ [HOME] Backend projects fetched:', response.data.length);
+                // Set the first project as default
+                setRealProjectId(response.data[0].id);
+                return response.data;
+            } else {
+                console.log('⚠️ [HOME] No projects found in backend');
+                return [];
+            }
+        } catch (error) {
+            console.log('❌ [HOME] Failed to fetch backend projects:', error);
+            return [];
+        } finally {
+            setProjectsLoading(false);
+        }
+    }, []);
+
+    // Fetch visit data
+    const fetchVisitData = useCallback(async (projectId) => {
+        if (!projectId) {
+            console.log('⚠️ [HOME] No project ID provided, skipping visit fetch');
+            return;
+        }
+        
+        try {
+            setVisitsLoading(true);
+            console.log('🔵 [HOME] Fetching visit data for project:', projectId);
+            
+            const [statsResponse, upcomingResponse] = await Promise.all([
+                visitService.getVisitStats(projectId),
+                visitService.getUpcomingVisits(projectId, 10)
+            ]);
+            
+            if (statsResponse.success) {
+                setVisitStats(statsResponse.data);
+                console.log('✅ [HOME] Visit stats loaded:', statsResponse.data);
+            }
+            
+            if (upcomingResponse.success) {
+                setUpcomingVisits(upcomingResponse.data);
+                console.log('✅ [HOME] Upcoming visits loaded:', upcomingResponse.data.length);
+            }
+        } catch (error) {
+            console.log('❌ [HOME] Failed to fetch visit data:', error);
+            Alert.alert(
+                'Error Loading Visits',
+                error.message || 'Failed to load visit data. Please try again.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setVisitsLoading(false);
+        }
+    }, []);
+
+    // Load backend projects on mount
+    useEffect(() => {
+        fetchBackendProjects();
+    }, [fetchBackendProjects]);
+
+    // Get the backend project UUID for the currently selected project
+    const getBackendProjectId = useCallback(() => {
+        const selected = projectsData.find(p => p.id === selectedProjectId);
+        if (!selected) return null;
+        
+        // Try to find matching backend project by title or other identifying info
+        const backendProject = backendProjects.find(bp => 
+            bp.title === selected.title || bp.id === selectedProjectId
+        );
+        
+        return backendProject?.id || null;
+    }, [selectedProjectId, projectsData, backendProjects]);
+
+    // Load visit data when selected project changes (not just when tab changes)
+    useEffect(() => {
+        const backendProjectId = getBackendProjectId();
+        if (backendProjectId && activeTab === 'Visits') {
+            console.log('🔵 [HOME] Selected project ID changed, fetching visit data for:', backendProjectId);
+            fetchVisitData(backendProjectId);
+        }
+    }, [selectedProjectId, activeTab, getBackendProjectId, fetchVisitData]);
+
+    // Also fetch visits when user switches to Visits tab
+    useEffect(() => {
+        const backendProjectId = getBackendProjectId();
+        if (activeTab === 'Visits' && backendProjectId && !visitStats) {
+            console.log('🔵 [HOME] Visits tab activated, fetching visit data for:', backendProjectId);
+            fetchVisitData(backendProjectId);
+        }
+    }, [activeTab, getBackendProjectId, fetchVisitData, visitStats]);
+
+    // Pull to refresh handler
+    const onRefresh = useCallback(async () => {
+        const backendProjectId = getBackendProjectId();
+        if (!backendProjectId) return;
+        setRefreshing(true);
+        await fetchVisitData(backendProjectId);
+        setRefreshing(false);
+    }, [getBackendProjectId, fetchVisitData]);
 
     const getRangeLabel = (index, section) => section?.name || section?.label || `Range ${String.fromCharCode(65 + index)}`;
 
@@ -1201,79 +1324,179 @@ export default function Home() {
                         )}
                     </View>
                 ) : activeTab === "Visits" ? (
-                    <View className="px-5 pt-5">
-                        <View className="flex-row justify-between mb-4">
-                            {visitsData.metrics.map((metric, index) => (
-                                <View
-                                    key={metric.label}
-                                    className={`flex-1 bg-white rounded-[16px] border border-gray-100 items-center justify-center py-3.5 ${index < visitsData.metrics.length - 1 ? "mr-3" : ""}`}
-                                    style={{ minHeight: 96 }}
-                                >
-                                    <Text className="text-[#7C8AA5] text-[9px] font-lato-bold uppercase tracking-[1px]">{metric.label}</Text>
-                                    <Text className="mt-1 text-[24px] leading-[26px] font-lato-bold" style={{ color: metric.valueColor }}>
-                                        {metric.value}
-                                    </Text>
-                                    <Text className="mt-1 text-[10px] font-lato-bold text-[#22C55E]">↑ {metric.delta.replace("+", "")}</Text>
-                                </View>
-                            ))}
-                            {visitsData.metrics.length === 0 && (
-                                <View className="flex-1 bg-white rounded-[16px] border border-gray-100 py-8 px-5">
-                                    <Text className="text-gray-400 font-lato text-center">No visit metrics available for this project yet.</Text>
-                                </View>
-                            )}
-                        </View>
-
-                        <View className="flex-row items-center justify-between mb-3">
-                            <Text className="text-[16px] font-lato-bold text-[#1F2937]">Upcoming Follow-ups</Text>
-                            <TouchableOpacity>
-                                <Text className="text-[12px] font-lato-bold text-[#4A43EC]">See All</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View className="mb-4">
-                            {visitsData.followUps.map((item) => (
-                                <View
-                                    key={`${item.name}-${item.time}`}
-                                    className="bg-white rounded-[16px] border border-gray-100 px-3 py-3 mb-2.5"
-                                >
-                                    <View className="flex-row items-start">
-                                        <View className="w-9 h-9 rounded-full bg-[#E8ECFF] items-center justify-center mr-3 mt-0.5">
-                                            <Text className="text-[11px] font-lato-bold text-[#4A43EC]">{item.initials}</Text>
-                                        </View>
-
-                                        <View className="flex-1 pr-3">
-                                            <View className="flex-row items-start justify-between">
-                                                <View className="flex-1 pr-2">
-                                                    <Text className="text-[14px] font-lato-bold text-[#1F2937] leading-4">{item.name}</Text>
-                                                    <Text className="mt-0.5 text-[11px] font-lato text-[#8E9AAF]" numberOfLines={1}>
-                                                        {item.project}
-                                                    </Text>
-                                                </View>
-                                                <View className={`px-2.5 py-1 rounded-full ${getVisitChipStyle(item.tone)}`}>
-                                                    <Text className="text-[9px] font-lato-bold">{item.tone === "indigo" ? "Hot" : "Warm"}</Text>
-                                                </View>
+                    <ScrollView
+                        className="px-5 pt-5"
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
+                                colors={['#4A43EC']}
+                                tintColor="#4A43EC"
+                            />
+                        }
+                    >
+                        {visitsLoading && !refreshing ? (
+                            <View className="py-10">
+                                <ActivityIndicator size="large" color="#4A43EC" />
+                                <Text className="text-center text-gray-500 mt-3 font-lato">Loading visits...</Text>
+                            </View>
+                        ) : (
+                            <>
+                                {/* Visit Stats */}
+                                <View className="flex-row justify-between mb-4">
+                                    {visitStats ? (
+                                        <>
+                                            <View className="flex-1 bg-white rounded-[16px] border border-gray-100 items-center justify-center py-3.5 mr-3" style={{ minHeight: 96 }}>
+                                                <Text className="text-[#7C8AA5] text-[9px] font-lato-bold uppercase tracking-[1px]">TOTAL</Text>
+                                                <Text className="mt-1 text-[24px] leading-[26px] font-lato-bold text-[#4A43EC]">
+                                                    {visitStats.total || 0}
+                                                </Text>
+                                                <Text className="mt-1 text-[10px] font-lato text-[#8E9AAF]">Visits</Text>
                                             </View>
-
-                                            <View className="flex-row items-center mt-2">
-                                                <View className={`px-2.5 py-1 rounded-md ${getVisitChipStyle(item.tone)}`}>
-                                                    <Text className="text-[9px] font-lato-bold">{item.type}</Text>
-                                                </View>
-                                                <Text className="ml-2.5 text-[11px] font-lato text-[#8E9AAF]">{item.time}</Text>
+                                            <View className="flex-1 bg-white rounded-[16px] border border-gray-100 items-center justify-center py-3.5 mr-3" style={{ minHeight: 96 }}>
+                                                <Text className="text-[#7C8AA5] text-[9px] font-lato-bold uppercase tracking-[1px]">HOT</Text>
+                                                <Text className="mt-1 text-[24px] leading-[26px] font-lato-bold text-[#F97316]">
+                                                    {visitStats.hot || 0}
+                                                </Text>
+                                                <Text className="mt-1 text-[10px] font-lato text-[#8E9AAF]">Leads</Text>
                                             </View>
-
-                                            <Text className="mt-2 text-[10px] font-lato text-[#8E9AAF]">{item.salesperson}</Text>
-
+                                            <View className="flex-1 bg-white rounded-[16px] border border-gray-100 items-center justify-center py-3.5" style={{ minHeight: 96 }}>
+                                                <Text className="text-[#7C8AA5] text-[9px] font-lato-bold uppercase tracking-[1px]">CONV</Text>
+                                                <Text className="mt-1 text-[24px] leading-[26px] font-lato-bold text-[#22C55E]">
+                                                    {visitStats.conv || 0}
+                                                </Text>
+                                                <Text className="mt-1 text-[10px] font-lato text-[#8E9AAF]">Completed</Text>
+                                            </View>
+                                        </>
+                                    ) : (
+                                        <View className="flex-1 bg-white rounded-[16px] border border-gray-100 py-8 px-5">
+                                            <Text className="text-gray-400 font-lato text-center">No visit metrics available</Text>
                                         </View>
-                                    </View>
+                                    )}
                                 </View>
-                            ))}
-                            {visitsData.followUps.length === 0 && (
-                                <View className="bg-white rounded-[16px] border border-gray-100 py-8 px-5">
-                                    <Text className="text-gray-400 font-lato text-center">No follow-ups available for this project yet.</Text>
+
+                                {/* Upcoming Visits */}
+                                <View className="flex-row items-center justify-between mb-3">
+                                    <Text className="text-[16px] font-lato-bold text-[#1F2937]">Upcoming Visits</Text>
+                                    {upcomingVisits.length > 0 && (
+                                        <TouchableOpacity>
+                                            <Text className="text-[12px] font-lato-bold text-[#4A43EC]">See All</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
-                            )}
-                        </View>
-                    </View>
+
+                                <View className="mb-4">
+                                    {upcomingVisits.length > 0 ? (
+                                        upcomingVisits.map((visit) => {
+                                            // Generate initials from customer name
+                                            const getInitials = (name) => {
+                                                if (!name) return '?';
+                                                const parts = name.trim().split(' ');
+                                                if (parts.length >= 2) {
+                                                    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+                                                }
+                                                return name.substring(0, 2).toUpperCase();
+                                            };
+
+                                            // Format date and time
+                                            const formatDateTime = (dateString) => {
+                                                if (!dateString) return '';
+                                                const date = new Date(dateString);
+                                                const today = new Date();
+                                                const tomorrow = new Date(today);
+                                                tomorrow.setDate(tomorrow.getDate() + 1);
+                                                
+                                                const isToday = date.toDateString() === today.toDateString();
+                                                const isTomorrow = date.toDateString() === tomorrow.toDateString();
+                                                
+                                                const timeStr = date.toLocaleTimeString('en-US', { 
+                                                    hour: 'numeric', 
+                                                    minute: '2-digit',
+                                                    hour12: true 
+                                                });
+                                                
+                                                if (isToday) return `Today, ${timeStr}`;
+                                                if (isTomorrow) return `Tomorrow, ${timeStr}`;
+                                                
+                                                return date.toLocaleDateString('en-US', { 
+                                                    month: 'short', 
+                                                    day: 'numeric',
+                                                    hour: 'numeric',
+                                                    minute: '2-digit',
+                                                    hour12: true
+                                                });
+                                            };
+
+                                            // Map lead temperature to color
+                                            const getTempColor = (temp) => {
+                                                if (!temp) return 'indigo';
+                                                const t = temp.toLowerCase();
+                                                if (t === 'hot') return 'orange';
+                                                if (t === 'warm') return 'indigo';
+                                                return 'indigo';
+                                            };
+
+                                            const tempColor = getTempColor(visit.lead_temperature);
+                                            const tempLabel = visit.lead_temperature ? visit.lead_temperature.charAt(0).toUpperCase() + visit.lead_temperature.slice(1) : 'Warm';
+
+                                            return (
+                                                <View
+                                                    key={visit.id}
+                                                    className="bg-white rounded-[16px] border border-gray-100 px-3 py-3 mb-2.5"
+                                                >
+                                                    <View className="flex-row items-start">
+                                                        <View className="w-9 h-9 rounded-full bg-[#E8ECFF] items-center justify-center mr-3 mt-0.5">
+                                                            <Text className="text-[11px] font-lato-bold text-[#4A43EC]">
+                                                                {getInitials(visit.customer?.name)}
+                                                            </Text>
+                                                        </View>
+
+                                                        <View className="flex-1 pr-3">
+                                                            <View className="flex-row items-start justify-between">
+                                                                <View className="flex-1 pr-2">
+                                                                    <Text className="text-[14px] font-lato-bold text-[#1F2937] leading-4">
+                                                                        {visit.customer?.name || 'Unknown Customer'}
+                                                                    </Text>
+                                                                    <Text className="mt-0.5 text-[11px] font-lato text-[#8E9AAF]" numberOfLines={1}>
+                                                                        {visit.property?.title || visit.project?.name || 'Property'}
+                                                                    </Text>
+                                                                </View>
+                                                                <View className={`px-2.5 py-1 rounded-full ${getVisitChipStyle(tempColor)}`}>
+                                                                    <Text className="text-[9px] font-lato-bold">{tempLabel}</Text>
+                                                                </View>
+                                                            </View>
+
+                                                            <View className="flex-row items-center mt-2">
+                                                                <View className={`px-2.5 py-1 rounded-md ${getVisitChipStyle(tempColor)}`}>
+                                                                    <Text className="text-[9px] font-lato-bold">
+                                                                        {visit.property?.configuration || visit.property?.bedrooms ? `${visit.property.bedrooms} BHK` : 'Visit'}
+                                                                    </Text>
+                                                                </View>
+                                                                <Text className="ml-2.5 text-[11px] font-lato text-[#8E9AAF]">
+                                                                    {formatDateTime(visit.slot_start)}
+                                                                </Text>
+                                                            </View>
+
+                                                            {visit.sales_officer?.name && (
+                                                                <Text className="mt-2 text-[10px] font-lato text-[#8E9AAF]">
+                                                                    Officer: {visit.sales_officer.name}
+                                                                </Text>
+                                                            )}
+                                                        </View>
+                                                    </View>
+                                                </View>
+                                            );
+                                        })
+                                    ) : (
+                                        <View className="bg-white rounded-[16px] border border-gray-100 py-8 px-5">
+                                            <Ionicons name="calendar-outline" size={32} color="#D1D5DB" style={{ alignSelf: 'center', marginBottom: 8 }} />
+                                            <Text className="text-gray-400 font-lato text-center">No upcoming visits scheduled</Text>
+                                        </View>
+                                    )}
+                                </View>
+                            </>
+                        )}
+                    </ScrollView>
                 ) : activeTab === "Deals" ? (
                     <View className="px-5 pt-5 pb-4">
                         {dealsData.length > 0 ? dealsData.map((deal) => (
