@@ -13,6 +13,7 @@ import { addNotification } from "../../store/slices/notificationSlice";
 import { projectOverviewApi } from "../../services/api";
 import { visitService } from "../../services/visitService";
 import { projectService } from "../../services/projectService";
+import { dealService } from "../../services/dealService";
 
 const profileImg = require("../../assets/images/user_profile.png");
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
@@ -54,7 +55,7 @@ export default function Home() {
     const [overviewData, setOverviewData] = useState(null);
     const [overviewLoading, setOverviewLoading] = useState(false);
     const [selectedRangeByType, setSelectedRangeByType] = useState({});
-    
+
     // Visits state
     const [visitStats, setVisitStats] = useState(null);
     const [upcomingVisits, setUpcomingVisits] = useState([]);
@@ -63,7 +64,11 @@ export default function Home() {
     const [realProjectId, setRealProjectId] = useState(null);
     const [projectsLoading, setProjectsLoading] = useState(true);
     const [backendProjects, setBackendProjects] = useState([]);
-    
+
+    // Deals state
+    const [deals, setDeals] = useState([]);
+    const [dealsLoading, setDealsLoading] = useState(false);
+
     const tabs = HOME_TABS;
     const inventoryTabs = INVENTORY_TABS;
     const statusOptions = STATUS_OPTIONS;
@@ -136,7 +141,7 @@ export default function Home() {
     const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
     const unreadNotifications = notifications.filter(item => !item.watched).length;
 
-    
+
 
     const getInventoryDealTemplate = (inventoryTypeValue, unit) => {
         const deals = selectedProject.deals || [];
@@ -394,9 +399,9 @@ export default function Home() {
         try {
             setProjectsLoading(true);
             console.log('🔵 [HOME] Fetching backend projects');
-            
+
             const response = await projectService.listProjects();
-            
+
             if (response.data && response.data.length > 0) {
                 setBackendProjects(response.data);
                 console.log('✅ [HOME] Backend projects fetched:', response.data.length);
@@ -421,21 +426,21 @@ export default function Home() {
             console.log('⚠️ [HOME] No project ID provided, skipping visit fetch');
             return;
         }
-        
+
         try {
             setVisitsLoading(true);
             console.log('🔵 [HOME] Fetching visit data for project:', projectId);
-            
+
             const [statsResponse, upcomingResponse] = await Promise.all([
                 visitService.getVisitStats(projectId),
                 visitService.getUpcomingVisits(projectId, 10)
             ]);
-            
+
             if (statsResponse.success) {
                 setVisitStats(statsResponse.data);
                 console.log('✅ [HOME] Visit stats loaded:', statsResponse.data);
             }
-            
+
             if (upcomingResponse.success) {
                 setUpcomingVisits(upcomingResponse.data);
                 console.log('✅ [HOME] Upcoming visits loaded:', upcomingResponse.data.length);
@@ -463,36 +468,36 @@ export default function Home() {
         console.log('🔍 [HOME] Selected project ID from Redux:', selectedProjectId);
         console.log('🔍 [HOME] Projects data count:', projectsData.length);
         console.log('🔍 [HOME] Backend projects count:', backendProjects.length);
-        
+
         // First, check if selectedProjectId is already a valid UUID from backend
         const directMatch = backendProjects.find(bp => bp.id === selectedProjectId);
         if (directMatch) {
             console.log('✅ [HOME] Selected ID is already a backend UUID:', directMatch.name);
             return selectedProjectId;
         }
-        
+
         // If not, try to find by matching with projectsData
         const selected = projectsData.find(p => p.id === selectedProjectId);
         if (!selected) {
             console.log('⚠️ [HOME] No selected project found in projectsData');
-            
+
             // Fallback: use first backend project if available
             if (backendProjects.length > 0) {
                 console.log('⚠️ [HOME] Using first backend project as fallback:', backendProjects[0].name || backendProjects[0].title);
                 return backendProjects[0].id;
             }
-            
+
             return null;
         }
-        
+
         console.log('🔍 [HOME] Selected project title:', selected.title);
-        
+
         // Try to find matching backend project by title or name
-        const backendProject = backendProjects.find(bp => 
-            bp.name === selected.title || 
+        const backendProject = backendProjects.find(bp =>
+            bp.name === selected.title ||
             bp.title === selected.title
         );
-        
+
         if (backendProject) {
             console.log('✅ [HOME] Found matching backend project:', backendProject.name || backendProject.title);
             console.log('✅ [HOME] Backend project UUID:', backendProject.id);
@@ -500,13 +505,13 @@ export default function Home() {
         } else {
             console.log('⚠️ [HOME] No matching backend project found');
             console.log('⚠️ [HOME] Available backend projects:', backendProjects.map(bp => bp.name || bp.title));
-            
+
             // Fallback: use first backend project if available
             if (backendProjects.length > 0) {
                 console.log('⚠️ [HOME] Using first backend project as fallback:', backendProjects[0].name || backendProjects[0].title);
                 return backendProjects[0].id;
             }
-            
+
             return null;
         }
     }, [selectedProjectId, projectsData, backendProjects]);
@@ -534,9 +539,50 @@ export default function Home() {
         const backendProjectId = getBackendProjectId();
         if (!backendProjectId) return;
         setRefreshing(true);
-        await fetchVisitData(backendProjectId);
+        if (activeTab === 'Visits') {
+            await fetchVisitData(backendProjectId);
+        } else if (activeTab === 'Deals') {
+            await fetchDealsData(backendProjectId);
+        }
         setRefreshing(false);
-    }, [getBackendProjectId, fetchVisitData]);
+    }, [getBackendProjectId, fetchVisitData, activeTab]);
+
+    // Fetch deals data
+    const fetchDealsData = useCallback(async (projectId) => {
+        if (!projectId) {
+            console.log('⚠️ [HOME] No project ID provided, skipping deals fetch');
+            return;
+        }
+
+        try {
+            setDealsLoading(true);
+            console.log('🔵 [HOME] Fetching deals for project:', projectId);
+
+            const response = await dealService.getDealsByProjectId(projectId);
+
+            if (response.success) {
+                setDeals(response.data || []);
+                console.log('✅ [HOME] Deals loaded:', response.data?.length || 0);
+            }
+        } catch (error) {
+            console.log('❌ [HOME] Failed to fetch deals:', error);
+            Alert.alert(
+                'Error Loading Deals',
+                error.message || 'Failed to load deals. Please try again.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setDealsLoading(false);
+        }
+    }, []);
+
+    // Load deals when Deals tab is active
+    useEffect(() => {
+        const backendProjectId = getBackendProjectId();
+        if (activeTab === 'Deals' && backendProjectId) {
+            fetchDealsData(backendProjectId);
+        }
+    }, [activeTab, getBackendProjectId, fetchDealsData]);
 
     const getRangeLabel = (index, section) => section?.name || section?.label || `Range ${String.fromCharCode(65 + index)}`;
 
@@ -1325,7 +1371,7 @@ export default function Home() {
                     <TouchableOpacity
                         key={tab}
                         onPress={() => handleTabPress(tab)}
-                                className={`pb-2 px-1.5 ${activeTab === tab ? "border-b-2 border-[#4A43EC]" : ""}`}
+                        className={`pb-2 px-1.5 ${activeTab === tab ? "border-b-2 border-[#4A43EC]" : ""}`}
                     >
                         <Text className={`${activeTab === tab ? "text-[#4A43EC] font-lato-bold" : "text-gray-400 font-lato"} text-[11px]`}>
                             {tab}
@@ -1540,21 +1586,21 @@ export default function Home() {
                                                 const today = new Date();
                                                 const tomorrow = new Date(today);
                                                 tomorrow.setDate(tomorrow.getDate() + 1);
-                                                
+
                                                 const isToday = date.toDateString() === today.toDateString();
                                                 const isTomorrow = date.toDateString() === tomorrow.toDateString();
-                                                
-                                                const timeStr = date.toLocaleTimeString('en-US', { 
-                                                    hour: 'numeric', 
+
+                                                const timeStr = date.toLocaleTimeString('en-US', {
+                                                    hour: 'numeric',
                                                     minute: '2-digit',
-                                                    hour12: true 
+                                                    hour12: true
                                                 });
-                                                
+
                                                 if (isToday) return `Today, ${timeStr}`;
                                                 if (isTomorrow) return `Tomorrow, ${timeStr}`;
-                                                
-                                                return date.toLocaleDateString('en-US', { 
-                                                    month: 'short', 
+
+                                                return date.toLocaleDateString('en-US', {
+                                                    month: 'short',
                                                     day: 'numeric',
                                                     hour: 'numeric',
                                                     minute: '2-digit',
@@ -1633,76 +1679,116 @@ export default function Home() {
                         )}
                     </ScrollView>
                 ) : activeTab === "Deals" ? (
-                    <View className="px-5 pt-5 pb-4">
-                        {dealsData.length > 0 ? dealsData.map((deal) => (
-                            <TouchableOpacity
-                                key={deal.title}
-                                activeOpacity={0.9}
-                                onPress={() => {
-                                    setSelectedDeal(deal);
-                                    setIsProjectDetailVisible(true);
-                                }}
-                                className="bg-white rounded-[16px] border border-[#E3E7F0] mb-3.5 overflow-hidden"
-                                style={{
-                                    shadowColor: "#0F172A",
-                                    shadowOffset: { width: 0, height: 1 },
-                                    shadowOpacity: 0.04,
-                                    shadowRadius: 8,
-                                    elevation: 1,
-                                }}
-                            >
-                                <View className="px-3 pt-2 pb-2">
-                                    <View className="flex-row items-start justify-between mb-1">
-                                        <View className="flex-1 pr-2">
-                                            <Text className="text-[13px] font-lato-bold text-[#1F2937] leading-4" numberOfLines={1}>{deal.title}</Text>
-                                            <Text className="mt-0.5 text-[11px] font-lato text-[#7E889A]" numberOfLines={1}>{deal.bookedBy} • {deal.mobile}</Text>
-                                        </View>
-                                        <View className="items-end">
-                                            {(() => {
-                                                const mapped = mapDealStatus(deal);
-                                                const tone = getDealTone(mapped);
-                                                return (
-                                                    <>
-                                                        <View className={`px-2 py-0.5 rounded-full ${getDealStatusStyle(tone)}`}>
-                                                            <Text className="text-[9px] font-lato-bold">{mapped}</Text>
-                                                        </View>
-                                                        <Text className="mt-1 text-[10px] font-lato text-[#8E98AA]">{deal.bookingDate}</Text>
-                                                    </>
-                                                );
-                                            })()}
-                                        </View>
-                                    </View>
+                    <ScrollView
+                        className="px-5 pt-5 pb-4"
+                        refreshControl={
+                            <RefreshControl
+                                refreshing={refreshing}
+                                onRefresh={onRefresh}
+                                colors={['#4A43EC']}
+                                tintColor="#4A43EC"
+                            />
+                        }
+                    >
+                        {dealsLoading && !refreshing ? (
+                            <View className="py-10">
+                                <ActivityIndicator size="large" color="#4A43EC" />
+                                <Text className="text-center text-gray-500 mt-3 font-lato">Loading deals...</Text>
+                            </View>
+                        ) : (Array.isArray(deals) ? deals : deals?.data || []).length > 0 ? (
+                            
+                        
+                            (Array.isArray(deals) ? deals : deals?.data || []).map((deal) => {
 
-                                    <View className="mb-2">
-                                        <View className="flex-row items-center justify-between mb-1">
-                                            <Text className="text-[11px] font-lato-bold text-[#4B5563]">Payment</Text>
-                                            <Text className="text-[11px] font-lato-bold text-[#6F5DF5]">{deal.progress}%</Text>
-                                        </View>
-                                        <View className="h-[6px] rounded-full bg-[#ECEFF6] overflow-hidden">
-                                            <View className="h-full bg-[#3029E8] rounded-full" style={{ width: `${deal.progress}%` }} />
-                                        </View>
-                                    </View>
+                                const totalAmount = Number(deal.total_amount || deal.deal_value || deal.amount || 0);
+                                const paidAmount = Number(
+                                    deal.received_amount ||
+                                    deal.paid ||
+                                    0
+                                );
 
-                                    <View className="flex-row gap-2">
-                                        <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-1">
-                                            <Text className="text-[9px] font-lato-bold text-[#96A0B2]">DEAL VALUE</Text>
-                                            <Text className="mt-0.5 text-[12px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.dealValue}</Text>
-                                        </View>
-                                        {mapDealStatus(deal) === "Installment" ? (
-                                            <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-1">
-                                                <Text className="text-[9px] font-lato-bold text-[#96A0B2]">NEXT DUE</Text>
-                                                <Text className="mt-0.5 text-[12px] font-lato-bold text-[#1F2937]" numberOfLines={1}>{deal.nextDue}</Text>
+                                // Calculate dynamic percentage safely without dividing by zero
+                                const paymentPercentage = totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0;
+
+                                const customerName = deal.customer_name || deal.customer?.name || 'Customer';
+                                const customerPhone = deal.customer_phone || deal.customer?.phone || 'N/A';
+                                const propertyTitle = deal.property_title || deal.property?.title || 'Property Unit';
+
+                                return (
+                                    <TouchableOpacity
+                                        key={deal.id || Math.random().toString()}
+                                        activeOpacity={0.9}
+                                        onPress={() => {
+                                            setSelectedDeal(deal);
+                                            setIsProjectDetailVisible(true);
+                                        }}
+                                        className="bg-white rounded-[16px] border border-[#E3E7F0] mb-3.5 overflow-hidden"
+                                        style={{
+                                            shadowColor: "#0F172A",
+                                            shadowOffset: { width: 0, height: 1 },
+                                            shadowOpacity: 0.04,
+                                            shadowRadius: 8,
+                                            elevation: 1,
+                                        }}
+                                    >
+                                        <View className="px-3 pt-2 pb-2">
+                                            <View className="flex-row items-start justify-between mb-1">
+                                                <View className="flex-1 pr-2">
+                                                    <Text className="text-[13px] font-lato-bold text-[#1F2937] leading-4" numberOfLines={1}>
+                                                        {propertyTitle}
+                                                    </Text>
+                                                    <Text className="mt-0.5 text-[11px] font-lato text-[#7E889A]" numberOfLines={1}>
+                                                        {customerName} • {customerPhone}
+                                                    </Text>
+                                                </View>
+                                                <View className="items-end">
+                                                    <View className={`px-2 py-0.5 rounded-full ${getDealStatusStyle(deal.status === 'closed' || deal.status === 'completed' ? 'success' : deal.status === 'active' ? 'info' : 'muted')}`}>
+                                                        <Text className="text-[9px] font-lato-bold">{(deal.status || 'PENDING').toUpperCase()}</Text>
+                                                    </View>
+                                                    <Text className="mt-1 text-[10px] font-lato text-[#8E98AA]">
+                                                        {deal.created_at ? new Date(deal.created_at).toLocaleDateString() : 'N/A'}
+                                                    </Text>
+                                                </View>
                                             </View>
-                                        ) : null}
-                                    </View>
-                                </View>
-                            </TouchableOpacity>
-                        )) : (
+
+                                            <View className="mb-2">
+                                                <View className="flex-row items-center justify-between mb-1">
+                                                    <Text className="text-[11px] font-lato-bold text-[#4B5563]">Payment Progress</Text>
+                                                    <Text className="text-[11px] font-lato-bold text-[#6F5DF5]">{paymentPercentage}%</Text>
+                                                </View>
+                                                <View className="h-[6px] rounded-full bg-[#ECEFF6] overflow-hidden">
+                                                    <View
+                                                        className="h-full bg-[#3029E8] rounded-full"
+                                                        style={{ width: `${paymentPercentage}%` }}
+                                                    />
+                                                </View>
+                                            </View>
+
+                                            <View className="flex-row gap-2">
+                                                <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-1">
+                                                    <Text className="text-[9px] font-lato-bold text-[#96A0B2]">DEAL VALUE</Text>
+                                                    <Text className="mt-0.5 text-[12px] font-lato-bold text-[#1F2937]" numberOfLines={1}>
+                                                        ₹{totalAmount > 0 ? (totalAmount / 100000).toFixed(2) + 'L' : 'N/A'}
+                                                    </Text>
+                                                </View>
+                                                <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-1">
+                                                    <Text className="text-[9px] font-lato-bold text-[#96A0B2]">PAID</Text>
+                                                    <Text className="mt-0.5 text-[12px] font-lato-bold text-[#1F2937]" numberOfLines={1}>
+                                                        ₹{paidAmount > 0 ? (paidAmount / 100000).toFixed(2) + 'L' : '0.00L'}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })
+                        ) : (
                             <View className="bg-white rounded-[16px] border border-gray-100 py-10 px-5">
-                                <Text className="text-gray-400 font-lato text-center">No deals available for this project yet.</Text>
+                                <Ionicons name="document-text-outline" size={32} color="#D1D5DB" style={{ alignSelf: 'center', marginBottom: 8 }} />
+                                <Text className="text-gray-400 font-lato text-center">No deals found for this project</Text>
                             </View>
                         )}
-                    </View>
+                    </ScrollView>
                 ) : (
                     <View className="p-10 items-center">
                         <Text className="text-gray-400 font-lato">Coming Soon...</Text>
