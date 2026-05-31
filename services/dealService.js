@@ -24,8 +24,11 @@ export const dealService = {
     try {
       console.log('🔵 [DEAL SERVICE] Fetching deals for project:', projectId);
       const response = await requestWithFallback(
-        () => api.get(`/api/v1/project-panel/projects/${projectId}/deals`),
-        () => api.get(`/api/project-panel/projects/${projectId}/deals`)
+        () => api.get(`/api/project-developer/projects/${projectId}/deals`),
+        () => requestWithFallback(
+          () => api.get(`/api/v1/project-panel/projects/${projectId}/deals`),
+          () => api.get(`/api/project-panel/projects/${projectId}/deals`)
+        )
       );
       console.log('✅ [DEAL SERVICE] Deals received:', response.data);
       return response.data;
@@ -64,8 +67,11 @@ export const dealService = {
     try {
       console.log('🔵 [DEAL SERVICE] Fetching payment schedule for deal:', dealId);
       const response = await requestWithFallback(
-        () => api.get(`/api/v1/project-panel/deals/${dealId}/payment-schedule`),
-        () => api.get(`/api/project-panel/deals/${dealId}/payment-schedule`)
+        () => api.get(`/api/project-panel/inventory-deals/${dealId}/payment-schedule`),
+        () => requestWithFallback(
+          () => api.get(`/api/v1/project-panel/deals/${dealId}/payment-schedule`),
+          () => api.get(`/api/project-panel/deals/${dealId}/payment-schedule`)
+        )
       );
       console.log('✅ [DEAL SERVICE] Payment schedule received:', response.data);
       return response.data;
@@ -104,8 +110,13 @@ export const dealService = {
     try {
       console.log('🔵 [DEAL SERVICE] Collecting payment for deal:', dealId);
       const response = await requestWithFallback(
-        () => api.post(`/api/v1/project-panel/deals/${dealId}/payments/collect`, paymentData),
-        () => api.post(`/api/project-panel/deals/${dealId}/payments/collect`, paymentData)
+        paymentData.milestone_id
+          ? () => api.post(`/api/project-panel/inventory-deal-milestones/${paymentData.milestone_id}/collect`, paymentData)
+          : () => Promise.reject({ response: { status: 404 } }),
+        () => requestWithFallback(
+          () => api.post(`/api/v1/project-panel/deals/${dealId}/payments/collect`, paymentData),
+          () => api.post(`/api/project-panel/deals/${dealId}/payments/collect`, paymentData)
+        )
       );
       console.log('✅ [DEAL SERVICE] Payment collected:', response.data);
       return response.data;
@@ -116,6 +127,26 @@ export const dealService = {
         status: error.response?.status,
       });
       throw normalizeServiceError(error, 'Failed to collect payment');
+    }
+  },
+
+  // Get clicked inventory unit details for the deal/property modal
+  getInventoryUnitDetails: async (unitId) => {
+    try {
+      console.log('[DEAL SERVICE] Fetching inventory unit details:', unitId);
+      const response = await requestWithFallback(
+        () => api.get(`/api/project-developer/inventory-units/${unitId}/details`),
+        () => api.get(`/api/v1/project-developer/inventory-units/${unitId}/details`)
+      );
+      console.log('[DEAL SERVICE] Inventory unit details received:', response.data);
+      return response.data;
+    } catch (error) {
+      console.log('[DEAL SERVICE] Get inventory unit details error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+      throw normalizeServiceError(error, 'Failed to fetch inventory unit details');
     }
   },
 };
