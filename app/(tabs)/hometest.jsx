@@ -17,21 +17,6 @@ import { projectService } from "../../services/projectService";
 import { dealService } from "../../services/dealService";
 
 const profileImg = require("../../assets/images/user_profile.png");
-
-// Skeleton shimmer box
-const SkeletonBox = ({ width, height, borderRadius = 8, style }) => {
-    const shimmer = useRef(new Animated.Value(0)).current;
-    useEffect(() => {
-        Animated.loop(
-            Animated.sequence([
-                Animated.timing(shimmer, { toValue: 1, duration: 900, useNativeDriver: true }),
-                Animated.timing(shimmer, { toValue: 0, duration: 900, useNativeDriver: true }),
-            ])
-        ).start();
-    }, [shimmer]);
-    const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.7] });
-    return <Animated.View style={[{ width, height, borderRadius, backgroundColor: "#E2E8F0", opacity }, style]} />;
-};
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
 const DROPDOWN_LAYER = 2147483647;
 const INVENTORY_TABS = [
@@ -1407,44 +1392,9 @@ export default function Home() {
                     <View className="pt-2">
                         <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
                             {overviewLoading ? (
-                                <>
-                                    {/* Image skeleton */}
-                                    <View className="flex-row h-36">
-                                        <View className="flex-[2]">
-                                            <SkeletonBox width="100%" height={144} borderRadius={0} />
-                                        </View>
-                                        <View className="flex-1 ml-0.5">
-                                            <SkeletonBox width="100%" height={144} borderRadius={0} style={{ opacity: 0.5 }} />
-                                        </View>
-                                    </View>
-                                    {/* Content skeleton */}
-                                    <View className="p-3 gap-3">
-                                        <View className="flex-row gap-2">
-                                            <SkeletonBox width={80} height={10} />
-                                            <SkeletonBox width={100} height={10} />
-                                        </View>
-                                        <SkeletonBox width="60%" height={18} borderRadius={6} />
-                                        <SkeletonBox width="40%" height={11} borderRadius={5} />
-                                        <View className="border-t border-dashed border-gray-100 pt-3 flex-row gap-4">
-                                            <View className="flex-1 gap-1.5">
-                                                <SkeletonBox width={50} height={9} />
-                                                <SkeletonBox width={70} height={14} />
-                                            </View>
-                                            <View className="flex-1 gap-1.5">
-                                                <SkeletonBox width={50} height={9} />
-                                                <SkeletonBox width={70} height={14} />
-                                            </View>
-                                        </View>
-                                        <View className="flex-row gap-2 mt-1">
-                                            {[0,1,2,3].map(i => (
-                                                <View key={i} className="flex-1 rounded-lg py-1.5 items-center gap-1" style={{ backgroundColor: "#F8FAFC" }}>
-                                                    <SkeletonBox width={28} height={9} borderRadius={4} />
-                                                    <SkeletonBox width={20} height={13} borderRadius={4} />
-                                                </View>
-                                            ))}
-                                        </View>
-                                    </View>
-                                </>
+                                <View className="h-36 items-center justify-center">
+                                    <ActivityIndicator size="small" color="#4A43EC" />
+                                </View>
                             ) : (
                                 <View className="flex-row h-36">
                                     <View className="flex-[2] relative">
@@ -1772,9 +1722,6 @@ export default function Home() {
                                         key={deal.id || Math.random().toString()}
                                         activeOpacity={0.9}
                                         onPress={async () => {
-                                            console.log('🔵 [HOME] Deal clicked:', deal.id);
-                                            console.log('🔵 [HOME] Raw deal data:', JSON.stringify(deal, null, 2));
-                                            
                                             // Enrich deal data with property and user info for modal
                                             const enrichedDeal = {
                                                 ...deal,
@@ -1812,18 +1759,14 @@ export default function Home() {
                                                 // Fetch property details
                                                 if (deal.property_id) {
                                                     try {
-                                                        console.log('🔵 [HOME] Fetching property:', deal.property_id);
                                                         const propertyResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/v1/properties/${deal.property_id}`, { headers });
                                                         if (propertyResponse.ok) {
                                                             const propertyData = await propertyResponse.json();
                                                             const property = propertyData.data || propertyData;
-                                                            console.log('✅ [HOME] Property data:', property);
                                                             enrichedDeal.area = property.total_area_sqft;
                                                             enrichedDeal.area_sqft = property.total_area_sqft;
                                                             enrichedDeal.possession = property.possession_date;
                                                             enrichedDeal.possession_date = property.possession_date;
-                                                        } else {
-                                                            console.log('⚠️ [HOME] Property fetch failed:', propertyResponse.status);
                                                         }
                                                     } catch (err) {
                                                         console.log('⚠️ [HOME] Failed to fetch property:', err);
@@ -1833,7 +1776,6 @@ export default function Home() {
                                                 // Fetch user details if not already present
                                                 if (deal.user_id && !customerName) {
                                                     try {
-                                                        console.log('🔵 [HOME] Fetching user:', deal.user_id);
                                                         const userResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/v1/users/${deal.user_id}`, { headers });
                                                         if (userResponse.ok) {
                                                             const userData = await userResponse.json();
@@ -1853,19 +1795,15 @@ export default function Home() {
                                                 
                                                 // Fetch payment schedule to get token amount
                                                 try {
-                                                    console.log('🔵 [HOME] Fetching payment schedule for deal:', deal.id);
                                                     const scheduleResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/project-panel/deals/${deal.id}/payment-schedule`, { headers });
                                                     if (scheduleResponse.ok) {
                                                         const scheduleData = await scheduleResponse.json();
-                                                        console.log('✅ [HOME] Payment schedule data:', scheduleData);
                                                         const schedule = scheduleData.data?.schedule || scheduleData.schedule || [];
                                                         if (schedule.length > 0) {
                                                             const firstMilestone = schedule[0];
                                                             enrichedDeal.token_amount = firstMilestone.milestone_amount || firstMilestone.amount;
                                                             enrichedDeal.tokenAmount = firstMilestone.milestone_amount || firstMilestone.amount;
                                                         }
-                                                    } else {
-                                                        console.log('⚠️ [HOME] Payment schedule fetch failed:', scheduleResponse.status);
                                                     }
                                                 } catch (err) {
                                                     console.log('⚠️ [HOME] Failed to fetch payment schedule:', err);
@@ -1874,7 +1812,6 @@ export default function Home() {
                                                 console.log('⚠️ [HOME] Failed to enrich deal data:', error);
                                             }
                                             
-                                            console.log('✅ [HOME] Enriched deal:', JSON.stringify(enrichedDeal, null, 2));
                                             setSelectedDeal(enrichedDeal);
                                             setIsProjectDetailVisible(true);
                                         }}

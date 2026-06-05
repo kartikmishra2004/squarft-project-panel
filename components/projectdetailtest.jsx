@@ -229,18 +229,8 @@ const buildPaymentPlan = (variant) => {
 
 const derivePaymentSummary = (paymentPlan, variant) => {
     const target = getDealPayload(variant);
-    
-    // Prioritize deal data from variant over milestone calculation
-    const dealTotalAmount = parseAmount(firstPresent(target?.total_amount, target?.total_value, target?.deal_value, target?.dealValue, variant?.total_amount, variant?.deal_value, variant?.dealValue, target?.amount));
-    const dealCollectedAmount = parseAmount(firstPresent(target?.paid_amount, target?.received_amount, target?.receivedAmount, target?.received, target?.paid, variant?.received_amount, variant?.paid_amount));
-    
-    // Calculate from milestones as fallback
-    const milestoneTotalAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.totalAmount, 0);
-    const milestoneCollectedAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.collectedAmount, 0);
-    
-    // Use deal data if available, otherwise use milestone calculation
-    const totalAmount = dealTotalAmount > 0 ? dealTotalAmount : milestoneTotalAmount;
-    const collectedAmount = dealTotalAmount > 0 ? dealCollectedAmount : milestoneCollectedAmount;
+    const totalAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.totalAmount, 0) || parseAmount(firstPresent(target?.total_amount, target?.total_value, target?.deal_value, target?.dealValue, target?.amount));
+    const collectedAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.collectedAmount, 0) || parseAmount(firstPresent(target?.paid_amount, target?.received_amount, target?.receivedAmount, target?.received, target?.paid));
     const pendingAmount = Math.max(totalAmount - collectedAmount, 0);
     const nextDueMilestone = paymentPlan.find((milestone) => milestone.collectedAmount < milestone.totalAmount);
     const progress = totalAmount > 0 ? Math.min(100, Math.round((collectedAmount / totalAmount) * 100)) : (target?.progress || target?.payment_progress_percent || 0);
