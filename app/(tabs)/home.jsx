@@ -15,6 +15,21 @@ import { visitService } from "../../services/visitService";
 import { projectService } from "../../services/projectService";
 
 const profileImg = require("../../assets/images/user_profile.png");
+
+// Skeleton shimmer box
+const SkeletonBox = ({ width, height, borderRadius = 8, style }) => {
+    const shimmer = useRef(new Animated.Value(0)).current;
+    useEffect(() => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(shimmer, { toValue: 1, duration: 900, useNativeDriver: true }),
+                Animated.timing(shimmer, { toValue: 0, duration: 900, useNativeDriver: true }),
+            ])
+        ).start();
+    }, [shimmer]);
+    const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.7] });
+    return <Animated.View style={[{ width, height, borderRadius, backgroundColor: "#E2E8F0", opacity }, style]} />;
+};
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
 const DROPDOWN_LAYER = 2147483647;
 const INVENTORY_TABS = [
@@ -1343,9 +1358,44 @@ export default function Home() {
                     <View className="pt-2">
                         <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
                             {overviewLoading ? (
-                                <View className="h-36 items-center justify-center">
-                                    <ActivityIndicator size="small" color="#4A43EC" />
-                                </View>
+                                <>
+                                    {/* Image skeleton */}
+                                    <View className="flex-row h-36">
+                                        <View className="flex-[2]">
+                                            <SkeletonBox width="100%" height={144} borderRadius={0} />
+                                        </View>
+                                        <View className="flex-1 ml-0.5">
+                                            <SkeletonBox width="100%" height={144} borderRadius={0} style={{ opacity: 0.5 }} />
+                                        </View>
+                                    </View>
+                                    {/* Content skeleton */}
+                                    <View className="p-3 gap-3">
+                                        <View className="flex-row gap-2">
+                                            <SkeletonBox width={80} height={10} />
+                                            <SkeletonBox width={100} height={10} />
+                                        </View>
+                                        <SkeletonBox width="60%" height={18} borderRadius={6} />
+                                        <SkeletonBox width="40%" height={11} borderRadius={5} />
+                                        <View className="border-t border-dashed border-gray-100 pt-3 flex-row gap-4">
+                                            <View className="flex-1 gap-1.5">
+                                                <SkeletonBox width={50} height={9} />
+                                                <SkeletonBox width={70} height={14} />
+                                            </View>
+                                            <View className="flex-1 gap-1.5">
+                                                <SkeletonBox width={50} height={9} />
+                                                <SkeletonBox width={70} height={14} />
+                                            </View>
+                                        </View>
+                                        <View className="flex-row gap-2 mt-1">
+                                            {[0,1,2,3].map(i => (
+                                                <View key={i} className="flex-1 rounded-lg py-1.5 items-center gap-1" style={{ backgroundColor: "#F8FAFC" }}>
+                                                    <SkeletonBox width={28} height={9} borderRadius={4} />
+                                                    <SkeletonBox width={20} height={13} borderRadius={4} />
+                                                </View>
+                                            ))}
+                                        </View>
+                                    </View>
+                                </>
                             ) : (
                                 <View className="flex-row h-36">
                                     <View className="flex-[2] relative">

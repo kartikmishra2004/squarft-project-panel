@@ -40,6 +40,7 @@ import { projectFormApi } from "../../services/api";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const { width } = Dimensions.get("window");
 
@@ -327,29 +328,46 @@ export default function AddProject() {
                 if (!projectId) { dispatch(setStep(5)); return; }
                 try {
                     setIsSubmitting(true);
+
+                    const buildApproval = (s, extra = {}) => {
+                        if (!s.status) return null;
+                        const isApproved = s.status === 'Yes';
+                        const { _allowEmptyTime, ...restExtra } = extra;
+                        if (!isApproved && !s.expectedTime && !_allowEmptyTime) return null;
+                        return {
+                            is_approved: isApproved,
+                            expected_time: isApproved ? null : (s.expectedTime || null),
+                            ...restExtra,
+                        };
+                    };
+
+                    const tncpApproval = buildApproval(step4.approvals.tncp);
+                    const diversionApproval = buildApproval(step4.approvals.diversion);
+                    const reraApproval = buildApproval(step4.approvals.rera, {
+                        rera_id: step4.approvals.rera.registrationNumber || null,
+                        _allowEmptyTime: true, // RERA expectedTime is optional
+                    });
+                    const devPermApproval = buildApproval(step4.approvals.developmentPermission);
+                    const municipalApproval = buildApproval(step4.approvals.buildingPermission);
+
                     const approvals = {
-                        tncp: {
-                            is_approved: step4.approvals.tncp.status === 'Yes',
-                            expected_time: step4.approvals.tncp.expectedTime || null,
-                        },
-                        municipal: {
-                            is_approved: step4.approvals.buildingPermission.status === 'Yes',
-                            expected_time: step4.approvals.buildingPermission.expectedTime || null,
-                        },
-                        rera: {
-                            is_approved: step4.approvals.rera.status === 'Yes',
-                            rera_id: step4.approvals.rera.registrationNumber || null,
-                            expected_time: step4.approvals.rera.expectedTime || null,
-                        },
-                        bank_loan: {
-                            is_approved: step5.loanAvailable === 'Yes',
-                            banks: step5.tieUpBankName || step5.bankNameList || null,
-                        },
+                        ...(tncpApproval && { tncp: tncpApproval }),
+                        ...(diversionApproval && { diversion: diversionApproval }),
+                        ...(reraApproval && { rera: reraApproval }),
+                        ...(devPermApproval && { developmentPermission: devPermApproval }),
+                        ...(municipalApproval && { municipal: municipalApproval }),
                     };
                     await projectFormApi.finalizeStep4(projectId, {
                         possession_status: step4.possessionStatus || null,
+                        possession_remarks: step4.possessionRemarks || null,
+                        project_launch_status: step4.projectLaunchStatus || null,
+                        project_launch_date: step4.projectLaunchDate || null,
+                        expected_launch_date: step4.expectedLaunchDate || null,
                         development_progress: parseInt(step4.developmentCompletionPercentage) || 0,
                         development_checklist: step4.currentDevelopmentStage || [],
+                        development_remarks: step4.developmentRemarks || null,
+                        other_development_stage: step4.otherDevelopmentStage || null,
+                        overall_approval_status: step4.overallApprovalStatus || null,
                         variant_possessions: [],
                         amenity_ids: [],
                         bank_account: null,
@@ -377,6 +395,36 @@ export default function AddProject() {
                         settings: { visibility: 'public', status: 'active' },
                         assignments: { sales_officer_id: null, branch_manager_id: null },
                         video_url: null,
+                        financial_details: {
+                            guideline_value: step5.guidelineValueAmount
+                                ? `${step5.guidelineValueAmount} ${step5.guidelineValueUnit || ''}`.trim()
+                                : null,
+                            registry_charges: step5.registryChargesAvailable === 'Yes'
+                                ? {
+                                    male: step5.registryChargesMaleBuyer || null,
+                                    female: step5.registryChargesFemaleBuyer || null,
+                                    other: step5.otherGovernmentCharges || null,
+                                }
+                                : null,
+                            bank_loan: {
+                                is_approved: step5.loanAvailable === 'Yes',
+                                banks: step5.bankTieUpAvailable === 'Yes'
+                                    ? (step5.tieUpBankName || step5.bankNameList || null)
+                                    : null,
+                            },
+                        },
+                        legal_details: {
+                            ownership_type: step5.ownershipType || null,
+                            jv_details: step5.ownershipType === 'Joint Venture Project'
+                                ? {
+                                    land_owner: step5.jvLandOwnerName || null,
+                                    developer: step5.jvDeveloperBuilderName || null,
+                                    agreement_available: step5.jvAgreementAvailable || null,
+                                    revenue_sharing: step5.jvRevenueAreaSharingDetails || null,
+                                }
+                                : null,
+                            title_verification_status: step5.titleVerificationStatus || null,
+                        },
                     });
                     dispatch(setStep(6));
                 } catch (error) {
@@ -2516,6 +2564,50 @@ const getInputTypeProps = (label = "", placeholder = "", keyboardType = "default
     return { keyboardType: "default" };
 };
 
+const DatePickerField = ({ label, value, onChange }) => {
+    const [show, setShow] = useState(false);
+
+    const parsed = value ? new Date(value) : new Date();
+    const isValid = value && !isNaN(parsed.getTime());
+
+    const displayValue = isValid
+        ? parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '';
+
+    const handleChange = (event, selectedDate) => {
+        setShow(Platform.OS === 'ios');
+        if (event.type === 'dismissed') return;
+        if (selectedDate) {
+            const iso = selectedDate.toISOString().split('T')[0];
+            onChange(iso);
+        }
+    };
+
+    return (
+        <View>
+            <Text className="text-xs font-lato-bold text-black mb-1.5">{label}</Text>
+            <TouchableOpacity
+                onPress={() => setShow(true)}
+                activeOpacity={0.8}
+                className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between"
+            >
+                <Text className={`text-[13px] font-lato-medium ${displayValue ? 'text-gray-800' : 'text-[#9CA3AF]'}`}>
+                    {displayValue || 'Select date'}
+                </Text>
+                <Ionicons name="calendar-outline" size={16} color="#4A43EC" />
+            </TouchableOpacity>
+            {show && (
+                <DateTimePicker
+                    value={isValid ? parsed : new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleChange}
+                />
+            )}
+        </View>
+    );
+};
+
 const FieldInput = ({ label, value, onChangeText, placeholder, keyboardType = "default", multiline = false }) => {
     const inputRef = useRef(null);
     const inputTypeProps = getInputTypeProps(label, placeholder, keyboardType);
@@ -2631,14 +2723,23 @@ function ApprovalBlock({ title, approvalKey, options = APPROVAL_STATUS_OPTIONS, 
             {approval.status === "Yes" && (
                 <View className="gap-4">
                     {fields.yes.map(field => (
-                        <FieldInput
-                            key={field.key}
-                            label={field.label}
-                            placeholder={field.placeholder}
-                            value={approval[field.key]}
-                            keyboardType={field.keyboardType}
-                            onChangeText={(value) => updateApproval({ [field.key]: value })}
-                        />
+                        field.isDate ? (
+                            <DatePickerField
+                                key={field.key}
+                                label={field.label}
+                                value={approval[field.key]}
+                                onChange={(value) => updateApproval({ [field.key]: value })}
+                            />
+                        ) : (
+                            <FieldInput
+                                key={field.key}
+                                label={field.label}
+                                placeholder={field.placeholder}
+                                value={approval[field.key]}
+                                keyboardType={field.keyboardType}
+                                onChangeText={(value) => updateApproval({ [field.key]: value })}
+                            />
+                        )
                     ))}
                     <DocumentUploadButton
                         label={fields.documentLabel}
@@ -2650,15 +2751,32 @@ function ApprovalBlock({ title, approvalKey, options = APPROVAL_STATUS_OPTIONS, 
 
             {approval.status === "No" && (
                 <View className="gap-4">
-                    {fields.no.map(field => (
-                        <FieldInput
-                            key={field.key}
-                            label={field.label}
-                            placeholder={field.placeholder}
-                            value={approval[field.key]}
-                            onChangeText={(value) => updateApproval({ [field.key]: value })}
-                        />
-                    ))}
+                    {fields.no.map(field =>
+                        field.isOption ? (
+                            <OptionGroup
+                                key={field.key}
+                                label={field.label}
+                                options={field.options}
+                                value={approval[field.key]}
+                                onChange={(value) => updateApproval({ [field.key]: value })}
+                            />
+                        ) : field.isDate ? (
+                            <DatePickerField
+                                key={field.key}
+                                label={field.label}
+                                value={approval[field.key]}
+                                onChange={(value) => updateApproval({ [field.key]: value })}
+                            />
+                        ) : (
+                            <FieldInput
+                                key={field.key}
+                                label={field.label}
+                                placeholder={field.placeholder}
+                                value={approval[field.key]}
+                                onChangeText={(value) => updateApproval({ [field.key]: value })}
+                            />
+                        )
+                    )}
                 </View>
             )}
         </View>
@@ -2698,11 +2816,10 @@ function Step4() {
                     onChange={(value) => updateField("possessionStatus", value)}
                 />
                 {step4.possessionStatus === "Possession Pending" && (
-                    <FieldInput
+                    <DatePickerField
                         label="Expected Possession Date"
-                        placeholder="Select expected possession date"
                         value={step4.expectedPossessionDate}
-                        onChangeText={(value) => updateField("expectedPossessionDate", value)}
+                        onChange={(value) => updateField("expectedPossessionDate", value)}
                     />
                 )}
                 <FieldInput
@@ -2721,19 +2838,17 @@ function Step4() {
                     onChange={(value) => updateField("projectLaunchStatus", value)}
                 />
                 {step4.projectLaunchStatus === "Already Launched" && (
-                    <FieldInput
+                    <DatePickerField
                         label="Project Launch Date"
-                        placeholder="Select project launch date"
                         value={step4.projectLaunchDate}
-                        onChangeText={(value) => updateField("projectLaunchDate", value)}
+                        onChange={(value) => updateField("projectLaunchDate", value)}
                     />
                 )}
                 {step4.projectLaunchStatus === "Upcoming Launch" && (
-                    <FieldInput
+                    <DatePickerField
                         label="Expected Launch Date"
-                        placeholder="Select expected launch date"
                         value={step4.expectedLaunchDate}
-                        onChangeText={(value) => updateField("expectedLaunchDate", value)}
+                        onChange={(value) => updateField("expectedLaunchDate", value)}
                     />
                 )}
             </FormSection>
@@ -2777,9 +2892,9 @@ function Step4() {
                         statusLabel: "Is Diversion Approved?",
                         yes: [
                             { key: "referenceNumber", label: "Diversion Order Number / Reference Number", placeholder: "Enter reference number" },
-                            { key: "approvalDate", label: "Diversion Approval Date", placeholder: "Select approval date" },
+                            { key: "approvalDate", label: "Diversion Approval Date", isDate: true },
                         ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive Diversion Approval", placeholder: "Number of months / expected date" }],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Diversion Approval", isOption: true, options: ["3 months", "6 months", "12 months", "18 months", "24 months", "24+ months"] }],
                         documentLabel: "Upload Diversion Document",
                     }}
                 />
@@ -2790,9 +2905,9 @@ function Step4() {
                         statusLabel: "Is TNCP Approved?",
                         yes: [
                             { key: "approvalNumber", label: "TNCP Approval Number", placeholder: "Enter approval number" },
-                            { key: "approvalDate", label: "TNCP Approval Date", placeholder: "Select approval date" },
+                            { key: "approvalDate", label: "TNCP Approval Date", isDate: true },
                         ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive TNCP Approval", placeholder: "Number of months / expected date" }],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive TNCP Approval", isOption: true, options: ["3 months", "6 months", "12 months", "18 months", "24 months", "24+ months"] }],
                         documentLabel: "Upload TNCP Document",
                     }}
                 />
@@ -2803,9 +2918,9 @@ function Step4() {
                         statusLabel: "Is Development Permission Approved?",
                         yes: [
                             { key: "permissionNumber", label: "Development Permission Number", placeholder: "Enter permission number" },
-                            { key: "permissionDate", label: "Development Permission Date", placeholder: "Select permission date" },
+                            { key: "permissionDate", label: "Development Permission Date", isDate: true },
                         ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive Development Permission", placeholder: "Number of months / expected date" }],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Development Permission", isOption: true, options: ["3 months", "6 months", "12 months", "18 months", "24 months", "24+ months"] }],
                         documentLabel: "Upload Development Permission Document",
                     }}
                 />
@@ -2817,11 +2932,11 @@ function Step4() {
                         statusLabel: "Is the Project RERA Approved?",
                         yes: [
                             { key: "registrationNumber", label: "RERA Registration Number", placeholder: "Enter RERA registration number" },
-                            { key: "registrationDate", label: "RERA Registration Date", placeholder: "Select registration date" },
+                            { key: "registrationDate", label: "RERA Registration Date", isDate: true },
                         ],
                         no: [
                             { key: "reasonNotAvailable", label: "Reason for RERA Not Available", placeholder: "Mention reason" },
-                            { key: "expectedTime", label: "Expected Time to Receive RERA Approval, if applicable", placeholder: "Number of months / expected date" },
+                            { key: "expectedTime", label: "Expected Time to Receive RERA Approval, if applicable", isOption: true, options: ["3 months", "6 months", "12 months", "18 months", "24 months", "24+ months"] },
                         ],
                         documentLabel: "Upload RERA Certificate",
                     }}
@@ -2834,9 +2949,9 @@ function Step4() {
                         statusLabel: "Is Building Permission Approved?",
                         yes: [
                             { key: "permissionNumber", label: "Building Permission Number", placeholder: "Enter permission number" },
-                            { key: "permissionDate", label: "Building Permission Date", placeholder: "Select permission date" },
+                            { key: "permissionDate", label: "Building Permission Date", isDate: true },
                         ],
-                        no: [{ key: "expectedTime", label: "Expected Time to Receive Building Permission", placeholder: "Example: 3 months" }],
+                        no: [{ key: "expectedTime", label: "Expected Time to Receive Building Permission", isOption: true, options: ["3 months", "6 months", "12 months", "18 months", "24 months", "24+ months"] }],
                         documentLabel: "Upload Building Permission Document",
                     }}
                 />
@@ -2936,12 +3051,20 @@ function Step5() {
                 {step5.titleVerificationStatus === "Yes" && (
                     <View className="gap-4">
                         <FieldInput label="Title Verification Done By" placeholder="Enter verifier name / company" value={step5.titleVerificationDoneBy} onChangeText={(value) => updateField("titleVerificationDoneBy", value)} />
-                        <FieldInput label="Title Verification Date" placeholder="Select verification date" value={step5.titleVerificationDate} onChangeText={(value) => updateField("titleVerificationDate", value)} />
+                        <DatePickerField
+                            label="Title Verification Date"
+                            value={step5.titleVerificationDate}
+                            onChange={(value) => updateField("titleVerificationDate", value)}
+                        />
                         <DocumentUploadButton label="Upload Title Report" documents={step5.titleReportDocuments} onDocumentsPicked={(documents) => updateField("titleReportDocuments", documents)} />
                     </View>
                 )}
                 {step5.titleVerificationStatus === "Under Process" && (
-                    <FieldInput label="Expected Completion Date" placeholder="Select expected completion date" value={step5.titleExpectedCompletionDate} onChangeText={(value) => updateField("titleExpectedCompletionDate", value)} />
+                    <DatePickerField
+                        label="Expected Completion Date"
+                        value={step5.titleExpectedCompletionDate}
+                        onChange={(value) => updateField("titleExpectedCompletionDate", value)}
+                    />
                 )}
             </FormSection>
 
