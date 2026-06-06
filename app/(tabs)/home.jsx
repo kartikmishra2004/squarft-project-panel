@@ -1049,30 +1049,24 @@ export default function Home() {
             }
         }
 
-        // Fallback: use local data (mock / Redux)
+        // Fallback: _unitId missing or API failed — show what we have from the unit itself
         const isBookedOrSoldUnit = unit.status === "Booked" || unit.status === "Sold";
-        const dealTemplate = isBookedOrSoldUnit ? getInventoryDealTemplate(context.inventoryType, unit) : null;
 
         setSelectedDeal({
-            ...(dealTemplate || {}),
             ...unit,
-            deal_id: dealTemplate?.deal_id || dealTemplate?.id || unit.deal_id,
             inventory_unit_id: unit.id || unit.unit,
             title: `${sectionLabel} • ${unitLabel}`,
             propertyType: unit.title || unit.meta || context.inventoryLabel || "Property",
             topStatus: unit.status,
             dealStatus: unit.status,
-            footerStatus: unit.ctaLabel === "DETAILS" ? "View Details" : unit.status,
-            footerTotal: unit.price || unit.area || selectedProject.avgPrice,
-            avgPricePerSqft: unit.avgPricePerSqft || selectedProject.avgPrice,
-            possession: unit.possession || selectedProject.possession,
-            amenities: unit.amenities || selectedProject.amenities,
+            area: unit.area || unit.area_sqft || null,
+            possession: unit.possession || null,
+            avgPricePerSqft: unit.avgPricePerSqft || null,
+            amenities: unit.amenities || [],
+            images: unit.images || [],
             progress: unit.progress ?? 0,
-            images: unit.images || selectedProject.projectImages || [],
-            totalImages: unit.images?.length || selectedProject.projectImages?.length || 0,
-            followUps: selectedProject.visits?.followUps || [],
             showDealSummary: isBookedOrSoldUnit,
-            showFollowUps: unit.status === "Available",
+            showFollowUps: false,
         });
         setIsProjectDetailVisible(true);
     };
@@ -2014,9 +2008,38 @@ export default function Home() {
                         }
                     >
                         {dealsLoading && !refreshing ? (
-                            <View className="py-10">
-                                <ActivityIndicator size="large" color="#4A43EC" />
-                                <Text className="text-center text-gray-500 mt-3 font-lato">Loading deals...</Text>
+                            <View className="gap-3">
+                                {[0, 1, 2].map((i) => (
+                                    <View key={i} className="bg-white rounded-[16px] border border-[#E3E7F0] px-3 pt-3 pb-3">
+                                        <View className="flex-row items-start justify-between mb-3">
+                                            <View className="flex-1 pr-2 gap-1.5">
+                                                <SkeletonBox width="65%" height={13} borderRadius={5} />
+                                                <SkeletonBox width="45%" height={10} borderRadius={4} />
+                                            </View>
+                                            <View className="items-end gap-1.5">
+                                                <SkeletonBox width={52} height={18} borderRadius={20} />
+                                                <SkeletonBox width={40} height={9} borderRadius={4} />
+                                            </View>
+                                        </View>
+                                        <View className="mb-3 gap-1.5">
+                                            <View className="flex-row justify-between">
+                                                <SkeletonBox width={100} height={10} borderRadius={4} />
+                                                <SkeletonBox width={30} height={10} borderRadius={4} />
+                                            </View>
+                                            <SkeletonBox width="100%" height={6} borderRadius={6} />
+                                        </View>
+                                        <View className="flex-row gap-2">
+                                            <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-2 gap-1">
+                                                <SkeletonBox width={60} height={8} borderRadius={3} />
+                                                <SkeletonBox width={70} height={13} borderRadius={4} />
+                                            </View>
+                                            <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-2 gap-1">
+                                                <SkeletonBox width={40} height={8} borderRadius={3} />
+                                                <SkeletonBox width={70} height={13} borderRadius={4} />
+                                            </View>
+                                        </View>
+                                    </View>
+                                ))}
                             </View>
                         ) : (Array.isArray(deals) ? deals : deals?.data || []).length > 0 ? (
                             
@@ -2042,23 +2065,16 @@ export default function Home() {
                                         key={deal.id || Math.random().toString()}
                                         activeOpacity={0.9}
                                         onPress={async () => {
-                                            console.log('🔵 [HOME] Deal clicked:', deal.id);
-                                            console.log('🔵 [HOME] Raw deal data:', JSON.stringify(deal, null, 2));
-                                            
-                                            // Enrich deal data with property and user info for modal
-                                            const enrichedDeal = {
-                                                ...deal,
-                                                // Map backend fields to modal expected fields
+                                            const base = {
                                                 deal_id: deal.id,
                                                 dealId: deal.id,
-                                                property_title: propertyTitle,
+                                                inventory_unit_id: deal.inventory_unit_id,
                                                 title: propertyTitle,
+                                                property_title: propertyTitle,
                                                 booked_by_name: customerName,
                                                 bookedBy: customerName,
                                                 booked_by_mobile: customerPhone,
                                                 mobile: customerPhone,
-                                                customer_name: customerName,
-                                                customer_phone: customerPhone,
                                                 booking_date: deal.booking_date,
                                                 bookingDate: deal.booking_date,
                                                 total_amount: totalAmount,
@@ -2067,85 +2083,49 @@ export default function Home() {
                                                 dealValue: totalAmount,
                                                 received_amount: paidAmount,
                                                 paid_amount: paidAmount,
-                                                received: paidAmount,
-                                                pending_amount: totalAmount - paidAmount,
-                                                pending: totalAmount - paidAmount,
                                                 progress: paymentPercentage,
                                                 payment_progress_percent: paymentPercentage,
+                                                pending_amount: totalAmount - paidAmount,
+                                                token_amount: deal.token_amount || null,
+                                                tokenAmount: deal.token_amount || null,
+                                                area: deal.area || deal.area_sqft || null,
+                                                possession: deal.possession || deal.possession_date || null,
+                                                amenities: [],
+                                                images: [],
+                                                avgPricePerSqft: null,
+                                                showDealSummary: true,
+                                                showFollowUps: false,
                                             };
-                                            
-                                            // Fetch additional details (property info, user info, and payment schedule)
-                                            try {
-                                                const token = await AsyncStorage.getItem('authToken');
-                                                const headers = { 'Authorization': `Bearer ${token}` };
-                                                
-                                                // Fetch property details
-                                                if (deal.property_id) {
-                                                    try {
-                                                        console.log('🔵 [HOME] Fetching property:', deal.property_id);
-                                                        const propertyResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/v1/properties/${deal.property_id}`, { headers });
-                                                        if (propertyResponse.ok) {
-                                                            const propertyData = await propertyResponse.json();
-                                                            const property = propertyData.data || propertyData;
-                                                            console.log('✅ [HOME] Property data:', property);
-                                                            enrichedDeal.area = property.total_area_sqft;
-                                                            enrichedDeal.area_sqft = property.total_area_sqft;
-                                                            enrichedDeal.possession = property.possession_date;
-                                                            enrichedDeal.possession_date = property.possession_date;
-                                                        } else {
-                                                            console.log('⚠️ [HOME] Property fetch failed:', propertyResponse.status);
-                                                        }
-                                                    } catch (err) {
-                                                        console.log('⚠️ [HOME] Failed to fetch property:', err);
-                                                    }
-                                                }
-                                                
-                                                // Fetch user details if not already present
-                                                if (deal.user_id && !customerName) {
-                                                    try {
-                                                        console.log('🔵 [HOME] Fetching user:', deal.user_id);
-                                                        const userResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/v1/users/${deal.user_id}`, { headers });
-                                                        if (userResponse.ok) {
-                                                            const userData = await userResponse.json();
-                                                            const user = userData.data || userData;
-                                                            const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-                                                            enrichedDeal.customer_name = fullName;
-                                                            enrichedDeal.booked_by_name = fullName;
-                                                            enrichedDeal.bookedBy = fullName;
-                                                            enrichedDeal.customer_phone = user.phone;
-                                                            enrichedDeal.booked_by_mobile = user.phone;
-                                                            enrichedDeal.mobile = user.phone;
-                                                        }
-                                                    } catch (err) {
-                                                        console.log('⚠️ [HOME] Failed to fetch user:', err);
-                                                    }
-                                                }
-                                                
-                                                // Fetch payment schedule to get token amount
+
+                                            // Fetch full unit details to enrich area, possession, amenities, images
+                                            if (deal.inventory_unit_id) {
                                                 try {
-                                                    console.log('🔵 [HOME] Fetching payment schedule for deal:', deal.id);
-                                                    const scheduleResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/project-panel/deals/${deal.id}/payment-schedule`, { headers });
-                                                    if (scheduleResponse.ok) {
-                                                        const scheduleData = await scheduleResponse.json();
-                                                        console.log('✅ [HOME] Payment schedule data:', scheduleData);
-                                                        const schedule = scheduleData.data?.schedule || scheduleData.schedule || [];
-                                                        if (schedule.length > 0) {
-                                                            const firstMilestone = schedule[0];
-                                                            enrichedDeal.token_amount = firstMilestone.milestone_amount || firstMilestone.amount;
-                                                            enrichedDeal.tokenAmount = firstMilestone.milestone_amount || firstMilestone.amount;
+                                                    setUnitDetailLoading(true);
+                                                    const res = await inventoryService.getInventoryUnitDetails(deal.inventory_unit_id);
+                                                    const details = res?.data;
+                                                    if (details) {
+                                                        const proj = details.project || {};
+                                                        base.area = details.area || base.area;
+                                                        base.area_sqft = details.area_sqft || base.area_sqft;
+                                                        base.possession = details.possession || base.possession;
+                                                        base.possession_date = details.possession_date;
+                                                        base.avgPricePerSqft = proj.avg_price_per_sqft_display || proj.avg_price_per_sqft || null;
+                                                        base.images = (details.media || []).filter(m => m.media_type === 'image').map(m => ({ uri: m.url }));
+                                                        base.amenities = (details.amenities || []).map(a => a.name);
+                                                        base.is_verified = proj.is_verified;
+                                                        if (details.deal_summary?.token_amount) {
+                                                            base.token_amount = details.deal_summary.token_amount;
+                                                            base.tokenAmount = details.deal_summary.token_amount;
                                                         }
-                                                    } else {
-                                                        console.log('⚠️ [HOME] Payment schedule fetch failed:', scheduleResponse.status);
                                                     }
                                                 } catch (err) {
-                                                    console.log('⚠️ [HOME] Failed to fetch payment schedule:', err);
+                                                    console.log('⚠️ [HOME] Unit detail fetch failed for deal modal:', err);
+                                                } finally {
+                                                    setUnitDetailLoading(false);
                                                 }
-                                            } catch (error) {
-                                                console.log('⚠️ [HOME] Failed to enrich deal data:', error);
                                             }
-                                            
-                                            console.log('✅ [HOME] Enriched deal:', JSON.stringify(enrichedDeal, null, 2));
-                                            setSelectedDeal(enrichedDeal);
+
+                                            setSelectedDeal(base);
                                             setIsProjectDetailVisible(true);
                                         }}
                                         className="bg-white rounded-[16px] border border-[#E3E7F0] mb-3.5 overflow-hidden"
