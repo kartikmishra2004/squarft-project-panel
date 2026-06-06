@@ -11,10 +11,12 @@ import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
 import { updateProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
+import { setInventoryLoading, setInventoryData, setInventoryError } from "../../store/slices/inventorySlice";
 import { projectOverviewApi } from "../../services/api";
 import { visitService } from "../../services/visitService";
 import { projectService } from "../../services/projectService";
 import { dealService } from "../../services/dealService";
+import { inventoryService } from "../../services/inventoryService";
 
 const profileImg = require("../../assets/images/user_profile.png");
 
@@ -40,7 +42,8 @@ const INVENTORY_TABS = [
     { key: "rowhouse", label: "Rowhouse" },
     { key: "plot", label: "Plot" },
     { key: "shop", label: "Shop" },
-    { key: "showroom", label: "Showroom" }
+    { key: "showroom", label: "Showroom" },
+    { key: "office", label: "Office" },
 ];
 const STATUS_OPTIONS = ["Available", "Booked", "Sold"];
 
@@ -49,6 +52,8 @@ export default function Home() {
     const dispatch = useDispatch();
     const projectsData = useSelector((state) => state.projects.projects);
     const notifications = useSelector((state) => state.notifications?.list || []);
+    const inventoryByProject = useSelector((state) => state.inventory.byProject);
+    const inventoryLoading = useSelector((state) => state.inventory.loading);
     const [activeTab, setActiveTab] = useState("Overview");
 
     const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -84,6 +89,9 @@ export default function Home() {
     // Deals state
     const [deals, setDeals] = useState([]);
     const [dealsLoading, setDealsLoading] = useState(false);
+
+    // Unit detail loading state (for modal)
+    const [unitDetailLoading, setUnitDetailLoading] = useState(false);
 
     const tabs = HOME_TABS;
     const inventoryTabs = INVENTORY_TABS;
@@ -127,12 +135,13 @@ export default function Home() {
         try {
             const res = await projectOverviewApi.getProjectsList();
             const list = res.data?.data || [];
+            console.log('📋 [HOME] projectsList fetched:', list.length, list.map(p => p.name));
             setProjectsList(list);
             if (list.length > 0) {
                 setSelectedProjectId(list[0].id);
             }
         } catch (error) {
-            console.error('Failed to fetch projects list:', error);
+            console.error('❌ [HOME] Failed to fetch projects list:', error?.response?.status, error?.message);
         }
     }, []);
 
@@ -151,7 +160,7 @@ export default function Home() {
         }
     }, []);
 
-    useEffect(() => { fetchProjectsList(); }, [fetchProjectsList]);
+    // fetchProjectsList replaced by fetchBackendProjects which sets projectsList directly
     useEffect(() => { fetchOverview(selectedProjectId); }, [selectedProjectId, fetchOverview]);
 
     const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
@@ -307,13 +316,56 @@ export default function Home() {
     const saveInventoryEdit = () => {
         if (!inventoryEditTarget) return;
 
-        updateInventoryUnit(inventoryEditTarget, (unit) => ({
-            ...unit,
-            price: editPrice.trim(),
-            area: editArea.trim(),
-            status: editStatus,
-            dimmed: editStatus === "Sold" ? true : false,
-        }));
+        const realUnitId = inventoryEditTarget._unitId;
+
+        if (realUnitId) {
+            // Optimistically patch the cached API inventory data in Redux
+            const bpId = getBackendProjectId();
+            if (bpId && inventoryByProject[bpId]) {
+                const updatedByProject = JSON.parse(JSON.stringify(inventoryByProject[bpId]));
+                const invType = inventoryEditTarget.inventoryType;
+                const typeData = updatedByProject[invType];
+                if (typeData) {
+                    // Patch the unit inside towers (tower_floor grouping)
+                    if (typeData.towers) {
+                        typeData.towers = typeData.towers.map((tower) => ({
+                            ...tower,
+                            sections: (tower.sections || []).map((section) => ({
+                                ...section,
+                                units: (section.units || []).map((unit) =>
+                                    unit._unitId === realUnitId || unit.id === realUnitId
+                                        ? { ...unit, price: editPrice.trim(), status: editStatus, status_label: editStatus }
+                                        : unit
+                                ),
+                            })),
+                        }));
+                    }
+                    // Patch inside sections (range grouping)
+                    if (typeData.sections) {
+                        typeData.sections = typeData.sections.map((section) => ({
+                            ...section,
+                            units: (section.units || []).map((unit) =>
+                                unit._unitId === realUnitId || unit.id === realUnitId
+                                    ? { ...unit, price: editPrice.trim(), status: editStatus, status_label: editStatus }
+                                    : unit
+                            ),
+                        }));
+                    }
+                    updatedByProject[invType] = typeData;
+                }
+                dispatch(setInventoryData({ projectId: bpId, data: updatedByProject }));
+            }
+        } else {
+            // Mock/local data: update via Redux project slice
+            updateInventoryUnit(inventoryEditTarget, (unit) => ({
+                ...unit,
+                price: editPrice.trim(),
+                area: editArea.trim(),
+                status: editStatus,
+                dimmed: editStatus === "Sold",
+            }));
+        }
+
         dispatch(addNotification({
             title: "Inventory updated",
             description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
@@ -337,6 +389,8 @@ export default function Home() {
         // Clear visit data when switching projects
         setVisitStats(null);
         setUpcomingVisits([]);
+        // Deals will re-fetch via useEffect when tab is active
+        setDeals([]);
     };
 
     const getPropertyDetailText = (inventoryTypeValue, item) => {
@@ -420,6 +474,8 @@ export default function Home() {
 
             if (response.data && response.data.length > 0) {
                 setBackendProjects(response.data);
+                setProjectsList(response.data); // use same data for dropdown
+                setSelectedProjectId(response.data[0].id);
                 console.log('✅ [HOME] Backend projects fetched:', response.data.length);
                 // Set the first project as default
                 setRealProjectId(response.data[0].id);
@@ -600,6 +656,31 @@ export default function Home() {
         }
     }, [activeTab, getBackendProjectId, fetchDealsData]);
 
+    // Fetch inventory from real API and normalise into the shape the UI renderers expect
+    const fetchInventoryData = useCallback(async (projectId, force = false) => {
+        if (!projectId) return;
+        // Skip if already cached (unless forced)
+        if (!force && inventoryByProject[projectId]) return;
+        try {
+            dispatch(setInventoryLoading({ projectId }));
+            const response = await inventoryService.getProjectInventory(projectId);
+            // response.data.inventory = { apartment: {...}, villa: {...}, ... }
+            const raw = response?.data?.inventory || {};
+            dispatch(setInventoryData({ projectId, data: raw }));
+        } catch (error) {
+            console.log('❌ [HOME] Failed to fetch inventory:', error);
+            dispatch(setInventoryError({ projectId, error: error.message }));
+        }
+    }, [dispatch, inventoryByProject]);
+
+    // Load inventory when Inventory tab is active
+    useEffect(() => {
+        const backendProjectId = getBackendProjectId();
+        if (activeTab === 'Inventory' && backendProjectId) {
+            fetchInventoryData(backendProjectId);
+        }
+    }, [activeTab, getBackendProjectId, fetchInventoryData]);
+
     const getRangeLabel = (index, section) => section?.name || section?.label || `Range ${String.fromCharCode(65 + index)}`;
 
     const getSectionLabel = (index, inventoryTypeValue) => {
@@ -682,7 +763,7 @@ export default function Home() {
                             <View className="flex-row items-center justify-end">
                                 <TouchableOpacity
                                     activeOpacity={0.9}
-                                    onPress={() => openInventoryEdit(item.raw, item.target)}
+                                    onPress={() => openInventoryEdit(item.raw, { ...item.target, _unitId: item.raw._unitId })}
                                     className="w-8 h-8 rounded-lg bg-gray-100 items-center justify-center"
                                 >
                                     <Feather name="edit-3" size={14} color="#94A3B8" />
@@ -885,9 +966,74 @@ export default function Home() {
         );
     };
 
-    const openInventoryDetail = (unit, context = {}) => {
+    const openInventoryDetail = async (unit, context = {}) => {
         const sectionLabel = context.sectionLabel || context.towerLabel || context.stackLabel || selectedProject.title;
         const unitLabel = unit.id || unit.unit || unit.title || "Property";
+
+        // If we have a real backend unit UUID, fetch full details
+        const realUnitId = unit._unitId;
+        if (realUnitId) {
+            try {
+                setUnitDetailLoading(true);
+                const response = await inventoryService.getInventoryUnitDetails(realUnitId);
+                const details = response?.data;
+                if (details) {
+                    const u = details.unit || {};
+                    const proj = details.project || {};
+                    const dealSummary = details.deal_summary;
+                    const isBooked = !!dealSummary;
+
+                    setSelectedDeal({
+                        // unit fields
+                        id: u.id,
+                        _unitId: u.id,
+                        inventory_unit_id: u.id,
+                        unit_code: u.unit_code,
+                        title: `${sectionLabel} • ${u.display_title || u.unit_code || unitLabel}`,
+                        propertyType: u.configuration || u.title || context.inventoryLabel || "Property",
+                        area: details.area,
+                        area_sqft: details.area_sqft,
+                        possession: details.possession,
+                        possession_date: details.possession_date,
+                        possession_status: details.possession_status,
+                        mobile: details.mobile,
+                        location: details.location,
+                        // project fields
+                        project_name: proj.name,
+                        avg_price_per_sqft: proj.avg_price_per_sqft,
+                        avgPricePerSqft: proj.avg_price_per_sqft_display,
+                        development_progress: proj.development_progress,
+                        is_verified: proj.is_verified,
+                        // deal fields
+                        ...(dealSummary || {}),
+                        deal_id: dealSummary?.id,
+                        dealId: dealSummary?.id,
+                        deal_summary: dealSummary,
+                        // media / amenities
+                        images: (details.media || []).filter(m => m.media_type === 'image').map(m => ({ uri: m.url })),
+                        amenities: (details.amenities || []).map(a => a.name),
+                        // modal flags
+                        topStatus: u.status_label || u.status,
+                        dealStatus: u.status,
+                        footerStatus: isBooked ? dealSummary.status_label : u.status_label,
+                        progress: dealSummary?.payment_progress_percent ?? 0,
+                        showDealSummary: isBooked,
+                        showFollowUps: !isBooked,
+                        // payment schedule
+                        payment_schedule: dealSummary?.payment_schedule || [],
+                        payment_progress_percent: dealSummary?.payment_progress_percent ?? 0,
+                    });
+                    setIsProjectDetailVisible(true);
+                    return;
+                }
+            } catch (err) {
+                console.log('❌ [HOME] getInventoryUnitDetails failed, falling back:', err);
+            } finally {
+                setUnitDetailLoading(false);
+            }
+        }
+
+        // Fallback: use local data (mock / Redux)
         const isBookedOrSoldUnit = unit.status === "Booked" || unit.status === "Sold";
         const dealTemplate = isBookedOrSoldUnit ? getInventoryDealTemplate(context.inventoryType, unit) : null;
 
@@ -993,16 +1139,86 @@ export default function Home() {
 
     const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
     const dealsData = selectedProject.deals || [];
+
+    // ── Inventory from real API (falls back to Redux mock when not yet loaded) ──
+    const backendProjectId = getBackendProjectId();
+    const apiInventoryRaw = inventoryByProject[backendProjectId] || null;
+    const isInventoryLoading = inventoryLoading[backendProjectId] ?? false;
+
+    // Convert API range-based grouping { ranges: [{range_name, properties}] }
+    // into the sections shape the existing renderers already understand
+    const toSectionsShape = (apiType) => {
+        if (!apiType) return { sections: [] };
+        if (apiType.grouping === 'range') {
+            return {
+                sections: (apiType.ranges || []).map((r) => ({
+                    id: r.range_name,
+                    name: r.range_name,
+                    units: (r.properties || []).map((p) => ({
+                        id: p.unit_code || p.id,
+                        title: p.display_title || p.title,
+                        area: p.area,
+                        area_sqft: p.area_sqft,
+                        price: p.price_display || p.price,
+                        status: p.status_label || p.status,
+                        configuration: p.configuration,
+                        _unitId: p.id, // real UUID for unit detail API
+                    })),
+                })),
+                summary: apiType.summary,
+            };
+        }
+        if (apiType.grouping === 'tower_floor') {
+            return {
+                towers: (apiType.towers || []).map((t) => ({
+                    key: t.tower_name,
+                    label: t.tower_name,
+                    sections: (t.floors || []).map((f) => ({
+                        id: f.floor_name,
+                        rowLabel: f.floor_name,
+                        units: (f.properties || []).map((p) => ({
+                            id: p.unit_code || p.id,
+                            title: p.display_title || p.title,
+                            area: p.area,
+                            area_sqft: p.area_sqft,
+                            price: p.price_display || p.price,
+                            status: p.status_label || p.status,
+                            configuration: p.configuration,
+                            _unitId: p.id, // real UUID for unit detail API
+                        })),
+                    })),
+                })),
+                summary: apiType.summary,
+            };
+        }
+        return { sections: [] };
+    };
+
+    // Build the inventory object the renderers consume, preferring API data
+    const resolvedInventory = useMemo(() => {
+        if (apiInventoryRaw) {
+            const result = {};
+            Object.keys(apiInventoryRaw).forEach((type) => {
+                result[type] = toSectionsShape(apiInventoryRaw[type]);
+            });
+            return result;
+        }
+        // Fallback to Redux mock data
+        return selectedProject.inventory || {};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apiInventoryRaw, selectedProject.inventory]);
+
     const availableInventoryTabs = useMemo(() => inventoryTabs.filter((tab) => {
-        const inventory = selectedProject.inventory?.[tab.key];
+        const inv = resolvedInventory[tab.key];
         return Boolean(
-            inventory?.towers?.length ||
-            inventory?.sections?.length ||
-            inventory?.stacks?.length
+            inv?.towers?.length ||
+            inv?.sections?.length ||
+            inv?.stacks?.length
         );
-    }), [inventoryTabs, selectedProject.inventory]);
+    }), [inventoryTabs, resolvedInventory]);
+
     const availableInventoryKeys = availableInventoryTabs.map(tab => tab.key).join('|');
-    const selectedInventory = selectedProject.inventory?.[inventoryType] || { sections: [] };
+    const selectedInventory = resolvedInventory[inventoryType] || { sections: [] };
     const selectedTowerData = selectedInventory.towers?.find((tower) => tower.key === selectedTower) || selectedInventory.towers?.[0] || null;
     const selectedPlotData = selectedInventory.stacks?.find((stack) => stack.key === selectedPlotStack) || selectedInventory.stacks?.[0] || null;
     const activePlotUnit = selectedPlotData?.levels.flatMap((level) => level.cards || []).find((card) => card.unit === selectedPlotUnit)
@@ -1081,11 +1297,14 @@ export default function Home() {
                 statusBarTranslucent
                 onRequestClose={() => setIsProjectDropdownOpen(false)}
             >
-                <TouchableOpacity
-                    activeOpacity={1}
-                    onPress={() => setIsProjectDropdownOpen(false)}
-                    style={{ flex: 1, backgroundColor: "transparent", zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}
-                >
+                <View style={{ flex: 1, zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}>
+                    {/* Backdrop */}
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        onPress={() => setIsProjectDropdownOpen(false)}
+                        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+                    />
+                    {/* Dropdown list */}
                     <View
                         className="bg-white rounded-xl border overflow-hidden"
                         style={{
@@ -1098,7 +1317,7 @@ export default function Home() {
                             elevation: DROPDOWN_LAYER,
                         }}
                     >
-                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                             {projectOptions.map((project) => {
                                 const isSelected = project.id === selectedProjectId;
 
@@ -1120,7 +1339,7 @@ export default function Home() {
                             })}
                         </ScrollView>
                     </View>
-                </TouchableOpacity>
+                </View>
             </Modal>
 
             {/* Header Switcher */}
@@ -1533,7 +1752,12 @@ export default function Home() {
                     </View>
                 ) : activeTab === "Inventory" ? (
                     <View className="p-4">
-                        {availableInventoryTabs.length > 0 ? (
+                        {isInventoryLoading ? (
+                            <View className="py-12 items-center">
+                                <ActivityIndicator size="large" color="#4A43EC" />
+                                <Text className="mt-3 text-gray-400 font-lato text-center">Loading inventory...</Text>
+                            </View>
+                        ) : availableInventoryTabs.length > 0 ? (
                             <>
                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-5">
                                     {availableInventoryTabs.map((tab) => (
@@ -1951,6 +2175,12 @@ export default function Home() {
                     </View>
                 )}
             </ScrollView>
+
+            {unitDetailLoading && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+                    <ActivityIndicator size="large" color="#4A43EC" />
+                </View>
+            )}
 
             <ProjectDetailModal
                 visible={isProjectDetailVisible}

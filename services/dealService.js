@@ -66,13 +66,7 @@ export const dealService = {
   getPaymentSchedule: async (dealId) => {
     try {
       console.log('🔵 [DEAL SERVICE] Fetching payment schedule for deal:', dealId);
-      const response = await requestWithFallback(
-        () => api.get(`/api/project-panel/inventory-deals/${dealId}/payment-schedule`),
-        () => requestWithFallback(
-          () => api.get(`/api/v1/project-panel/deals/${dealId}/payment-schedule`),
-          () => api.get(`/api/project-panel/deals/${dealId}/payment-schedule`)
-        )
-      );
+      const response = await api.get(`/api/project-developer/inventory-deals/${dealId}/payment-schedule`);
       console.log('✅ [DEAL SERVICE] Payment schedule received:', response.data);
       return response.data;
     } catch (error) {
@@ -109,15 +103,11 @@ export const dealService = {
   collectPayment: async (dealId, paymentData) => {
     try {
       console.log('🔵 [DEAL SERVICE] Collecting payment for deal:', dealId);
-      const response = await requestWithFallback(
-        paymentData.milestone_id
-          ? () => api.post(`/api/project-panel/inventory-deal-milestones/${paymentData.milestone_id}/collect`, paymentData)
-          : () => Promise.reject({ response: { status: 404 } }),
-        () => requestWithFallback(
-          () => api.post(`/api/v1/project-panel/deals/${dealId}/payments/collect`, paymentData),
-          () => api.post(`/api/project-panel/deals/${dealId}/payments/collect`, paymentData)
-        )
-      );
+      // Prefer milestone-level collect when a milestone_id is present
+      const url = paymentData.milestone_id
+        ? `/api/project-developer/inventory-deal-milestones/${paymentData.milestone_id}/collect`
+        : `/api/project-developer/inventory-deals/${dealId}/payment-schedule`;
+      const response = await api.post(url, paymentData);
       console.log('✅ [DEAL SERVICE] Payment collected:', response.data);
       return response.data;
     } catch (error) {
