@@ -1154,13 +1154,17 @@ export default function Home() {
                             {/* Profile & Notification */}
                             <View className="flex-row justify-between items-center mb-4">
                                 <View className="flex-row items-center">
-                                    <View className="w-[46px] h-[46px] relative">
+                                    <TouchableOpacity 
+                                        activeOpacity={0.85}
+                                        onPress={() => router.push("/(tabs)/settings")}
+                                        className="w-[46px] h-[46px] relative"
+                                    >
                                         <Image
                                             source={profileImg}
                                             className="w-[50px] h-[50px] rounded-full border-2 border-white"
                                             resizeMode="cover"
                                         />
-                                    </View>
+                                    </TouchableOpacity>
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
                                             <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
