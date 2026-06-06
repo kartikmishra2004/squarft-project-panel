@@ -313,50 +313,67 @@ export default function Home() {
         setIsInventoryEditVisible(true);
     };
 
-    const saveInventoryEdit = () => {
+    const patchInventoryCache = (bpId, realUnitId, price, status) => {
+        if (!bpId || !inventoryByProject[bpId]) return;
+        const updated = JSON.parse(JSON.stringify(inventoryByProject[bpId]));
+        const invType = inventoryEditTarget.inventoryType;
+        const typeData = updated[invType];
+        if (!typeData) return;
+
+        // Patch a single property in the raw API format
+        const patchProp = (p) =>
+            p.id === realUnitId
+                ? { ...p, price_display: price.trim(), price: price.trim(), status_label: status, status: status.toLowerCase() }
+                : p;
+
+        // tower_floor grouping: towers[].floors[].properties[]
+        if (typeData.grouping === "tower_floor" && typeData.towers) {
+            typeData.towers = typeData.towers.map((t) => ({
+                ...t,
+                floors: (t.floors || []).map((f) => ({ ...f, properties: (f.properties || []).map(patchProp) })),
+            }));
+        }
+        // range grouping: ranges[].properties[]
+        if (typeData.grouping === "range" && typeData.ranges) {
+            typeData.ranges = typeData.ranges.map((r) => ({ ...r, properties: (r.properties || []).map(patchProp) }));
+        }
+
+        updated[invType] = typeData;
+        dispatch(setInventoryData({ projectId: bpId, data: updated }));
+    };
+
+    const saveInventoryEdit = async () => {
         if (!inventoryEditTarget) return;
 
         const realUnitId = inventoryEditTarget._unitId;
 
         if (realUnitId) {
-            // Optimistically patch the cached API inventory data in Redux
             const bpId = getBackendProjectId();
-            if (bpId && inventoryByProject[bpId]) {
-                const updatedByProject = JSON.parse(JSON.stringify(inventoryByProject[bpId]));
-                const invType = inventoryEditTarget.inventoryType;
-                const typeData = updatedByProject[invType];
-                if (typeData) {
-                    // Patch the unit inside towers (tower_floor grouping)
-                    if (typeData.towers) {
-                        typeData.towers = typeData.towers.map((tower) => ({
-                            ...tower,
-                            sections: (tower.sections || []).map((section) => ({
-                                ...section,
-                                units: (section.units || []).map((unit) =>
-                                    unit._unitId === realUnitId || unit.id === realUnitId
-                                        ? { ...unit, price: editPrice.trim(), status: editStatus, status_label: editStatus }
-                                        : unit
-                                ),
-                            })),
-                        }));
-                    }
-                    // Patch inside sections (range grouping)
-                    if (typeData.sections) {
-                        typeData.sections = typeData.sections.map((section) => ({
-                            ...section,
-                            units: (section.units || []).map((unit) =>
-                                unit._unitId === realUnitId || unit.id === realUnitId
-                                    ? { ...unit, price: editPrice.trim(), status: editStatus, status_label: editStatus }
-                                    : unit
-                            ),
-                        }));
-                    }
-                    updatedByProject[invType] = typeData;
-                }
-                dispatch(setInventoryData({ projectId: bpId, data: updatedByProject }));
+            // Optimistic update — patch cache immediately so UI reflects change
+            const snapshot = inventoryByProject[bpId] ? JSON.parse(JSON.stringify(inventoryByProject[bpId])) : null;
+            patchInventoryCache(bpId, realUnitId, editPrice, editStatus);
+
+            setIsInventoryEditVisible(false);
+            setInventoryEditTarget(null);
+            setIsStatusDropdownOpen(false);
+
+            try {
+                await inventoryService.updateInventoryUnit(realUnitId, {
+                    price: editPrice.trim(),
+                    status: editStatus,
+                });
+                dispatch(addNotification({
+                    title: "Inventory updated",
+                    description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
+                    type: "inventory",
+                }));
+            } catch (error) {
+                // Roll back optimistic update
+                if (snapshot && bpId) dispatch(setInventoryData({ projectId: bpId, data: snapshot }));
+                Alert.alert("Update Failed", error.message || "Could not save changes. Please try again.");
             }
         } else {
-            // Mock/local data: update via Redux project slice
+            // Mock/local data — update Redux project slice
             updateInventoryUnit(inventoryEditTarget, (unit) => ({
                 ...unit,
                 price: editPrice.trim(),
@@ -364,16 +381,15 @@ export default function Home() {
                 status: editStatus,
                 dimmed: editStatus === "Sold",
             }));
+            dispatch(addNotification({
+                title: "Inventory updated",
+                description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
+                type: "inventory",
+            }));
+            setIsInventoryEditVisible(false);
+            setInventoryEditTarget(null);
+            setIsStatusDropdownOpen(false);
         }
-
-        dispatch(addNotification({
-            title: "Inventory updated",
-            description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
-            type: "inventory",
-        }));
-        setIsInventoryEditVisible(false);
-        setInventoryEditTarget(null);
-        setIsStatusDropdownOpen(false);
     };
 
     const handleTabPress = (tab) => {
@@ -1465,32 +1481,49 @@ export default function Home() {
 
                             {/* Stats Cards */}
                             <View className="flex-row justify-between" style={{ zIndex: 1, elevation: 1, position: "relative" }}>
-                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
-                                    <View className="bg-[#4A43EC] py-2.5 items-center">
-                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
-                                    </View>
-                                    <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{projectStats.totalReceived}</Text>
-                                    </View>
-                                </View>
+                                {overviewLoading ? (
+                                    <>
+                                        {[0, 1, 2].map((i) => (
+                                            <View key={i} className={`flex-1 bg-white/15 rounded-2xl overflow-hidden ${i < 2 ? "mr-2" : ""} min-h-[72px]`}>
+                                                <View className="bg-white/20 py-2.5 items-center">
+                                                    <SkeletonBox width={64} height={8} borderRadius={4} style={{ backgroundColor: "rgba(255,255,255,0.3)" }} />
+                                                </View>
+                                                <View className="py-3 items-center">
+                                                    <SkeletonBox width={56} height={14} borderRadius={5} style={{ backgroundColor: "rgba(255,255,255,0.25)" }} />
+                                                </View>
+                                            </View>
+                                        ))}
+                                    </>
+                                ) : (
+                                    <>
+                                        <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                            <View className="bg-[#4A43EC] py-2.5 items-center">
+                                                <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
+                                            </View>
+                                            <View className="py-3 items-center bg-white">
+                                                <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{projectStats.totalReceived}</Text>
+                                            </View>
+                                        </View>
 
-                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
-                                    <View className="bg-[#4A43EC] py-2.5 items-center">
-                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
-                                    </View>
-                                    <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#10B981] text-[13px] font-lato-bold">{projectStats.upcomingAmount}</Text>
-                                    </View>
-                                </View>
+                                        <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                            <View className="bg-[#4A43EC] py-2.5 items-center">
+                                                <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
+                                            </View>
+                                            <View className="py-3 items-center bg-white">
+                                                <Text className="text-[#10B981] text-[13px] font-lato-bold">{projectStats.upcomingAmount}</Text>
+                                            </View>
+                                        </View>
 
-                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-white/50 min-h-[72px]">
-                                    <View className="bg-[#4A43EC] py-2.5 items-center">
-                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
-                                    </View>
-                                    <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#EF4444] text-[13px] font-lato-bold">{projectStats.toBeReleased}</Text>
-                                    </View>
-                                </View>
+                                        <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-white/50 min-h-[72px]">
+                                            <View className="bg-[#4A43EC] py-2.5 items-center">
+                                                <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
+                                            </View>
+                                            <View className="py-3 items-center bg-white">
+                                                <Text className="text-[#EF4444] text-[13px] font-lato-bold">{projectStats.toBeReleased}</Text>
+                                            </View>
+                                        </View>
+                                    </>
+                                )}
                             </View>
                         </LinearGradient>
 
@@ -1642,33 +1675,41 @@ export default function Home() {
                                     </View>
                                     {/* Content skeleton */}
                                     <View className="p-3 gap-3">
-                                        <View className="flex-row gap-2">
-                                            <SkeletonBox width={80} height={10} />
-                                            <SkeletonBox width={100} height={10} />
+                                        {/* possession + avg price row */}
+                                        <View className="flex-row items-center gap-2">
+                                            <SkeletonBox width={90} height={9} borderRadius={4} />
+                                            <SkeletonBox width={4} height={4} borderRadius={2} />
+                                            <SkeletonBox width={120} height={9} borderRadius={4} />
                                         </View>
-                                        <SkeletonBox width="60%" height={18} borderRadius={6} />
-                                        <SkeletonBox width="40%" height={11} borderRadius={5} />
+                                        {/* project title */}
+                                        <SkeletonBox width="65%" height={20} borderRadius={6} />
+                                        {/* location */}
+                                        <SkeletonBox width="42%" height={10} borderRadius={5} />
+                                        {/* divider + apartment configs */}
                                         <View className="border-t border-dashed border-gray-100 pt-3 flex-row gap-4">
                                             <View className="flex-1 gap-1.5">
-                                                <SkeletonBox width={50} height={9} />
-                                                <SkeletonBox width={70} height={14} />
+                                                <SkeletonBox width={40} height={9} borderRadius={4} />
+                                                <SkeletonBox width={80} height={14} borderRadius={5} />
                                             </View>
+                                            <View className="w-px bg-gray-100" />
                                             <View className="flex-1 gap-1.5">
-                                                <SkeletonBox width={50} height={9} />
-                                                <SkeletonBox width={70} height={14} />
+                                                <SkeletonBox width={40} height={9} borderRadius={4} />
+                                                <SkeletonBox width={80} height={14} borderRadius={5} />
                                             </View>
                                         </View>
+                                        {/* unit count pills */}
                                         <View className="flex-row gap-2 mt-1">
-                                            {[0,1,2,3].map(i => (
-                                                <View key={i} className="flex-1 rounded-lg py-1.5 items-center gap-1" style={{ backgroundColor: "#F8FAFC" }}>
-                                                    <SkeletonBox width={28} height={9} borderRadius={4} />
-                                                    <SkeletonBox width={20} height={13} borderRadius={4} />
+                                            {["Total", "Avail", "Sold", "Booked"].map((label) => (
+                                                <View key={label} className="flex-1 rounded-lg py-1.5 items-center gap-1.5" style={{ backgroundColor: "#F8FAFC" }}>
+                                                    <SkeletonBox width={26} height={8} borderRadius={3} />
+                                                    <SkeletonBox width={22} height={13} borderRadius={4} />
                                                 </View>
                                             ))}
                                         </View>
                                     </View>
                                 </>
                             ) : (
+                                <>
                                 <View className="flex-row h-36">
                                     <View className="flex-[2] relative">
                                         {displayCoverImage ? (
@@ -1699,59 +1740,60 @@ export default function Home() {
                                         </View>
                                     </View>
                                 </View>
-                            )}
 
-                            <View className="p-3">
-                                <View className="flex-row items-center mb-1.5">
-                                    <Text className="text-gray-400 text-[9px] font-lato">Possession: {displayPossession}</Text>
-                                    <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
-                                    <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {displayAvgPrice}</Text>
-                                </View>
+                                <View className="p-3">
+                                    <View className="flex-row items-center mb-1.5">
+                                        <Text className="text-gray-400 text-[9px] font-lato">Possession: {displayPossession}</Text>
+                                        <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
+                                        <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {displayAvgPrice}</Text>
+                                    </View>
 
-                                <View className="flex-row items-center justify-between mb-0.5">
-                                    <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{displayProjectTitle}</Text>
-                                    {displayReraApproved && (
-                                        <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
-                                            <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
-                                            <Ionicons name="checkmark-circle" size={9} color="#10B981" />
-                                        </View>
-                                    )}
-                                </View>
-                                <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
-
-                                <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
-                                    <View className="flex-row">
-                                        {displayApartments.map((apt, idx) => (
-                                            <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
-                                                <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
-                                                <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
+                                    <View className="flex-row items-center justify-between mb-0.5">
+                                        <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{displayProjectTitle}</Text>
+                                        {displayReraApproved && (
+                                            <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
+                                                <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
+                                                <Ionicons name="checkmark-circle" size={9} color="#10B981" />
                                             </View>
-                                        ))}
-                                        {displayApartments.length === 0 && (
-                                            <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
                                         )}
                                     </View>
-                                </View>
+                                    <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
 
-                                <View className="flex-row justify-between mb-4">
-                                    <View className="flex-1 bg-[#EEF4FF] border border-[#DDE8FF] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#2563EB] text-[8px] font-lato-bold uppercase">Total</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.total || 0}</Text>
+                                    <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
+                                        <View className="flex-row">
+                                            {displayApartments.map((apt, idx) => (
+                                                <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
+                                                    <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
+                                                    <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
+                                                </View>
+                                            ))}
+                                            {displayApartments.length === 0 && (
+                                                <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
+                                            )}
+                                        </View>
                                     </View>
-                                    <View className="flex-1 bg-[#ECFBF6] border border-[#D7F5E8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#10B981] text-[8px] font-lato-bold uppercase">Avail</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.avail || 0}</Text>
-                                    </View>
-                                    <View className="flex-1 bg-[#FFF3EF] border border-[#FFE1D6] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#EF4444] text-[8px] font-lato-bold uppercase">Sold</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.sold || 0}</Text>
-                                    </View>
-                                    <View className="flex-1 bg-[#FFF8EA] border border-[#FDECC8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.booked || 0}</Text>
+
+                                    <View className="flex-row justify-between mb-4">
+                                        <View className="flex-1 bg-[#EEF4FF] border border-[#DDE8FF] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#2563EB] text-[8px] font-lato-bold uppercase">Total</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.total || 0}</Text>
+                                        </View>
+                                        <View className="flex-1 bg-[#ECFBF6] border border-[#D7F5E8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#10B981] text-[8px] font-lato-bold uppercase">Avail</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.avail || 0}</Text>
+                                        </View>
+                                        <View className="flex-1 bg-[#FFF3EF] border border-[#FFE1D6] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#EF4444] text-[8px] font-lato-bold uppercase">Sold</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.sold || 0}</Text>
+                                        </View>
+                                        <View className="flex-1 bg-[#FFF8EA] border border-[#FDECC8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.booked || 0}</Text>
+                                        </View>
                                     </View>
                                 </View>
-                            </View>
+                                </>
+                            )}
                         </View>
                     </View>
                 ) : activeTab === "Inventory" ? (
