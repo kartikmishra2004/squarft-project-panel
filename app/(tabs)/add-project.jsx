@@ -12,6 +12,9 @@ import {
     Pressable,
     Keyboard,
     TouchableWithoutFeedback,
+    Modal,
+    ActivityIndicator,
+    FlatList,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -36,7 +39,7 @@ import {
 } from "../../store/slices/projectSlice";
 import { addProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
-import { projectFormApi } from "../../services/api";
+import { projectFormApi, projectOverviewApi } from "../../services/api";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
@@ -133,6 +136,106 @@ export default function AddProject() {
     const scrollRef = useRef(null);
     const [step1Errors, setStep1Errors] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Drafts modal state
+    const [draftsVisible, setDraftsVisible] = useState(false);
+    const [drafts, setDrafts] = useState([]);
+    const [draftsLoading, setDraftsLoading] = useState(false);
+
+    const loadDrafts = async () => {
+        setDraftsLoading(true);
+        try {
+            const res = await projectOverviewApi.getDraftProjects();
+            setDrafts(res.data?.data || []);
+        } catch (e) {
+            console.error("Failed to load drafts", e);
+        } finally {
+            setDraftsLoading(false);
+        }
+    };
+
+    const openDrafts = () => {
+        setDraftsVisible(true);
+        loadDrafts();
+    };
+
+    const resumeDraft = async (draft) => {
+        dispatch(resetForm());
+        dispatch(setProjectId(draft.id));
+
+        // Step 1 data
+        dispatch(updateStep1({
+            projectName: draft.name || '',
+            location: draft.location || '',
+            city: draft.city || '',
+            state: draft.state || '',
+            pincode: draft.pincode || '',
+            salesOfficerName: draft.sales_officer_name || '',
+            salesOfficerContact: draft.sales_officer_contact || '',
+            responsiblePersonName: draft.responsible_person_name || '',
+            responsiblePersonContact: draft.responsible_person_contact || '',
+        }));
+
+        // Step 4 data — restore if any step4 field has data
+        if (draft.possession_status || draft.project_launch_status || draft.development_progress || draft.overall_approval_status) {
+            dispatch(updateStep4({
+                possessionStatus: draft.possession_status
+                    ? draft.possession_status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+                    : '',
+                possessionRemarks: draft.possession_remarks || '',
+                projectLaunchStatus: draft.project_launch_status || '',
+                projectLaunchDate: draft.project_launch_date || '',
+                expectedLaunchDate: draft.expected_launch_date || '',
+                developmentCompletionPercentage: draft.development_progress != null ? String(draft.development_progress) : '',
+                developmentRemarks: draft.development_remarks || '',
+                otherDevelopmentStage: draft.other_development_stage || '',
+                overallApprovalStatus: draft.overall_approval_status || 'Not verified yet',
+            }));
+        }
+
+        // Step 5 data — restore if any step5 field has data
+        if (draft.guideline_value || draft.ownership_type || draft.title_verification_status || draft.brokerage_type) {
+            dispatch(updateStep5({
+                guidelineValueAmount: draft.guideline_value != null ? String(draft.guideline_value) : '',
+                guidelineValueUnit: draft.guideline_value_unit || '',
+                ownershipType: draft.ownership_type || '',
+                titleVerificationStatus: draft.title_verification_status || '',
+            }));
+        }
+
+        // Step 2 data — restore selectedTypes from variants in DB
+        try {
+            const res = await projectFormApi.getDraftStepData(draft.id);
+            const { variants } = res.data?.data || {};
+            if (variants && variants.length > 0) {
+                // Deduplicate by mainType+subType
+                const seen = new Set();
+                variants.forEach((v) => {
+                    const mainType = v.type === 'commercial' ? 'commercial' : 'residential';
+                    const subType = v.property_subtype;
+                    const key = `${mainType}_${subType}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        dispatch(addPropertyType({
+                            id: v.id,
+                            mainType,
+                            subType,
+                        }));
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn("Could not restore step 2 data", e);
+        }
+
+        // Jump to next step after last completed — done last so all state is set first
+        const hasStep5Data = !!(draft.guideline_value || draft.ownership_type || draft.title_verification_status || draft.brokerage_type);
+        const hasStep4Data = !!(draft.possession_status || draft.project_launch_status || draft.development_progress != null || draft.overall_approval_status);
+        const lastDone = draft.last_completed_step || (hasStep5Data ? 5 : hasStep4Data ? 4 : 1);
+        const nextStep = Math.min(lastDone + 1, 6);
+        setDraftsVisible(false);
+        setTimeout(() => dispatch(setStep(nextStep)), 100);
+    };
 
     useEffect(() => {
         scrollRef.current?.scrollToPosition?.(0, 0, false);
@@ -396,9 +499,8 @@ export default function AddProject() {
                         assignments: { sales_officer_id: null, branch_manager_id: null },
                         video_url: null,
                         financial_details: {
-                            guideline_value: step5.guidelineValueAmount
-                                ? `${step5.guidelineValueAmount} ${step5.guidelineValueUnit || ''}`.trim()
-                                : null,
+                            guideline_value: step5.guidelineValueAmount ? parseFloat(step5.guidelineValueAmount) || null : null,
+                            guideline_value_unit: step5.guidelineValueUnit || null,
                             registry_charges: step5.registryChargesAvailable === 'Yes'
                                 ? {
                                     male: step5.registryChargesMaleBuyer || null,
@@ -566,6 +668,7 @@ export default function AddProject() {
     };
 
     return (
+        <>
         <View className="flex-1 bg-[#F8F9FE]">
                 <StatusBar barStyle="light-content" />
 
@@ -590,7 +693,10 @@ export default function AddProject() {
                                 <Ionicons name="arrow-back" size={20} color="white" />
                             </TouchableOpacity>
                             <Text className="text-white text-base font-lato-bold">Add Project</Text>
-                            <View style={{ width: 20 }} />
+                            <TouchableOpacity onPress={openDrafts} className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-white/20">
+                                <Ionicons name="document-text-outline" size={14} color="white" />
+                                <Text className="text-white text-xs font-lato-bold">Drafts</Text>
+                            </TouchableOpacity>
                         </View>
 
                         {/* Step Indicator */}
@@ -666,6 +772,59 @@ export default function AddProject() {
                         </KeyboardAwareScrollView>
                     </View>
                 </View>
+
+        
+
+            {/* Drafts Modal */}
+            <Modal visible={draftsVisible} animationType="slide" transparent onRequestClose={() => setDraftsVisible(false)}>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+                    <View style={{ backgroundColor: 'white', borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '75%' }}>
+                        <View className="flex-row items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100">
+                            <Text className="text-base font-lato-bold text-gray-900">Incomplete Drafts</Text>
+                            <TouchableOpacity onPress={() => setDraftsVisible(false)}>
+                                <Ionicons name="close" size={22} color="#374151" />
+                            </TouchableOpacity>
+                        </View>
+                        {draftsLoading ? (
+                            <View className="items-center justify-center py-12">
+                                <ActivityIndicator size="large" color="#4A43EC" />
+                            </View>
+                        ) : drafts.length === 0 ? (
+                            <View className="items-center justify-center py-12">
+                                <Ionicons name="document-outline" size={40} color="#D1D5DB" />
+                                <Text className="text-gray-400 mt-3 font-lato-medium">No drafts found</Text>
+                            </View>
+                        ) : (
+                            <FlatList
+                                data={drafts}
+                                keyExtractor={(item) => item.id}
+                                contentContainerStyle={{ padding: 16, gap: 10 }}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity
+                                        onPress={() => resumeDraft(item)}
+                                        style={{ backgroundColor: '#F9FAFB', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#E5E7EB' }}
+                                    >
+                                        <View className="flex-row items-center justify-between">
+                                            <View style={{ flex: 1 }}>
+                                                <Text className="text-sm font-lato-bold text-gray-900" numberOfLines={1}>{item.name}</Text>
+                                                <Text className="text-xs text-gray-500 mt-0.5 font-lato-medium">{item.city}{item.city && item.location ? ', ' : ''}{item.location}</Text>
+                                                <Text className="text-[10px] text-gray-400 mt-1">
+                                                    Last updated: {new Date(item.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                </Text>
+                                            </View>
+                                            <View className="flex-row items-center gap-1 ml-3">
+                                                <Text className="text-xs text-[#4A43EC] font-lato-bold">Resume</Text>
+                                                <Ionicons name="arrow-forward" size={14} color="#4A43EC" />
+                                            </View>
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+                            />
+                        )}
+                    </View>
+                </View>
+            </Modal>
+        </>
     );
 }
 
