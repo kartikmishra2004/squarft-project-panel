@@ -1,5 +1,18 @@
 import api from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getStoredExpoPushTokenAsync } from './pushNotifications';
+import { PUSH_NOTIFICATION_APP_KEY } from './pushNotificationConfig';
+
+const getPushContextAsync = async () => {
+  const expoPushToken = await getStoredExpoPushTokenAsync();
+
+  return {
+    app_key: PUSH_NOTIFICATION_APP_KEY,
+    appKey: PUSH_NOTIFICATION_APP_KEY,
+    expo_push_token: expoPushToken,
+    expoPushToken,
+  };
+};
 
 export const authService = {
   // Register project developer
@@ -15,6 +28,8 @@ export const authService = {
         password: '***hidden***',
       });
 
+      const pushContext = await getPushContextAsync();
+
       const response = await api.post('/api/project-developer/auth/register', {
         full_name: `${userData.first_name} ${userData.last_name}`.trim(),
         company_name: userData.company_name,
@@ -23,6 +38,7 @@ export const authService = {
         phone: userData.phone,
         location: userData.location,
         password: userData.password,
+        ...pushContext,
       });
       
       console.log(' [AUTH SERVICE] Register response:', response.data);
@@ -42,9 +58,12 @@ export const authService = {
     try {
       console.log('🔵 [AUTH SERVICE] Login attempt for phone:', phone);
 
+      const pushContext = await getPushContextAsync();
+
       const response = await api.post('/api/project-developer/auth/login', {
         phone,
         password,
+        ...pushContext,
       });
 
       console.log(' [AUTH SERVICE] Login response:', {

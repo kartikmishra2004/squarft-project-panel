@@ -16,6 +16,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE"
       },
+      "googleServicesFile": "./google-services.json",
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false,
@@ -40,6 +41,13 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "color": "#4A43EC",
+          "defaultChannel": "project-panel-alerts"
+        }
+      ],
       "@react-native-community/datetimepicker"
     ],
     "splash": {
@@ -54,6 +62,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c851492c-ed11-46fc-a7ae-498860373e31"
+      }
+    },
+    "owner": "untidybloom"
   }
 }

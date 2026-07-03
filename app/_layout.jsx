@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import "../global.css";
 import { store } from '../store/store';
+import PushNotificationRegistrar from "../components/PushNotificationRegistrar";
 import {
     useFonts,
     Lato_400Regular,
@@ -37,6 +38,7 @@ export default function RootLayout() {
             <Provider store={store}>
                 <BottomSheetModalProvider>
                     <SafeAreaProvider>
+                        <PushNotificationRegistrar />
                         <Stack>
                             <Stack.Screen name="index" options={{ headerShown: false }} />
                             <Stack.Screen name="(auth)" options={{ headerShown: false, animation: "none" }} />

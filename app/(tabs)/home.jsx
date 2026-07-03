@@ -415,6 +415,20 @@ export default function Home() {
             }
         } catch (error) {
             console.log('❌ [HOME] Failed to fetch backend projects:', error);
+            
+            // Show user-friendly error message
+            const errorMessage = error.userMessage || 
+                error.message || 
+                'Failed to connect to server. Please ensure the backend is running.';
+            
+            Alert.alert(
+                'Connection Error',
+                `${errorMessage}\n\nMake sure:\n• Backend server is running on port 3001\n• Your IP address is correct (192.168.31.143)\n• You're on the same network`,
+                [
+                    { text: 'Retry', onPress: () => fetchBackendProjects() },
+                    { text: 'Continue Offline', style: 'cancel' }
+                ]
+            );
             return [];
         } finally {
             setProjectsLoading(false);

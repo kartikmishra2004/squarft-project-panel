@@ -11,7 +11,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 15000, // Increased to 15 seconds
 });
 
 // Request interceptor to add token
@@ -46,23 +46,38 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
-    console.log(' [API RESPONSE ERROR]', {
+    // Enhanced error handling
+    const errorDetails = {
       url: error.config?.url,
       status: error.response?.status,
       data: error.response?.data,
       message: error.message,
-    });
+      code: error.code,
+    };
     
-    if (error.response?.status === 401) {
+    console.log('❌ [API RESPONSE ERROR]', errorDetails);
+    
+    // Handle different error types
+    if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+      console.error('⏱️ [API] Request timeout - backend may be down');
+      error.userMessage = 'Server is taking too long to respond. Please check if the backend is running.';
+    } else if (error.code === 'ERR_NETWORK' || !error.response) {
+      console.error('🔌 [API] Network error - cannot reach backend');
+      error.userMessage = 'Cannot connect to server. Please check your network connection and ensure the backend is running.';
+    } else if (error.response?.status === 401) {
       // Token expired or invalid
       try {
         await AsyncStorage.removeItem('authToken');
         await AsyncStorage.removeItem('userData');
         console.log('🔐 [API] Token cleared due to 401');
+        error.userMessage = 'Session expired. Please login again.';
       } catch (storageError) {
         console.warn('⚠️ [API] Could not clear storage:', storageError.message);
       }
+    } else if (error.response?.status === 500) {
+      error.userMessage = 'Server error. Please try again later.';
     }
+    
     return Promise.reject(error);
   }
 );
