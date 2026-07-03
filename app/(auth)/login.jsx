@@ -5,13 +5,13 @@ import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { setMobile, setPassword, toggleRememberMe, setLoggedIn, setUser, setToken, setLoading, setError, clearError } from "../../store/slices/authSlice";
+import { fetchDeveloperKyc, setMobile, setPassword, toggleRememberMe, setLoggedIn, setUser, setToken, setLoading, setError, clearError } from "../../store/slices/authSlice";
 import { authService } from "../../services/authService";
 import AuthHeader from "../../components/AuthHeader";
 
 export default function Login() {
     const dispatch = useDispatch();
-    const { mobile, password, rememberMe, loading, error } = useSelector((state) => state.auth);
+    const { mobile, password, rememberMe, loading } = useSelector((state) => state.auth);
     const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async () => {
@@ -49,10 +49,13 @@ export default function Login() {
                 dispatch(setToken(response.token));
                 dispatch(setUser(response.user));
                 dispatch(setLoggedIn(true));
+
+                const kycResult = await dispatch(fetchDeveloperKyc());
+                const kycStatus = kycResult.payload?.verification_status;
+                const isKycApproved = ['verified', 'approved'].includes(String(kycStatus || '').toLowerCase());
                 
-                console.log(' [LOGIN PAGE] Navigating to home');
-                // Navigate to home
-                router.replace("/(tabs)/home");
+                console.log(' [LOGIN PAGE] Navigating after KYC check:', kycStatus);
+                router.replace(isKycApproved ? "/(tabs)/home" : "/(screens)/kyc");
             } else {
                 console.log(' [LOGIN PAGE] Login response success=false');
                 Alert.alert('Login Failed', 'Invalid response from server. Please try again.');

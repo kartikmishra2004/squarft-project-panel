@@ -1,4 +1,3 @@
-import "react-native-gesture-handler";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
@@ -8,6 +7,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import "../global.css";
 import { store } from '../store/store';
+import KycModal from "../components/KycModal";
 import {
     useFonts,
     Lato_400Regular,
@@ -43,6 +43,7 @@ export default function RootLayout() {
                             <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: "none" }} />
                             <Stack.Screen name="(screens)" options={{ headerShown: false, animation: "none" }} />
                         </Stack>
+                        <KycModal />
                     </SafeAreaProvider>
                 </BottomSheetModalProvider>
             </Provider>
