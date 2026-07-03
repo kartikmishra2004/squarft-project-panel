@@ -11,12 +11,29 @@ import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
 import { updateProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
+import { setInventoryLoading, setInventoryData, setInventoryError } from "../../store/slices/inventorySlice";
 import { projectOverviewApi } from "../../services/api";
 import { visitService } from "../../services/visitService";
 import { projectService } from "../../services/projectService";
 import { dealService } from "../../services/dealService";
+import { inventoryService } from "../../services/inventoryService";
 
 const profileImg = require("../../assets/images/user_profile.png");
+
+// Skeleton shimmer box
+const SkeletonBox = ({ width, height, borderRadius = 8, style }) => {
+    const shimmer = useRef(new Animated.Value(0)).current;
+    useEffect(() => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(shimmer, { toValue: 1, duration: 900, useNativeDriver: true }),
+                Animated.timing(shimmer, { toValue: 0, duration: 900, useNativeDriver: true }),
+            ])
+        ).start();
+    }, [shimmer]);
+    const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.7] });
+    return <Animated.View style={[{ width, height, borderRadius, backgroundColor: "#E2E8F0", opacity }, style]} />;
+};
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
 const DROPDOWN_LAYER = 2147483647;
 const INVENTORY_TABS = [
@@ -25,7 +42,8 @@ const INVENTORY_TABS = [
     { key: "rowhouse", label: "Rowhouse" },
     { key: "plot", label: "Plot" },
     { key: "shop", label: "Shop" },
-    { key: "showroom", label: "Showroom" }
+    { key: "showroom", label: "Showroom" },
+    { key: "office", label: "Office" },
 ];
 const STATUS_OPTIONS = ["Available", "Booked", "Sold"];
 
@@ -34,6 +52,8 @@ export default function Home() {
     const dispatch = useDispatch();
     const projectsData = useSelector((state) => state.projects.projects);
     const notifications = useSelector((state) => state.notifications?.list || []);
+    const inventoryByProject = useSelector((state) => state.inventory.byProject);
+    const inventoryLoading = useSelector((state) => state.inventory.loading);
     const [activeTab, setActiveTab] = useState("Overview");
 
     const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -69,6 +89,9 @@ export default function Home() {
     // Deals state
     const [deals, setDeals] = useState([]);
     const [dealsLoading, setDealsLoading] = useState(false);
+
+    // Unit detail loading state (for modal)
+    const [unitDetailLoading, setUnitDetailLoading] = useState(false);
 
     const tabs = HOME_TABS;
     const inventoryTabs = INVENTORY_TABS;
@@ -112,12 +135,13 @@ export default function Home() {
         try {
             const res = await projectOverviewApi.getProjectsList();
             const list = res.data?.data || [];
+            console.log('📋 [HOME] projectsList fetched:', list.length, list.map(p => p.name));
             setProjectsList(list);
             if (list.length > 0) {
                 setSelectedProjectId(list[0].id);
             }
         } catch (error) {
-            console.error('Failed to fetch projects list:', error);
+            console.error('❌ [HOME] Failed to fetch projects list:', error?.response?.status, error?.message);
         }
     }, []);
 
@@ -136,7 +160,7 @@ export default function Home() {
         }
     }, []);
 
-    useEffect(() => { fetchProjectsList(); }, [fetchProjectsList]);
+    // fetchProjectsList replaced by fetchBackendProjects which sets projectsList directly
     useEffect(() => { fetchOverview(selectedProjectId); }, [selectedProjectId, fetchOverview]);
 
     const selectedProject = projectsData.find((project) => project.id === selectedProjectId) || projectsData[0] || { inventory: {} };
@@ -289,24 +313,83 @@ export default function Home() {
         setIsInventoryEditVisible(true);
     };
 
-    const saveInventoryEdit = () => {
+    const patchInventoryCache = (bpId, realUnitId, price, status) => {
+        if (!bpId || !inventoryByProject[bpId]) return;
+        const updated = JSON.parse(JSON.stringify(inventoryByProject[bpId]));
+        const invType = inventoryEditTarget.inventoryType;
+        const typeData = updated[invType];
+        if (!typeData) return;
+
+        // Patch a single property in the raw API format
+        const patchProp = (p) =>
+            p.id === realUnitId
+                ? { ...p, price_display: price.trim(), price: price.trim(), status_label: status, status: status.toLowerCase() }
+                : p;
+
+        // tower_floor grouping: towers[].floors[].properties[]
+        if (typeData.grouping === "tower_floor" && typeData.towers) {
+            typeData.towers = typeData.towers.map((t) => ({
+                ...t,
+                floors: (t.floors || []).map((f) => ({ ...f, properties: (f.properties || []).map(patchProp) })),
+            }));
+        }
+        // range grouping: ranges[].properties[]
+        if (typeData.grouping === "range" && typeData.ranges) {
+            typeData.ranges = typeData.ranges.map((r) => ({ ...r, properties: (r.properties || []).map(patchProp) }));
+        }
+
+        updated[invType] = typeData;
+        dispatch(setInventoryData({ projectId: bpId, data: updated }));
+    };
+
+    const saveInventoryEdit = async () => {
         if (!inventoryEditTarget) return;
 
-        updateInventoryUnit(inventoryEditTarget, (unit) => ({
-            ...unit,
-            price: editPrice.trim(),
-            area: editArea.trim(),
-            status: editStatus,
-            dimmed: editStatus === "Sold" ? true : false,
-        }));
-        dispatch(addNotification({
-            title: "Inventory updated",
-            description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
-            type: "inventory",
-        }));
-        setIsInventoryEditVisible(false);
-        setInventoryEditTarget(null);
-        setIsStatusDropdownOpen(false);
+        const realUnitId = inventoryEditTarget._unitId;
+
+        if (realUnitId) {
+            const bpId = getBackendProjectId();
+            // Optimistic update — patch cache immediately so UI reflects change
+            const snapshot = inventoryByProject[bpId] ? JSON.parse(JSON.stringify(inventoryByProject[bpId])) : null;
+            patchInventoryCache(bpId, realUnitId, editPrice, editStatus);
+
+            setIsInventoryEditVisible(false);
+            setInventoryEditTarget(null);
+            setIsStatusDropdownOpen(false);
+
+            try {
+                await inventoryService.updateInventoryUnit(realUnitId, {
+                    price: editPrice.trim(),
+                    status: editStatus,
+                });
+                dispatch(addNotification({
+                    title: "Inventory updated",
+                    description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
+                    type: "inventory",
+                }));
+            } catch (error) {
+                // Roll back optimistic update
+                if (snapshot && bpId) dispatch(setInventoryData({ projectId: bpId, data: snapshot }));
+                Alert.alert("Update Failed", error.message || "Could not save changes. Please try again.");
+            }
+        } else {
+            // Mock/local data — update Redux project slice
+            updateInventoryUnit(inventoryEditTarget, (unit) => ({
+                ...unit,
+                price: editPrice.trim(),
+                area: editArea.trim(),
+                status: editStatus,
+                dimmed: editStatus === "Sold",
+            }));
+            dispatch(addNotification({
+                title: "Inventory updated",
+                description: `${inventoryEditTarget.inventoryType} inventory was updated for ${selectedProject.title}.`,
+                type: "inventory",
+            }));
+            setIsInventoryEditVisible(false);
+            setInventoryEditTarget(null);
+            setIsStatusDropdownOpen(false);
+        }
     };
 
     const handleTabPress = (tab) => {
@@ -322,6 +405,8 @@ export default function Home() {
         // Clear visit data when switching projects
         setVisitStats(null);
         setUpcomingVisits([]);
+        // Deals will re-fetch via useEffect when tab is active
+        setDeals([]);
     };
 
     const getPropertyDetailText = (inventoryTypeValue, item) => {
@@ -405,6 +490,8 @@ export default function Home() {
 
             if (response.data && response.data.length > 0) {
                 setBackendProjects(response.data);
+                setProjectsList(response.data); // use same data for dropdown
+                setSelectedProjectId(response.data[0].id);
                 console.log('✅ [HOME] Backend projects fetched:', response.data.length);
                 // Set the first project as default
                 setRealProjectId(response.data[0].id);
@@ -599,6 +686,31 @@ export default function Home() {
         }
     }, [activeTab, getBackendProjectId, fetchDealsData]);
 
+    // Fetch inventory from real API and normalise into the shape the UI renderers expect
+    const fetchInventoryData = useCallback(async (projectId, force = false) => {
+        if (!projectId) return;
+        // Skip if already cached (unless forced)
+        if (!force && inventoryByProject[projectId]) return;
+        try {
+            dispatch(setInventoryLoading({ projectId }));
+            const response = await inventoryService.getProjectInventory(projectId);
+            // response.data.inventory = { apartment: {...}, villa: {...}, ... }
+            const raw = response?.data?.inventory || {};
+            dispatch(setInventoryData({ projectId, data: raw }));
+        } catch (error) {
+            console.log('❌ [HOME] Failed to fetch inventory:', error);
+            dispatch(setInventoryError({ projectId, error: error.message }));
+        }
+    }, [dispatch, inventoryByProject]);
+
+    // Load inventory when Inventory tab is active
+    useEffect(() => {
+        const backendProjectId = getBackendProjectId();
+        if (activeTab === 'Inventory' && backendProjectId) {
+            fetchInventoryData(backendProjectId);
+        }
+    }, [activeTab, getBackendProjectId, fetchInventoryData]);
+
     const getRangeLabel = (index, section) => section?.name || section?.label || `Range ${String.fromCharCode(65 + index)}`;
 
     const getSectionLabel = (index, inventoryTypeValue) => {
@@ -681,7 +793,7 @@ export default function Home() {
                             <View className="flex-row items-center justify-end">
                                 <TouchableOpacity
                                     activeOpacity={0.9}
-                                    onPress={() => openInventoryEdit(item.raw, item.target)}
+                                    onPress={() => openInventoryEdit(item.raw, { ...item.target, _unitId: item.raw._unitId })}
                                     className="w-8 h-8 rounded-lg bg-gray-100 items-center justify-center"
                                 >
                                     <Feather name="edit-3" size={14} color="#94A3B8" />
@@ -884,32 +996,91 @@ export default function Home() {
         );
     };
 
-    const openInventoryDetail = (unit, context = {}) => {
+    const openInventoryDetail = async (unit, context = {}) => {
         const sectionLabel = context.sectionLabel || context.towerLabel || context.stackLabel || selectedProject.title;
         const unitLabel = unit.id || unit.unit || unit.title || "Property";
+
+        // If we have a real backend unit UUID, fetch full details
+        const realUnitId = unit._unitId;
+        if (realUnitId) {
+            try {
+                setUnitDetailLoading(true);
+                const response = await inventoryService.getInventoryUnitDetails(realUnitId);
+                const details = response?.data;
+                if (details) {
+                    const u = details.unit || {};
+                    const proj = details.project || {};
+                    const dealSummary = details.deal_summary;
+                    const isBooked = !!dealSummary;
+
+                    setSelectedDeal({
+                        // unit fields
+                        id: u.id,
+                        _unitId: u.id,
+                        inventory_unit_id: u.id,
+                        unit_code: u.unit_code,
+                        title: `${sectionLabel} • ${u.display_title || u.unit_code || unitLabel}`,
+                        propertyType: u.configuration || u.title || context.inventoryLabel || "Property",
+                        area: details.area,
+                        area_sqft: details.area_sqft,
+                        possession: details.possession,
+                        possession_date: details.possession_date,
+                        possession_status: details.possession_status,
+                        mobile: details.mobile,
+                        location: details.location,
+                        // project fields
+                        project_name: proj.name,
+                        avg_price_per_sqft: proj.avg_price_per_sqft,
+                        avgPricePerSqft: proj.avg_price_per_sqft_display,
+                        development_progress: proj.development_progress,
+                        is_verified: proj.is_verified,
+                        // deal fields
+                        ...(dealSummary || {}),
+                        deal_id: dealSummary?.id,
+                        dealId: dealSummary?.id,
+                        deal_summary: dealSummary,
+                        // media / amenities
+                        images: (details.media || []).filter(m => m.media_type === 'image').map(m => ({ uri: m.url })),
+                        amenities: (details.amenities || []).map(a => a.name),
+                        // modal flags
+                        topStatus: u.status_label || u.status,
+                        dealStatus: u.status,
+                        footerStatus: isBooked ? dealSummary.status_label : u.status_label,
+                        progress: dealSummary?.payment_progress_percent ?? 0,
+                        showDealSummary: isBooked,
+                        showFollowUps: !isBooked,
+                        // payment schedule
+                        payment_schedule: dealSummary?.payment_schedule || [],
+                        payment_progress_percent: dealSummary?.payment_progress_percent ?? 0,
+                    });
+                    setIsProjectDetailVisible(true);
+                    return;
+                }
+            } catch (err) {
+                console.log('❌ [HOME] getInventoryUnitDetails failed, falling back:', err);
+            } finally {
+                setUnitDetailLoading(false);
+            }
+        }
+
+        // Fallback: _unitId missing or API failed — show what we have from the unit itself
         const isBookedOrSoldUnit = unit.status === "Booked" || unit.status === "Sold";
-        const dealTemplate = isBookedOrSoldUnit ? getInventoryDealTemplate(context.inventoryType, unit) : null;
 
         setSelectedDeal({
-            ...(dealTemplate || {}),
             ...unit,
-            deal_id: dealTemplate?.deal_id || dealTemplate?.id || unit.deal_id,
             inventory_unit_id: unit.id || unit.unit,
             title: `${sectionLabel} • ${unitLabel}`,
             propertyType: unit.title || unit.meta || context.inventoryLabel || "Property",
             topStatus: unit.status,
             dealStatus: unit.status,
-            footerStatus: unit.ctaLabel === "DETAILS" ? "View Details" : unit.status,
-            footerTotal: unit.price || unit.area || selectedProject.avgPrice,
-            avgPricePerSqft: unit.avgPricePerSqft || selectedProject.avgPrice,
-            possession: unit.possession || selectedProject.possession,
-            amenities: unit.amenities || selectedProject.amenities,
+            area: unit.area || unit.area_sqft || null,
+            possession: unit.possession || null,
+            avgPricePerSqft: unit.avgPricePerSqft || null,
+            amenities: unit.amenities || [],
+            images: unit.images || [],
             progress: unit.progress ?? 0,
-            images: unit.images || selectedProject.projectImages || [],
-            totalImages: unit.images?.length || selectedProject.projectImages?.length || 0,
-            followUps: selectedProject.visits?.followUps || [],
             showDealSummary: isBookedOrSoldUnit,
-            showFollowUps: unit.status === "Available",
+            showFollowUps: false,
         });
         setIsProjectDetailVisible(true);
     };
@@ -992,16 +1163,86 @@ export default function Home() {
 
     const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
     const dealsData = selectedProject.deals || [];
+
+    // ── Inventory from real API (falls back to Redux mock when not yet loaded) ──
+    const backendProjectId = getBackendProjectId();
+    const apiInventoryRaw = inventoryByProject[backendProjectId] || null;
+    const isInventoryLoading = inventoryLoading[backendProjectId] ?? false;
+
+    // Convert API range-based grouping { ranges: [{range_name, properties}] }
+    // into the sections shape the existing renderers already understand
+    const toSectionsShape = (apiType) => {
+        if (!apiType) return { sections: [] };
+        if (apiType.grouping === 'range') {
+            return {
+                sections: (apiType.ranges || []).map((r) => ({
+                    id: r.range_name,
+                    name: r.range_name,
+                    units: (r.properties || []).map((p) => ({
+                        id: p.unit_code || p.id,
+                        title: p.display_title || p.title,
+                        area: p.area,
+                        area_sqft: p.area_sqft,
+                        price: p.price_display || p.price,
+                        status: p.status_label || p.status,
+                        configuration: p.configuration,
+                        _unitId: p.id, // real UUID for unit detail API
+                    })),
+                })),
+                summary: apiType.summary,
+            };
+        }
+        if (apiType.grouping === 'tower_floor') {
+            return {
+                towers: (apiType.towers || []).map((t) => ({
+                    key: t.tower_name,
+                    label: t.tower_name,
+                    sections: (t.floors || []).map((f) => ({
+                        id: f.floor_name,
+                        rowLabel: f.floor_name,
+                        units: (f.properties || []).map((p) => ({
+                            id: p.unit_code || p.id,
+                            title: p.display_title || p.title,
+                            area: p.area,
+                            area_sqft: p.area_sqft,
+                            price: p.price_display || p.price,
+                            status: p.status_label || p.status,
+                            configuration: p.configuration,
+                            _unitId: p.id, // real UUID for unit detail API
+                        })),
+                    })),
+                })),
+                summary: apiType.summary,
+            };
+        }
+        return { sections: [] };
+    };
+
+    // Build the inventory object the renderers consume, preferring API data
+    const resolvedInventory = useMemo(() => {
+        if (apiInventoryRaw) {
+            const result = {};
+            Object.keys(apiInventoryRaw).forEach((type) => {
+                result[type] = toSectionsShape(apiInventoryRaw[type]);
+            });
+            return result;
+        }
+        // Fallback to Redux mock data
+        return selectedProject.inventory || {};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apiInventoryRaw, selectedProject.inventory]);
+
     const availableInventoryTabs = useMemo(() => inventoryTabs.filter((tab) => {
-        const inventory = selectedProject.inventory?.[tab.key];
+        const inv = resolvedInventory[tab.key];
         return Boolean(
-            inventory?.towers?.length ||
-            inventory?.sections?.length ||
-            inventory?.stacks?.length
+            inv?.towers?.length ||
+            inv?.sections?.length ||
+            inv?.stacks?.length
         );
-    }), [inventoryTabs, selectedProject.inventory]);
+    }), [inventoryTabs, resolvedInventory]);
+
     const availableInventoryKeys = availableInventoryTabs.map(tab => tab.key).join('|');
-    const selectedInventory = selectedProject.inventory?.[inventoryType] || { sections: [] };
+    const selectedInventory = resolvedInventory[inventoryType] || { sections: [] };
     const selectedTowerData = selectedInventory.towers?.find((tower) => tower.key === selectedTower) || selectedInventory.towers?.[0] || null;
     const selectedPlotData = selectedInventory.stacks?.find((stack) => stack.key === selectedPlotStack) || selectedInventory.stacks?.[0] || null;
     const activePlotUnit = selectedPlotData?.levels.flatMap((level) => level.cards || []).find((card) => card.unit === selectedPlotUnit)
@@ -1080,11 +1321,14 @@ export default function Home() {
                 statusBarTranslucent
                 onRequestClose={() => setIsProjectDropdownOpen(false)}
             >
-                <TouchableOpacity
-                    activeOpacity={1}
-                    onPress={() => setIsProjectDropdownOpen(false)}
-                    style={{ flex: 1, backgroundColor: "transparent", zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}
-                >
+                <View style={{ flex: 1, zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}>
+                    {/* Backdrop */}
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        onPress={() => setIsProjectDropdownOpen(false)}
+                        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+                    />
+                    {/* Dropdown list */}
                     <View
                         className="bg-white rounded-xl border overflow-hidden"
                         style={{
@@ -1097,7 +1341,7 @@ export default function Home() {
                             elevation: DROPDOWN_LAYER,
                         }}
                     >
-                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                             {projectOptions.map((project) => {
                                 const isSelected = project.id === selectedProjectId;
 
@@ -1119,7 +1363,7 @@ export default function Home() {
                             })}
                         </ScrollView>
                     </View>
-                </TouchableOpacity>
+                </View>
             </Modal>
 
             {/* Header Switcher */}
@@ -1153,13 +1397,17 @@ export default function Home() {
                             {/* Profile & Notification */}
                             <View className="flex-row justify-between items-center mb-4">
                                 <View className="flex-row items-center">
-                                    <View className="w-[46px] h-[46px] relative">
+                                    <TouchableOpacity 
+                                        activeOpacity={0.85}
+                                        onPress={() => router.push("/(tabs)/settings")}
+                                        className="w-[46px] h-[46px] relative"
+                                    >
                                         <Image
                                             source={profileImg}
                                             className="w-[50px] h-[50px] rounded-full border-2 border-white"
                                             resizeMode="cover"
                                         />
-                                    </View>
+                                    </TouchableOpacity>
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
                                             <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
@@ -1241,32 +1489,49 @@ export default function Home() {
 
                             {/* Stats Cards */}
                             <View className="flex-row justify-between" style={{ zIndex: 1, elevation: 1, position: "relative" }}>
-                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
-                                    <View className="bg-[#4A43EC] py-2.5 items-center">
-                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
-                                    </View>
-                                    <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{projectStats.totalReceived}</Text>
-                                    </View>
-                                </View>
+                                {overviewLoading ? (
+                                    <>
+                                        {[0, 1, 2].map((i) => (
+                                            <View key={i} className={`flex-1 bg-white/15 rounded-2xl overflow-hidden ${i < 2 ? "mr-2" : ""} min-h-[72px]`}>
+                                                <View className="bg-white/20 py-2.5 items-center">
+                                                    <SkeletonBox width={64} height={8} borderRadius={4} style={{ backgroundColor: "rgba(255,255,255,0.3)" }} />
+                                                </View>
+                                                <View className="py-3 items-center">
+                                                    <SkeletonBox width={56} height={14} borderRadius={5} style={{ backgroundColor: "rgba(255,255,255,0.25)" }} />
+                                                </View>
+                                            </View>
+                                        ))}
+                                    </>
+                                ) : (
+                                    <>
+                                        <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                            <View className="bg-[#4A43EC] py-2.5 items-center">
+                                                <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Total Received</Text>
+                                            </View>
+                                            <View className="py-3 items-center bg-white">
+                                                <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{projectStats.totalReceived}</Text>
+                                            </View>
+                                        </View>
 
-                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
-                                    <View className="bg-[#4A43EC] py-2.5 items-center">
-                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
-                                    </View>
-                                    <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#10B981] text-[13px] font-lato-bold">{projectStats.upcomingAmount}</Text>
-                                    </View>
-                                </View>
+                                        <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm mr-2 border border-white/50 min-h-[72px]">
+                                            <View className="bg-[#4A43EC] py-2.5 items-center">
+                                                <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">Upcoming  Amount</Text>
+                                            </View>
+                                            <View className="py-3 items-center bg-white">
+                                                <Text className="text-[#10B981] text-[13px] font-lato-bold">{projectStats.upcomingAmount}</Text>
+                                            </View>
+                                        </View>
 
-                                <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-white/50 min-h-[72px]">
-                                    <View className="bg-[#4A43EC] py-2.5 items-center">
-                                        <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
-                                    </View>
-                                    <View className="py-3 items-center bg-white">
-                                        <Text className="text-[#EF4444] text-[13px] font-lato-bold">{projectStats.toBeReleased}</Text>
-                                    </View>
-                                </View>
+                                        <View className="flex-1 bg-white rounded-2xl overflow-hidden shadow-sm border border-white/50 min-h-[72px]">
+                                            <View className="bg-[#4A43EC] py-2.5 items-center">
+                                                <Text className="text-white text-[9px] font-lato-bold uppercase tracking-tighter">To Be Released</Text>
+                                            </View>
+                                            <View className="py-3 items-center bg-white">
+                                                <Text className="text-[#EF4444] text-[13px] font-lato-bold">{projectStats.toBeReleased}</Text>
+                                            </View>
+                                        </View>
+                                    </>
+                                )}
                             </View>
                         </LinearGradient>
 
@@ -1406,10 +1671,53 @@ export default function Home() {
                     <View className="pt-2">
                         <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
                             {overviewLoading ? (
-                                <View className="h-36 items-center justify-center">
-                                    <ActivityIndicator size="small" color="#4A43EC" />
-                                </View>
+                                <>
+                                    {/* Image skeleton */}
+                                    <View className="flex-row h-36">
+                                        <View className="flex-[2]">
+                                            <SkeletonBox width="100%" height={144} borderRadius={0} />
+                                        </View>
+                                        <View className="flex-1 ml-0.5">
+                                            <SkeletonBox width="100%" height={144} borderRadius={0} style={{ opacity: 0.5 }} />
+                                        </View>
+                                    </View>
+                                    {/* Content skeleton */}
+                                    <View className="p-3 gap-3">
+                                        {/* possession + avg price row */}
+                                        <View className="flex-row items-center gap-2">
+                                            <SkeletonBox width={90} height={9} borderRadius={4} />
+                                            <SkeletonBox width={4} height={4} borderRadius={2} />
+                                            <SkeletonBox width={120} height={9} borderRadius={4} />
+                                        </View>
+                                        {/* project title */}
+                                        <SkeletonBox width="65%" height={20} borderRadius={6} />
+                                        {/* location */}
+                                        <SkeletonBox width="42%" height={10} borderRadius={5} />
+                                        {/* divider + apartment configs */}
+                                        <View className="border-t border-dashed border-gray-100 pt-3 flex-row gap-4">
+                                            <View className="flex-1 gap-1.5">
+                                                <SkeletonBox width={40} height={9} borderRadius={4} />
+                                                <SkeletonBox width={80} height={14} borderRadius={5} />
+                                            </View>
+                                            <View className="w-px bg-gray-100" />
+                                            <View className="flex-1 gap-1.5">
+                                                <SkeletonBox width={40} height={9} borderRadius={4} />
+                                                <SkeletonBox width={80} height={14} borderRadius={5} />
+                                            </View>
+                                        </View>
+                                        {/* unit count pills */}
+                                        <View className="flex-row gap-2 mt-1">
+                                            {["Total", "Avail", "Sold", "Booked"].map((label) => (
+                                                <View key={label} className="flex-1 rounded-lg py-1.5 items-center gap-1.5" style={{ backgroundColor: "#F8FAFC" }}>
+                                                    <SkeletonBox width={26} height={8} borderRadius={3} />
+                                                    <SkeletonBox width={22} height={13} borderRadius={4} />
+                                                </View>
+                                            ))}
+                                        </View>
+                                    </View>
+                                </>
                             ) : (
+                                <>
                                 <View className="flex-row h-36">
                                     <View className="flex-[2] relative">
                                         {displayCoverImage ? (
@@ -1440,64 +1748,70 @@ export default function Home() {
                                         </View>
                                     </View>
                                 </View>
-                            )}
 
-                            <View className="p-3">
-                                <View className="flex-row items-center mb-1.5">
-                                    <Text className="text-gray-400 text-[9px] font-lato">Possession: {displayPossession}</Text>
-                                    <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
-                                    <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {displayAvgPrice}</Text>
-                                </View>
+                                <View className="p-3">
+                                    <View className="flex-row items-center mb-1.5">
+                                        <Text className="text-gray-400 text-[9px] font-lato">Possession: {displayPossession}</Text>
+                                        <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
+                                        <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {displayAvgPrice}</Text>
+                                    </View>
 
-                                <View className="flex-row items-center justify-between mb-0.5">
-                                    <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{displayProjectTitle}</Text>
-                                    {displayReraApproved && (
-                                        <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
-                                            <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
-                                            <Ionicons name="checkmark-circle" size={9} color="#10B981" />
-                                        </View>
-                                    )}
-                                </View>
-                                <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
-
-                                <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
-                                    <View className="flex-row">
-                                        {displayApartments.map((apt, idx) => (
-                                            <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
-                                                <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
-                                                <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
+                                    <View className="flex-row items-center justify-between mb-0.5">
+                                        <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{displayProjectTitle}</Text>
+                                        {displayReraApproved && (
+                                            <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
+                                                <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
+                                                <Ionicons name="checkmark-circle" size={9} color="#10B981" />
                                             </View>
-                                        ))}
-                                        {displayApartments.length === 0 && (
-                                            <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
                                         )}
                                     </View>
-                                </View>
+                                    <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
 
-                                <View className="flex-row justify-between mb-4">
-                                    <View className="flex-1 bg-[#EEF4FF] border border-[#DDE8FF] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#2563EB] text-[8px] font-lato-bold uppercase">Total</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.total || 0}</Text>
+                                    <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
+                                        <View className="flex-row">
+                                            {displayApartments.map((apt, idx) => (
+                                                <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
+                                                    <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
+                                                    <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
+                                                </View>
+                                            ))}
+                                            {displayApartments.length === 0 && (
+                                                <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
+                                            )}
+                                        </View>
                                     </View>
-                                    <View className="flex-1 bg-[#ECFBF6] border border-[#D7F5E8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#10B981] text-[8px] font-lato-bold uppercase">Avail</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.avail || 0}</Text>
-                                    </View>
-                                    <View className="flex-1 bg-[#FFF3EF] border border-[#FFE1D6] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#EF4444] text-[8px] font-lato-bold uppercase">Sold</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.sold || 0}</Text>
-                                    </View>
-                                    <View className="flex-1 bg-[#FFF8EA] border border-[#FDECC8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
-                                        <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
-                                        <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.booked || 0}</Text>
+
+                                    <View className="flex-row justify-between mb-4">
+                                        <View className="flex-1 bg-[#EEF4FF] border border-[#DDE8FF] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#2563EB] text-[8px] font-lato-bold uppercase">Total</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.total || 0}</Text>
+                                        </View>
+                                        <View className="flex-1 bg-[#ECFBF6] border border-[#D7F5E8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#10B981] text-[8px] font-lato-bold uppercase">Avail</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.avail || 0}</Text>
+                                        </View>
+                                        <View className="flex-1 bg-[#FFF3EF] border border-[#FFE1D6] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#EF4444] text-[8px] font-lato-bold uppercase">Sold</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.sold || 0}</Text>
+                                        </View>
+                                        <View className="flex-1 bg-[#FFF8EA] border border-[#FDECC8] rounded-lg py-1.5 items-center mr-1.5 min-w-0">
+                                            <Text className="text-[#D98A1B] text-[8px] font-lato-bold uppercase">Booked</Text>
+                                            <Text className="text-[#1A1A1A] text-[11px] font-lato-bold">{displayUnits.booked || 0}</Text>
+                                        </View>
                                     </View>
                                 </View>
-                            </View>
+                                </>
+                            )}
                         </View>
                     </View>
                 ) : activeTab === "Inventory" ? (
                     <View className="p-4">
-                        {availableInventoryTabs.length > 0 ? (
+                        {isInventoryLoading ? (
+                            <View className="py-12 items-center">
+                                <ActivityIndicator size="large" color="#4A43EC" />
+                                <Text className="mt-3 text-gray-400 font-lato text-center">Loading inventory...</Text>
+                            </View>
+                        ) : availableInventoryTabs.length > 0 ? (
                             <>
                                 <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-5">
                                     {availableInventoryTabs.map((tab) => (
@@ -1708,9 +2022,38 @@ export default function Home() {
                         }
                     >
                         {dealsLoading && !refreshing ? (
-                            <View className="py-10">
-                                <ActivityIndicator size="large" color="#4A43EC" />
-                                <Text className="text-center text-gray-500 mt-3 font-lato">Loading deals...</Text>
+                            <View className="gap-3">
+                                {[0, 1, 2].map((i) => (
+                                    <View key={i} className="bg-white rounded-[16px] border border-[#E3E7F0] px-3 pt-3 pb-3">
+                                        <View className="flex-row items-start justify-between mb-3">
+                                            <View className="flex-1 pr-2 gap-1.5">
+                                                <SkeletonBox width="65%" height={13} borderRadius={5} />
+                                                <SkeletonBox width="45%" height={10} borderRadius={4} />
+                                            </View>
+                                            <View className="items-end gap-1.5">
+                                                <SkeletonBox width={52} height={18} borderRadius={20} />
+                                                <SkeletonBox width={40} height={9} borderRadius={4} />
+                                            </View>
+                                        </View>
+                                        <View className="mb-3 gap-1.5">
+                                            <View className="flex-row justify-between">
+                                                <SkeletonBox width={100} height={10} borderRadius={4} />
+                                                <SkeletonBox width={30} height={10} borderRadius={4} />
+                                            </View>
+                                            <SkeletonBox width="100%" height={6} borderRadius={6} />
+                                        </View>
+                                        <View className="flex-row gap-2">
+                                            <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-2 gap-1">
+                                                <SkeletonBox width={60} height={8} borderRadius={3} />
+                                                <SkeletonBox width={70} height={13} borderRadius={4} />
+                                            </View>
+                                            <View className="flex-1 rounded-md bg-[#F7F8FC] px-2 py-2 gap-1">
+                                                <SkeletonBox width={40} height={8} borderRadius={3} />
+                                                <SkeletonBox width={70} height={13} borderRadius={4} />
+                                            </View>
+                                        </View>
+                                    </View>
+                                ))}
                             </View>
                         ) : (Array.isArray(deals) ? deals : deals?.data || []).length > 0 ? (
                             
@@ -1736,23 +2079,16 @@ export default function Home() {
                                         key={deal.id || Math.random().toString()}
                                         activeOpacity={0.9}
                                         onPress={async () => {
-                                            console.log('🔵 [HOME] Deal clicked:', deal.id);
-                                            console.log('🔵 [HOME] Raw deal data:', JSON.stringify(deal, null, 2));
-                                            
-                                            // Enrich deal data with property and user info for modal
-                                            const enrichedDeal = {
-                                                ...deal,
-                                                // Map backend fields to modal expected fields
+                                            const base = {
                                                 deal_id: deal.id,
                                                 dealId: deal.id,
-                                                property_title: propertyTitle,
+                                                inventory_unit_id: deal.inventory_unit_id,
                                                 title: propertyTitle,
+                                                property_title: propertyTitle,
                                                 booked_by_name: customerName,
                                                 bookedBy: customerName,
                                                 booked_by_mobile: customerPhone,
                                                 mobile: customerPhone,
-                                                customer_name: customerName,
-                                                customer_phone: customerPhone,
                                                 booking_date: deal.booking_date,
                                                 bookingDate: deal.booking_date,
                                                 total_amount: totalAmount,
@@ -1761,85 +2097,49 @@ export default function Home() {
                                                 dealValue: totalAmount,
                                                 received_amount: paidAmount,
                                                 paid_amount: paidAmount,
-                                                received: paidAmount,
-                                                pending_amount: totalAmount - paidAmount,
-                                                pending: totalAmount - paidAmount,
                                                 progress: paymentPercentage,
                                                 payment_progress_percent: paymentPercentage,
+                                                pending_amount: totalAmount - paidAmount,
+                                                token_amount: deal.token_amount || null,
+                                                tokenAmount: deal.token_amount || null,
+                                                area: deal.area || deal.area_sqft || null,
+                                                possession: deal.possession || deal.possession_date || null,
+                                                amenities: [],
+                                                images: [],
+                                                avgPricePerSqft: null,
+                                                showDealSummary: true,
+                                                showFollowUps: false,
                                             };
-                                            
-                                            // Fetch additional details (property info, user info, and payment schedule)
-                                            try {
-                                                const token = await AsyncStorage.getItem('authToken');
-                                                const headers = { 'Authorization': `Bearer ${token}` };
-                                                
-                                                // Fetch property details
-                                                if (deal.property_id) {
-                                                    try {
-                                                        console.log('🔵 [HOME] Fetching property:', deal.property_id);
-                                                        const propertyResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/v1/properties/${deal.property_id}`, { headers });
-                                                        if (propertyResponse.ok) {
-                                                            const propertyData = await propertyResponse.json();
-                                                            const property = propertyData.data || propertyData;
-                                                            console.log('✅ [HOME] Property data:', property);
-                                                            enrichedDeal.area = property.total_area_sqft;
-                                                            enrichedDeal.area_sqft = property.total_area_sqft;
-                                                            enrichedDeal.possession = property.possession_date;
-                                                            enrichedDeal.possession_date = property.possession_date;
-                                                        } else {
-                                                            console.log('⚠️ [HOME] Property fetch failed:', propertyResponse.status);
-                                                        }
-                                                    } catch (err) {
-                                                        console.log('⚠️ [HOME] Failed to fetch property:', err);
-                                                    }
-                                                }
-                                                
-                                                // Fetch user details if not already present
-                                                if (deal.user_id && !customerName) {
-                                                    try {
-                                                        console.log('🔵 [HOME] Fetching user:', deal.user_id);
-                                                        const userResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/v1/users/${deal.user_id}`, { headers });
-                                                        if (userResponse.ok) {
-                                                            const userData = await userResponse.json();
-                                                            const user = userData.data || userData;
-                                                            const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-                                                            enrichedDeal.customer_name = fullName;
-                                                            enrichedDeal.booked_by_name = fullName;
-                                                            enrichedDeal.bookedBy = fullName;
-                                                            enrichedDeal.customer_phone = user.phone;
-                                                            enrichedDeal.booked_by_mobile = user.phone;
-                                                            enrichedDeal.mobile = user.phone;
-                                                        }
-                                                    } catch (err) {
-                                                        console.log('⚠️ [HOME] Failed to fetch user:', err);
-                                                    }
-                                                }
-                                                
-                                                // Fetch payment schedule to get token amount
+
+                                            // Fetch full unit details to enrich area, possession, amenities, images
+                                            if (deal.inventory_unit_id) {
                                                 try {
-                                                    console.log('🔵 [HOME] Fetching payment schedule for deal:', deal.id);
-                                                    const scheduleResponse = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/project-panel/deals/${deal.id}/payment-schedule`, { headers });
-                                                    if (scheduleResponse.ok) {
-                                                        const scheduleData = await scheduleResponse.json();
-                                                        console.log('✅ [HOME] Payment schedule data:', scheduleData);
-                                                        const schedule = scheduleData.data?.schedule || scheduleData.schedule || [];
-                                                        if (schedule.length > 0) {
-                                                            const firstMilestone = schedule[0];
-                                                            enrichedDeal.token_amount = firstMilestone.milestone_amount || firstMilestone.amount;
-                                                            enrichedDeal.tokenAmount = firstMilestone.milestone_amount || firstMilestone.amount;
+                                                    setUnitDetailLoading(true);
+                                                    const res = await inventoryService.getInventoryUnitDetails(deal.inventory_unit_id);
+                                                    const details = res?.data;
+                                                    if (details) {
+                                                        const proj = details.project || {};
+                                                        base.area = details.area || base.area;
+                                                        base.area_sqft = details.area_sqft || base.area_sqft;
+                                                        base.possession = details.possession || base.possession;
+                                                        base.possession_date = details.possession_date;
+                                                        base.avgPricePerSqft = proj.avg_price_per_sqft_display || proj.avg_price_per_sqft || null;
+                                                        base.images = (details.media || []).filter(m => m.media_type === 'image').map(m => ({ uri: m.url }));
+                                                        base.amenities = (details.amenities || []).map(a => a.name);
+                                                        base.is_verified = proj.is_verified;
+                                                        if (details.deal_summary?.token_amount) {
+                                                            base.token_amount = details.deal_summary.token_amount;
+                                                            base.tokenAmount = details.deal_summary.token_amount;
                                                         }
-                                                    } else {
-                                                        console.log('⚠️ [HOME] Payment schedule fetch failed:', scheduleResponse.status);
                                                     }
                                                 } catch (err) {
-                                                    console.log('⚠️ [HOME] Failed to fetch payment schedule:', err);
+                                                    console.log('⚠️ [HOME] Unit detail fetch failed for deal modal:', err);
+                                                } finally {
+                                                    setUnitDetailLoading(false);
                                                 }
-                                            } catch (error) {
-                                                console.log('⚠️ [HOME] Failed to enrich deal data:', error);
                                             }
-                                            
-                                            console.log('✅ [HOME] Enriched deal:', JSON.stringify(enrichedDeal, null, 2));
-                                            setSelectedDeal(enrichedDeal);
+
+                                            setSelectedDeal(base);
                                             setIsProjectDetailVisible(true);
                                         }}
                                         className="bg-white rounded-[16px] border border-[#E3E7F0] mb-3.5 overflow-hidden"
@@ -1915,6 +2215,12 @@ export default function Home() {
                     </View>
                 )}
             </ScrollView>
+
+            {unitDetailLoading && (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.25)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+                    <ActivityIndicator size="large" color="#4A43EC" />
+                </View>
+            )}
 
             <ProjectDetailModal
                 visible={isProjectDetailVisible}

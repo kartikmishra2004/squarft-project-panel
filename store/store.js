@@ -4,6 +4,7 @@ import authReducer from './slices/authSlice';
 import projectReducer from './slices/projectSlice';
 import projectsReducer from './slices/projectsSlice';
 import notificationReducer from './slices/notificationSlice';
+import inventoryReducer from './slices/inventorySlice';
 
 export const store = configureStore({
     reducer: {
@@ -12,5 +13,6 @@ export const store = configureStore({
         project: projectReducer,
         projects: projectsReducer,
         notifications: notificationReducer,
+        inventory: inventoryReducer,
     },
 });

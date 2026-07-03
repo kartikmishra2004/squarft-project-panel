@@ -101,12 +101,14 @@ export const projectFormApi = {
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }
     ),
+    getDraftStepData: (projectId) => api.get(`/api/v1/project-panel/form/${projectId}/step-data`),
 };
 
 // Project Overview APIs
 export const projectOverviewApi = {
     getProjectsList: () => api.get('/api/v1/project-panel/overview/list'),
     getProjectOverview: (projectId) => api.get(`/api/v1/project-panel/overview/${projectId}`),
+    getDraftProjects: () => api.get('/api/v1/project-panel/overview/my-drafts'),
 };
 
 export default api;
