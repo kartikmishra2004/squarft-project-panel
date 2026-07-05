@@ -187,6 +187,7 @@ const projectSlice = createSlice({
                                 floor: r.toString(),
                                 bhk: subType === 'office' ? (config.type || 'Co-working') : (config.type || '2 BHK'),
                                 officeType: subType === 'office' ? (config.type || 'Co-working') : '',
+                                variantName: config.name || '',
                                 area: (override.customArea || config.area || '0').toString(),
                                 areaUnit: subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
                                 price: (override.customPrice || config.price || '').toString().replace(/,/g, ''),
