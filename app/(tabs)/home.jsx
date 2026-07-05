@@ -9,7 +9,7 @@ import { useRouter } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
 import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
-import { updateProject } from "../../store/slices/projectsSlice";
+import { updateProject, addProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
 import { setInventoryLoading, setInventoryData, setInventoryError } from "../../store/slices/inventorySlice";
 import { projectOverviewApi } from "../../services/api";
@@ -151,7 +151,9 @@ export default function Home() {
         try {
             setOverviewLoading(true);
             const res = await projectOverviewApi.getProjectOverview(projectId);
-            setOverviewData(res.data?.data || null);
+            const data = res.data?.data || null;
+            console.log('🏗️ [OVERVIEW] header:', JSON.stringify(data?.header));
+            setOverviewData(data);
         } catch (error) {
             console.error('Failed to fetch project overview:', error);
             setOverviewData(null);
@@ -490,11 +492,24 @@ export default function Home() {
 
             if (response.data && response.data.length > 0) {
                 setBackendProjects(response.data);
-                setProjectsList(response.data); // use same data for dropdown
+                setProjectsList(response.data);
                 setSelectedProjectId(response.data[0].id);
-                console.log('✅ [HOME] Backend projects fetched:', response.data.length);
-                // Set the first project as default
                 setRealProjectId(response.data[0].id);
+                // Seed Redux projects slice with real backend data
+                response.data.forEach((p) => {
+                    dispatch(addProject({
+                        id: p.id,
+                        title: p.name || p.title,
+                        location: [p.location, p.city, p.state].filter(Boolean).join(', '),
+                        developer: p.responsible_person_name || p.sales_officer_name || '',
+                        possession: p.possession_status || '',
+                        rera: !!p.rera_approved,
+                        inventory: {},
+                        deals: [],
+                        visits: { metrics: [], pipeline: { stages: [] }, followUps: [] },
+                    }));
+                });
+                console.log('✅ [HOME] Backend projects fetched:', response.data.length);
                 return response.data;
             } else {
                 console.log('⚠️ [HOME] No projects found in backend');
@@ -506,7 +521,7 @@ export default function Home() {
         } finally {
             setProjectsLoading(false);
         }
-    }, []);
+    }, [dispatch]);
 
     // Fetch visit data
     const fetchVisitData = useCallback(async (projectId) => {
@@ -627,13 +642,17 @@ export default function Home() {
         const backendProjectId = getBackendProjectId();
         if (!backendProjectId) return;
         setRefreshing(true);
-        if (activeTab === 'Visits') {
+        if (activeTab === 'Overview') {
+            await fetchOverview(backendProjectId);
+        } else if (activeTab === 'Inventory') {
+            await fetchInventoryData(backendProjectId, true); // force = true to bypass cache
+        } else if (activeTab === 'Visits') {
             await fetchVisitData(backendProjectId);
         } else if (activeTab === 'Deals') {
             await fetchDealsData(backendProjectId);
         }
         setRefreshing(false);
-    }, [getBackendProjectId, fetchVisitData, activeTab]);
+    }, [getBackendProjectId, fetchOverview, fetchInventoryData, fetchVisitData, fetchDealsData, activeTab]);
 
     // Fetch deals data
     const fetchDealsData = useCallback(async (projectId) => {
@@ -1123,8 +1142,8 @@ export default function Home() {
     const displayProjectLocation = apiHeader?.location || selectedProject?.location || "";
     const displayPossession = apiHeader?.possession || selectedProject?.possession || "";
     const displayAvgPrice = apiHeader?.avg_price_per_sqft ? `₹${apiHeader.avg_price_per_sqft}/sqft` : selectedProject?.avgPrice || "";
-    const displayReraApproved = apiHeader?.rera?.is_approved ?? selectedProject?.rera ?? false;
-    const displayReraNumber = apiHeader?.rera?.number || "";
+    const displayReraApproved = apiHeader?.rera?.is_approved ?? apiHeader?.rera_approved ?? selectedProject?.rera ?? false;
+    const displayReraNumber = apiHeader?.rera?.number || apiHeader?.rera_number || "";
 
     const displayUnits = apiInventory ? {
         total: apiInventory.total,
@@ -1146,9 +1165,6 @@ export default function Home() {
     // Cover image from API media or fallback to Redux
     const displayCoverImage = apiMedia.length > 0 ? { uri: apiMedia[0] } : getProjectImageSource(selectedProject);
     const displayImageCount = apiMedia.length > 0 ? `1/${apiMedia.length}` : projectImagesLabel;
-
-    const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
-    const dealsData = selectedProject.deals || [];
 
     // ── Inventory from real API (falls back to Redux mock when not yet loaded) ──
     const backendProjectId = getBackendProjectId();
@@ -1397,7 +1413,7 @@ export default function Home() {
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
                                             <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
-                                            {mockData.user.verified && (
+                                            {(apiUserProfile?.is_verified ?? mockData.user.verified) && (
                                                 <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
                                             )}
                                         </View>
@@ -1433,34 +1449,7 @@ export default function Home() {
                                         </Text>
                                     </TouchableOpacity>
 
-                                    {false && isProjectDropdownOpen ? (
-                                        <View
-                                            className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                            style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER, borderWidth: 1.5, borderColor: "#4A43EC" }}
-                                        >
-                                            {projectOptions.map((project) => {
-                                                const isSelected = project.id === selectedProjectId;
 
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={project.id}
-                                                        activeOpacity={0.85}
-                                                        onPress={() => {
-                                                            handleProjectSelect(project.id);
-                                                        }}
-                                                        className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
-                                                    >
-                                                        <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
-                                                            {project.title}
-                                                        </Text>
-                                                        <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
-                                                            {project.location}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
-                                    ) : null}
                                 </View>
                                 <TouchableOpacity
                                     className="h-9 px-3 rounded-xl flex-row items-center border border-white/50"
@@ -1598,34 +1587,7 @@ export default function Home() {
                                     <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
                                 </TouchableOpacity>
 
-                                {false && isProjectDropdownOpen ? (
-                                    <View
-                                        className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                        style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER, maxHeight: 260, borderWidth: 1.5, borderColor: "#4A43EC" }}
-                                    >
-                                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                                            {projectOptions.map((project) => {
-                                                const isSelected = project.id === selectedProjectId;
 
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={project.id}
-                                                        activeOpacity={0.85}
-                                                        onPress={() => handleProjectSelect(project.id)}
-                                                        className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
-                                                    >
-                                                        <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
-                                                            {project.title}
-                                                        </Text>
-                                                        <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
-                                                            {project.location || "Location pending"}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </ScrollView>
-                                    </View>
-                                ) : null}
                             </View>
                             <View className="w-10" />
                         </View>

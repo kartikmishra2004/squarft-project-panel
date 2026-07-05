@@ -418,7 +418,8 @@ export default function AddProject() {
                 dispatch(setStep(4));
             } catch (error) {
                 console.error("Step 3 API error:", error);
-                dispatch(setStep(4));
+                const msg = error.response?.data?.message || "Failed to save unit details. Please try again.";
+                setStep1Errors({ api: msg });
             } finally {
                 setIsSubmitting(false);
             }
@@ -433,10 +434,12 @@ export default function AddProject() {
                     setIsSubmitting(true);
 
                     const buildApproval = (s, extra = {}) => {
-                        if (!s.status) return null;
-                        const isApproved = s.status === 'Yes';
                         const { _allowEmptyTime, ...restExtra } = extra;
-                        if (!isApproved && !s.expectedTime && !_allowEmptyTime) return null;
+                        if (!s.status || s.status === 'Not Applicable') {
+                            // Not set or Not Applicable — send false with null time so backend doesn't crash
+                            return { is_approved: false, expected_time: null, ...restExtra };
+                        }
+                        const isApproved = s.status === 'Yes';
                         return {
                             is_approved: isApproved,
                             expected_time: isApproved ? null : (s.expectedTime || null),
@@ -448,17 +451,17 @@ export default function AddProject() {
                     const diversionApproval = buildApproval(step4.approvals.diversion);
                     const reraApproval = buildApproval(step4.approvals.rera, {
                         rera_id: step4.approvals.rera.registrationNumber || null,
-                        _allowEmptyTime: true, // RERA expectedTime is optional
                     });
                     const devPermApproval = buildApproval(step4.approvals.developmentPermission);
                     const municipalApproval = buildApproval(step4.approvals.buildingPermission);
 
+                    // Always send all approvals — backend SQL expects all fields to be present
                     const approvals = {
-                        ...(tncpApproval && { tncp: tncpApproval }),
-                        ...(diversionApproval && { diversion: diversionApproval }),
-                        ...(reraApproval && { rera: reraApproval }),
-                        ...(devPermApproval && { developmentPermission: devPermApproval }),
-                        ...(municipalApproval && { municipal: municipalApproval }),
+                        tncp: tncpApproval,
+                        diversion: diversionApproval,
+                        rera: reraApproval,
+                        developmentPermission: devPermApproval,
+                        municipal: municipalApproval,
                     };
                     await projectFormApi.finalizeStep4(projectId, {
                         possession_status: step4.possessionStatus || null,
@@ -493,7 +496,11 @@ export default function AddProject() {
                 try {
                     setIsSubmitting(true);
                     await projectFormApi.finalizeStep5(projectId, {
-                        brokerage: { type: 'none', value: 0, terms: null },
+                        brokerage: {
+                            type: step5.brokerageAvailable === 'Yes' ? 'percentage' : 'none',
+                            value: step5.brokerageAvailable === 'Yes' ? (parseFloat(step5.brokeragePercentage) || 0) : 0,
+                            terms: step5.brokerageTerms || null,
+                        },
                         incentives: { customer: null, broker: null },
                         settings: { visibility: 'public', status: 'active' },
                         assignments: { sales_officer_id: null, branch_manager_id: null },
@@ -510,6 +517,9 @@ export default function AddProject() {
                                 : null,
                             bank_loan: {
                                 is_approved: step5.loanAvailable === 'Yes',
+                                approval_status: step5.loanApprovalStatus || null,
+                                max_loan_percentage: step5.maximumLoanPercentage || null,
+                                required_documents: step5.requiredLoanDocuments || null,
                                 banks: step5.bankTieUpAvailable === 'Yes'
                                     ? (step5.tieUpBankName || step5.bankNameList || null)
                                     : null,
@@ -526,6 +536,8 @@ export default function AddProject() {
                                 }
                                 : null,
                             title_verification_status: step5.titleVerificationStatus || null,
+                            title_verification_done_by: step5.titleVerificationDoneBy || null,
+                            title_verification_date: step5.titleVerificationDate || null,
                         },
                     });
                     dispatch(setStep(6));
