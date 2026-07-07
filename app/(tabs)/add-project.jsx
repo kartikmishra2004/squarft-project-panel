@@ -342,11 +342,31 @@ export default function AddProject() {
                         const row = floor;
                         const fEntries = floorGroups[floor];
                         fEntries.forEach(({ unit, variant }, colIdx) => {
-                            const key = `${row}_${colIdx + 1}`;
+                            let col = colIdx + 1; // fallback
+                            if (unit?.unit_number) {
+                                const numStr = String(unit.unit_number);
+                                const floorStr = String(floor);
+                                if (numStr.startsWith(floorStr)) {
+                                    const colPart = parseInt(numStr.slice(floorStr.length), 10);
+                                    if (!isNaN(colPart) && colPart > 0) col = colPart;
+                                }
+                            }
+                            const key = `${row}_${col}`;
                             unitMap[key] = variantToConfigId[variant.id];
                             if (unit?.unit_number) unitOverrides[key] = { customName: unit.unit_number };
                         });
                     });
+
+                    // Second pass: auto-fill room numbers for empty cells
+                    for (let r = 1; r <= floorCount; r++) {
+                        for (let c = 1; c <= maxCol; c++) {
+                            const key = `${r}_${c}`;
+                            if (!unitOverrides[key]) {
+                                const colStr = c < 10 ? `0${c}` : `${c}`;
+                                unitOverrides[key] = { customName: `${r}${colStr}` };
+                            }
+                        }
+                    }
 
                     return {
                         id: secIdx + 1,
