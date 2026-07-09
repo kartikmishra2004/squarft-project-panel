@@ -80,6 +80,12 @@ const initialState = {
         titleReportDocuments: [],
         titleExpectedCompletionDate: '',
         financialOwnershipRemarks: '',
+        customerIncentives: '',
+        brokerIncentives: '',
+        videoUrl: '',
+        visibility: 'public',
+        salesOfficerId: null,
+        branchManagerId: null,
     },
     step6: {
         images: [],
@@ -193,10 +199,12 @@ const projectSlice = createSlice({
                                 price: (override.customPrice || config.price || '').toString().replace(/,/g, ''),
                                 images: config.images || [],
                                 brochure: config.brochure || null,
-                                amenities: (config.amenities || []).filter(Boolean).length > 0 ? (config.amenities || []).filter(Boolean) : [config.name || 'Standard'],
+                                amenities: (config.amenities || []).filter(Boolean).length > 0 ? (config.amenities || []).filter(Boolean) : [''],
                                 propertyNumber: propertyNumber,
                                 hasShop: false,
-                                extraCharges: [{ title: 'Maintenance', amount: '0' }]
+                                extraCharges: (config.extra_charges || []).filter(e => e && e.title).length > 0
+                                    ? config.extra_charges
+                                    : [{ title: '', amount: '' }]
                             };
 
                             newUnitConfigs.push(unitConfig);

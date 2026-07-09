@@ -198,11 +198,10 @@ export default function AddProject() {
 
             variants.forEach((v) => {
                 const mainType = v.property_type === 'commercial' ? 'commercial' : 'residential';
-                const subType  = v.property_subtype;
+                const subType  = String(v.property_subtype || '');
                 const key      = `${mainType}_${subType}`;
                 if (!seen.has(key)) {
                     seen.add(key);
-                    // Use the subType as the stable typeId (same as step2 selection ids)
                     dispatch(addPropertyType({ id: subType, mainType, subType }));
                     typeMap[subType] = { mainType, subType, typeId: subType };
                 }
@@ -214,8 +213,8 @@ export default function AddProject() {
                     const key = `${pt.main_type}_${pt.sub_type}`;
                     if (!seen.has(key)) {
                         seen.add(key);
-                        dispatch(addPropertyType({ id: pt.sub_type, mainType: pt.main_type, subType: pt.sub_type }));
-                        typeMap[pt.sub_type] = { mainType: pt.main_type, subType: pt.sub_type, typeId: pt.sub_type };
+                        dispatch(addPropertyType({ id: String(pt.sub_type || ''), mainType: pt.main_type, subType: String(pt.sub_type || '') }));
+                        typeMap[pt.sub_type] = { mainType: pt.main_type, subType: String(pt.sub_type || ''), typeId: String(pt.sub_type || '') };
                     }
                 });
             }
@@ -299,6 +298,9 @@ export default function AddProject() {
                                 brochure: variant.brochure_url ? { uri: variant.brochure_url, name: 'Brochure', mimeType: '', size: 0 } : null,
                                 amenities: parseJsonField(variant.amenities).filter(Boolean).length > 0
                                     ? parseJsonField(variant.amenities).filter(Boolean) : [''],
+                                extra_charges: parseJsonField(variant.extra_charges).length > 0
+                                    ? parseJsonField(variant.extra_charges)
+                                    : [{ title: '', amount: '' }],
                             });
                         }
                     });
@@ -425,6 +427,7 @@ export default function AddProject() {
                     possessionStatus: s4.possession_status
                         ? s4.possession_status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
                         : '',
+                    expectedPossessionDate: s4.expected_possession_date || '',
                     possessionRemarks: s4.possession_remarks || '',
                     projectLaunchStatus: s4.project_launch_status || '',
                     projectLaunchDate: s4.project_launch_date || '',
@@ -446,11 +449,11 @@ export default function AddProject() {
                     return ''; // not set by user
                 };
 
-                if (approvals.tncp) dispatch(updateStep4Approval({ approvalKey: 'tncp', data: { status: resolveApprovalStatus(approvals.tncp), expectedTime: approvals.tncp.expected_time || '' } }));
-                if (approvals.municipal) dispatch(updateStep4Approval({ approvalKey: 'buildingPermission', data: { status: resolveApprovalStatus(approvals.municipal), expectedTime: approvals.municipal.expected_time || '' } }));
-                if (approvals.rera) dispatch(updateStep4Approval({ approvalKey: 'rera', data: { status: resolveApprovalStatus(approvals.rera), registrationNumber: approvals.rera.rera_id || '', expectedTime: approvals.rera.expected_time || '' } }));
-                if (approvals.diversion) dispatch(updateStep4Approval({ approvalKey: 'diversion', data: { status: resolveApprovalStatus(approvals.diversion), expectedTime: approvals.diversion.expected_time || '' } }));
-                if (approvals.developmentPermission) dispatch(updateStep4Approval({ approvalKey: 'developmentPermission', data: { status: resolveApprovalStatus(approvals.developmentPermission), expectedTime: approvals.developmentPermission.expected_time || '' } }));
+                if (approvals.tncp) dispatch(updateStep4Approval({ approvalKey: 'tncp', data: { status: resolveApprovalStatus(approvals.tncp), expectedTime: approvals.tncp.expected_time || '', approvalNumber: approvals.tncp.referenceNumber || '', approvalDate: approvals.tncp.approvalDate || '', documents: approvals.tncp.documents || [] } }));
+                if (approvals.municipal) dispatch(updateStep4Approval({ approvalKey: 'buildingPermission', data: { status: resolveApprovalStatus(approvals.municipal), expectedTime: approvals.municipal.expected_time || '', permissionNumber: approvals.municipal.referenceNumber || '', permissionDate: approvals.municipal.approvalDate || '', documents: approvals.municipal.documents || [] } }));
+                if (approvals.rera) dispatch(updateStep4Approval({ approvalKey: 'rera', data: { status: resolveApprovalStatus(approvals.rera), registrationNumber: approvals.rera.rera_id || '', expectedTime: approvals.rera.expected_time || '', registrationDate: approvals.rera.approvalDate || '', documents: approvals.rera.documents || [] } }));
+                if (approvals.diversion) dispatch(updateStep4Approval({ approvalKey: 'diversion', data: { status: resolveApprovalStatus(approvals.diversion), expectedTime: approvals.diversion.expected_time || '', referenceNumber: approvals.diversion.referenceNumber || '', approvalDate: approvals.diversion.approvalDate || '', documents: approvals.diversion.documents || [] } }));
+                if (approvals.developmentPermission) dispatch(updateStep4Approval({ approvalKey: 'developmentPermission', data: { status: resolveApprovalStatus(approvals.developmentPermission), expectedTime: approvals.developmentPermission.expected_time || '', permissionNumber: approvals.developmentPermission.referenceNumber || '', permissionDate: approvals.developmentPermission.approvalDate || '', documents: approvals.developmentPermission.documents || [] } }));
             }
 
             // Step 5
@@ -568,10 +571,19 @@ export default function AddProject() {
                 titleVerificationStatus:   legal.title_verification_status || '',
                 titleVerificationDoneBy:   legal.title_verification_done_by || '',
                 titleVerificationDate:     legal.title_verification_date || '',
+                titleExpectedCompletionDate: legal.title_expected_completion_date || '',
                 titleReportDocuments:      parseJsonArray(legal.title_report_documents),
 
                 // Remarks
                 financialOwnershipRemarks: legal.financial_ownership_remarks || '',
+
+                // Incentives / settings / assignments / video
+                customerIncentives: s5.incentives?.customer || '',
+                brokerIncentives:   s5.incentives?.broker   || '',
+                videoUrl:           s5.video_url || '',
+                visibility:         s5.settings?.visibility || 'public',
+                salesOfficerId:     s5.assignments?.sales_officer_id || null,
+                branchManagerId:    s5.assignments?.branch_manager_id || null,
             }));
 
             // Navigate to resume_at_step from backend
@@ -584,6 +596,9 @@ export default function AddProject() {
                     images: savedMedia
                         .filter(m => m.media_type === 'image')
                         .map(m => ({ uri: m.url, isRemote: true })),
+                    documents: savedMedia
+                        .filter(m => m.media_type === 'document')
+                        .map(m => ({ uri: m.url, name: m.label || 'Document', isRemote: true })),
                 }));
             }
 
@@ -821,13 +836,15 @@ export default function AddProject() {
                     const buildApproval = (s, extra = {}) => {
                         const { _allowEmptyTime, ...restExtra } = extra;
                         if (!s.status || s.status === 'Not Applicable') {
-                            // Not set or Not Applicable — send false with null time so backend doesn't crash
                             return { is_approved: false, expected_time: null, ...restExtra };
                         }
                         const isApproved = s.status === 'Yes';
                         return {
                             is_approved: isApproved,
                             expected_time: isApproved ? null : (s.expectedTime || null),
+                            referenceNumber: s.referenceNumber || s.approvalNumber || s.permissionNumber || null,
+                            approvalDate: s.approvalDate || s.registrationDate || s.permissionDate || null,
+                            documents: s.documents || [],
                             ...restExtra,
                         };
                     };
@@ -851,6 +868,7 @@ export default function AddProject() {
                     await projectFormApi.finalizeStep4(projectId, {
                         possession_status: step4.possessionStatus || null,
                         possession_remarks: step4.possessionRemarks || null,
+                        expected_possession_date: step4.expectedPossessionDate || null,
                         project_launch_status: step4.projectLaunchStatus || null,
                         project_launch_date: step4.projectLaunchDate || null,
                         expected_launch_date: step4.expectedLaunchDate || null,
@@ -886,10 +904,10 @@ export default function AddProject() {
                             value: step5.brokerageAvailable === 'Yes' ? (parseFloat(step5.brokeragePercentage) || 0) : 0,
                             terms: step5.brokerageTerms || null,
                         },
-                        incentives: { customer: null, broker: null },
-                        settings: { visibility: 'public' },
-                        assignments: { sales_officer_id: null, branch_manager_id: null },
-                        video_url: null,
+                        incentives: { customer: step5.customerIncentives || null, broker: step5.brokerIncentives || null },
+                        settings: { visibility: step5.visibility || 'public' },
+                        assignments: { sales_officer_id: step5.salesOfficerId || null, branch_manager_id: step5.branchManagerId || null },
+                        video_url: step5.videoUrl || null,
                         financial_details: {
                             guideline_value:               step5.guidelineValueAmount ? parseFloat(step5.guidelineValueAmount) || null : null,
                             guideline_value_unit:          step5.guidelineValueUnit || null,
@@ -909,7 +927,9 @@ export default function AddProject() {
                                 banks:                      step5.bankTieUpAvailable === 'Yes' ? (step5.tieUpBankName || step5.bankNameList || null) : null,
                                 loan_approval_status:       step5.loanApprovalStatus || null,
                                 maximum_loan_percentage:    step5.maximumLoanPercentage || null,
-                                required_loan_documents:    step5.requiredLoanDocuments || null,
+                                required_loan_documents:    step5.requiredLoanDocuments
+                                    ? step5.requiredLoanDocuments.split(',').map(d => d.trim()).filter(Boolean)
+                                    : [],
                             },
                         },
                         legal_details: {
@@ -938,6 +958,7 @@ export default function AddProject() {
                             title_verification_status:   step5.titleVerificationStatus || null,
                             title_verification_done_by:  step5.titleVerificationDoneBy || null,
                             title_verification_date:     step5.titleVerificationDate || null,
+                            title_expected_completion_date: step5.titleExpectedCompletionDate || null,
                             title_report_documents:      step5.titleReportDocuments || [],
                             financial_ownership_remarks: step5.financialOwnershipRemarks || null,
                         },
@@ -983,6 +1004,40 @@ export default function AddProject() {
                     const url = uploadRes.data?.data?.url || uploadRes.data?.url;
                     if (url) {
                         mediaItems.push({ media_type: 'image', url, is_cover: i === 0, sort_order: i });
+                    }
+                }
+
+                await projectFormApi.finalizeStep6(projectId, { media: mediaItems });
+
+                // Upload documents
+                for (let i = 0; i < (step6.documents || []).length; i++) {
+                    const doc = step6.documents[i];
+                    if (doc.uri?.startsWith('http') || doc.url?.startsWith('http')) {
+                        mediaItems.push({
+                            media_type: 'document',
+                            url: doc.uri || doc.url,
+                            label: doc.name || null,
+                            is_cover: false,
+                            sort_order: step6.images.length + i,
+                        });
+                        continue;
+                    }
+                    const formData = new FormData();
+                    formData.append('file', {
+                        uri: doc.uri,
+                        name: doc.name || `document_${i}.pdf`,
+                        type: doc.mimeType || 'application/pdf',
+                    });
+                    const uploadRes = await projectFormApi.uploadMedia(projectId, formData);
+                    const url = uploadRes.data?.data?.url || uploadRes.data?.url;
+                    if (url) {
+                        mediaItems.push({
+                            media_type: 'document',
+                            url,
+                            label: doc.name || null,
+                            is_cover: false,
+                            sort_order: step6.images.length + i,
+                        });
                     }
                 }
 
@@ -2174,7 +2229,7 @@ function Step3() {
     const handleDownloadFormat = async (type) => {
         try {
             let headers = ['Sub Type', 'Property Number', 'Area', 'Area Unit'];
-            
+
             if (type.subType === 'apartment') {
                 headers.push('BHK', 'Tower', 'Floor');
             } else if (type.subType === 'villa' || type.subType === 'rowhouse') {
@@ -2182,11 +2237,9 @@ function Step3() {
             } else if (type.subType === 'office') {
                 headers.push('Office Type');
             }
-            
+
             headers.push('Selling Price', 'Price Negotiable', 'Tax Exclude', 'Payment Mode');
-            
-            const headersStr = headers.join(',');
-            
+
             const sampleRow = headers.map(h => {
                 if (h === 'Sub Type') return type.subType;
                 if (h === 'Property Number') return 'A-101';
@@ -2194,21 +2247,30 @@ function Step3() {
                 if (h === 'Area Unit') return 'Sq-ft';
                 if (h === 'BHK') return '2 BHK';
                 if (h === 'Tower') return 'Tower A';
-                if (h === 'Floor') return '1st';
+                if (h === 'Floor') return '1';
                 if (h === 'Office Type') return 'Co-working';
                 if (h === 'Selling Price') return '5000000';
                 if (h === 'Price Negotiable' || h === 'Tax Exclude') return 'false';
                 if (h === 'Payment Mode') return 'full';
                 return '';
-            }).join(',');
+            });
 
-            const csvContent = `${headersStr}\n${sampleRow}`;
-            const fileUri = `${FileSystem.documentDirectory}${type.subType}_format.csv`;
-            
-            await FileSystem.writeAsStringAsync(fileUri, csvContent);
-            await Sharing.shareAsync(fileUri);
+            const csvContent = [headers.join(','), sampleRow.join(',')].join('\n');
+            const fileName = `${type.subType}_format.csv`;
+            const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+
+            await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+                encoding: FileSystem.EncodingType.UTF8,
+            });
+
+            await Sharing.shareAsync(fileUri, {
+                mimeType: 'text/csv',
+                dialogTitle: `Download ${type.subType} CSV Format`,
+                UTI: 'public.comma-separated-values-text', // iOS
+            });
         } catch (error) {
-            console.error(error);
+            console.error('Download format error:', error);
+            alert('Could not download format. Please try again.');
         }
     };
 
@@ -2249,6 +2311,9 @@ function Step3() {
             // Also parse locally to update Redux state for UI preview
             const content = await FileSystem.readAsStringAsync(asset.uri);
             const data = parseCSV(content);
+            // Carry forward brochure from existing config so it isn't lost on bulk switch
+            const existingConfigs = step3.unitConfigs[type.id] || [];
+            const existingBrochure = existingConfigs[0]?.brochure || null;
             const unitConfigs = data
                 .filter(row => row['Property Number'])
                 .map(row => ({
@@ -2262,6 +2327,7 @@ function Step3() {
                     amenities: [''],
                     propertyNumber: row['Property Number'] || '',
                     hasShop: false,
+                    brochure: existingBrochure,
                     extraCharges: [{ title: '', amount: '' }],
                 }));
 
@@ -2301,7 +2367,7 @@ function Step3() {
                     const isActive = activeTypeTab === type.id;
                     return (
                         <TouchableOpacity
-                            key={type.id}
+                            key={String(type.id ?? type.subType ?? Math.random())}
                             onPress={() => setActiveTypeTab(type.id)}
                             className={`bg-white border rounded-lg px-3 py-2 mb-1 flex-row items-center mr-3 ${isActive ? 'border-[#4A43EC]' : 'border-gray-100'}`}
                         >

@@ -486,17 +486,14 @@ export default function Home() {
     const fetchBackendProjects = useCallback(async () => {
         try {
             setProjectsLoading(true);
-            console.log('🔵 [HOME] Fetching backend projects');
-
-            const response = await projectService.listProjects();
-
-            if (response.data && response.data.length > 0) {
-                setBackendProjects(response.data);
-                setProjectsList(response.data);
-                setSelectedProjectId(response.data[0].id);
-                setRealProjectId(response.data[0].id);
-                // Seed Redux projects slice with real backend data
-                response.data.forEach((p) => {
+            const res = await projectOverviewApi.getProjectsList();
+            const list = res.data?.data || [];
+            if (list.length > 0) {
+                setBackendProjects(list);
+                setProjectsList(list);
+                setSelectedProjectId(list[0].id);
+                setRealProjectId(list[0].id);
+                list.forEach((p) => {
                     dispatch(addProject({
                         id: p.id,
                         title: p.name || p.title,
@@ -509,10 +506,10 @@ export default function Home() {
                         visits: { metrics: [], pipeline: { stages: [] }, followUps: [] },
                     }));
                 });
-                console.log('✅ [HOME] Backend projects fetched:', response.data.length);
-                return response.data;
+                console.log('✅ [HOME] Backend projects fetched:', list.length);
+                return list;
             } else {
-                console.log('⚠️ [HOME] No projects found in backend');
+                console.log('⚠️ [HOME] No projects found');
                 return [];
             }
         } catch (error) {
@@ -1140,7 +1137,7 @@ export default function Home() {
 
     const displayProjectTitle = apiHeader?.name || selectedProject?.title || "Select Project";
     const displayProjectLocation = apiHeader?.location || selectedProject?.location || "";
-    const displayPossession = apiHeader?.possession || selectedProject?.possession || "";
+    const displayPossession = apiHeader?.possession_by || selectedProject?.possession || "";
     const displayAvgPrice = apiHeader?.avg_price_per_sqft ? `₹${apiHeader.avg_price_per_sqft}/sqft` : selectedProject?.avgPrice || "";
     const displayReraApproved = apiHeader?.rera?.is_approved ?? apiHeader?.rera_approved ?? selectedProject?.rera ?? false;
     const displayReraNumber = apiHeader?.rera?.number || apiHeader?.rera_number || "";
@@ -1412,12 +1409,22 @@ export default function Home() {
                                     </TouchableOpacity>
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
-                                            <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
-                                            {(apiUserProfile?.is_verified ?? mockData.user.verified) && (
-                                                <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
+                                            {overviewLoading ? (
+                                                <SkeletonBox width={110} height={13} borderRadius={6} style={{ backgroundColor: 'rgba(255,255,255,0.3)' }} />
+                                            ) : (
+                                                <>
+                                                    <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
+                                                    {(apiUserProfile?.is_verified ?? mockData.user.verified) && (
+                                                        <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
+                                                    )}
+                                                </>
                                             )}
                                         </View>
-                                        <Text className="text-white/70 text-[9px] font-lato">{displayUserDate}</Text>
+                                        {overviewLoading ? (
+                                            <SkeletonBox width={70} height={8} borderRadius={4} style={{ marginTop: 4, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+                                        ) : (
+                                            <Text className="text-white/70 text-[9px] font-lato">{displayUserDate}</Text>
+                                        )}
                                     </View>
                                 </View>
                                 <TouchableOpacity
@@ -1445,7 +1452,10 @@ export default function Home() {
                                     >
                                         <Ionicons name="chevron-down" size={16} color="#4A43EC" />
                                         <Text className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]" numberOfLines={1}>
-                                            {displayProjectTitle}
+                                            {overviewLoading
+                                                ? <SkeletonBox width={120} height={10} borderRadius={5} />
+                                                : displayProjectTitle
+                                            }
                                         </Text>
                                     </TouchableOpacity>
 
@@ -1582,7 +1592,10 @@ export default function Home() {
                                     className="flex-row items-center max-w-full"
                                 >
                                     <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1" numberOfLines={1}>
-                                        {displayProjectTitle}
+                                        {overviewLoading
+                                            ? <SkeletonBox width={140} height={14} borderRadius={6} />
+                                            : displayProjectTitle
+                                        }
                                     </Text>
                                     <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
                                 </TouchableOpacity>
@@ -1706,27 +1719,34 @@ export default function Home() {
 
                                     <View className="flex-row items-center justify-between mb-0.5">
                                         <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{displayProjectTitle}</Text>
-                                        {displayReraApproved && (
+                                        {displayReraApproved ? (
                                             <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
                                                 <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
                                                 <Ionicons name="checkmark-circle" size={9} color="#10B981" />
+                                            </View>
+                                        ) : (
+                                            <View className="bg-red-50 px-1.5 py-0.5 rounded flex-row items-center border border-red-100">
+                                                <Text className="text-red-400 text-[8px] font-lato-bold mr-1">RERA</Text>
+                                                <Ionicons name="close-circle" size={9} color="#F87171" />
                                             </View>
                                         )}
                                     </View>
                                     <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
 
                                     <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
-                                        <View className="flex-row">
-                                            {displayApartments.map((apt, idx) => (
-                                                <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
-                                                    <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
-                                                    <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
-                                                </View>
-                                            ))}
-                                            {displayApartments.length === 0 && (
-                                                <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
-                                            )}
-                                        </View>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                            <View className="flex-row">
+                                                {displayApartments.map((apt, idx) => (
+                                                    <View key={idx} className={`${idx !== 0 ? "border-l border-gray-100 pl-3 ml-3" : ""} min-w-[80px]`}>
+                                                        <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
+                                                        <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
+                                                    </View>
+                                                ))}
+                                                {displayApartments.length === 0 && (
+                                                    <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
+                                                )}
+                                            </View>
+                                        </ScrollView>
                                     </View>
 
                                     <View className="flex-row justify-between mb-4">

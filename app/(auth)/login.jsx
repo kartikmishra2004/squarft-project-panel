@@ -52,7 +52,7 @@ export default function Login() {
 
                 const kycResult = await dispatch(fetchDeveloperKyc());
                 const kycStatus = kycResult.payload?.verification_status;
-                const isKycApproved = ['verified', 'approved'].includes(String(kycStatus || '').toLowerCase());
+                const isKycApproved = ['verified', 'approved', 'fully_verified'].includes(String(kycStatus || '').toLowerCase());
                 
                 console.log(' [LOGIN PAGE] Navigating after KYC check:', kycStatus);
                 router.replace(isKycApproved ? "/(tabs)/home" : "/(screens)/kyc");
@@ -203,12 +203,6 @@ export default function Login() {
                                 <Text className="text-white text-[16px] font-lato-bold">Log In</Text>
                             )}
                         </TouchableOpacity>
-
-                        <View className="flex-row items-center mb-8">
-                            <View className="flex-1 h-[1px] bg-gray-200" />
-                            <Text className="mx-4 text-gray-400 text-[12px] font-lato">OR</Text>
-                            <View className="flex-1 h-[1px] bg-gray-200" />
-                        </View>
 
                     </View>
                 </ScrollView>
