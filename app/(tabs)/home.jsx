@@ -14,7 +14,7 @@ import { addNotification } from "../../store/slices/notificationSlice";
 import { setInventoryLoading, setInventoryData, setInventoryError } from "../../store/slices/inventorySlice";
 import { projectOverviewApi } from "../../services/api";
 import { visitService } from "../../services/visitService";
-import { projectService } from "../../services/projectService";
+
 import { dealService } from "../../services/dealService";
 import { inventoryService } from "../../services/inventoryService";
 
@@ -1137,7 +1137,15 @@ export default function Home() {
 
     const displayProjectTitle = apiHeader?.name || selectedProject?.title || "Select Project";
     const displayProjectLocation = apiHeader?.location || selectedProject?.location || "";
-    const displayPossession = apiHeader?.possession_by || selectedProject?.possession || "";
+    const displayPossession = (() => {
+        const raw = apiHeader?.possession_by || selectedProject?.possession || "";
+        if (!raw) return "";
+        // If it looks like a raw ISO date (YYYY-MM-DD), format it
+        if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+            return new Date(raw).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+        }
+        return raw;
+    })();
     const displayAvgPrice = apiHeader?.avg_price_per_sqft ? `₹${apiHeader.avg_price_per_sqft}/sqft` : selectedProject?.avgPrice || "";
     const displayReraApproved = apiHeader?.rera?.is_approved ?? apiHeader?.rera_approved ?? selectedProject?.rera ?? false;
     const displayReraNumber = apiHeader?.rera?.number || apiHeader?.rera_number || "";

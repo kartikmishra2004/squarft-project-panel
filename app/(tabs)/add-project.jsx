@@ -42,6 +42,7 @@ import { addNotification } from "../../store/slices/notificationSlice";
 import { projectFormApi, projectOverviewApi } from "../../services/api";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { Linking } from 'react-native';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -3390,22 +3391,57 @@ const DocumentUploadButton = ({ label, documents, onDocumentsPicked }) => {
             type: "*/*",
             multiple: true,
         });
-
         if (!result.canceled) {
             onDocumentsPicked([...(documents || []), ...result.assets]);
         }
     };
 
+    const openDocument = async (doc) => {
+        const uri = doc.uri || doc.url;
+        if (!uri) return;
+        try {
+            if (uri.startsWith('http')) {
+                await Linking.openURL(uri);
+            } else {
+                await Sharing.shareAsync(uri, { mimeType: doc.mimeType || '*/*' });
+            }
+        } catch {
+            alert('Could not open document.');
+        }
+    };
+
+    const removeDocument = (index) => {
+        const updated = (documents || []).filter((_, i) => i !== index);
+        onDocumentsPicked(updated);
+    };
+
     return (
-        <View>
-            <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text>
+        <View className="gap-2">
+            <Text className="text-xs font-lato-bold text-black mb-1">{label}</Text>
+            {(documents || []).map((doc, index) => (
+                <TouchableOpacity
+                    key={index}
+                    onPress={() => openDocument(doc)}
+                    className="flex-row items-center bg-[#F4F7FF] border border-[#4A43EC]/20 rounded-xl px-3 py-3 gap-2"
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="document-text-outline" size={18} color="#4A43EC" />
+                    <Text className="flex-1 text-xs font-lato-medium text-gray-700" numberOfLines={1}>
+                        {doc.name || doc.label || `Document ${index + 1}`}
+                    </Text>
+                    <Ionicons name="eye-outline" size={15} color="#4A43EC" />
+                    <TouchableOpacity onPress={() => removeDocument(index)} className="pl-2 py-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            ))}
             <TouchableOpacity
                 onPress={pickDocuments}
-                className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-5 items-center justify-center"
+                className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-4 items-center justify-center"
             >
                 <Ionicons name="document-attach-outline" size={20} color="#4A43EC" />
                 <Text className="text-xs font-lato-bold text-[#4A43EC] mt-2">
-                    {(documents || []).length > 0 ? `${documents.length} Document(s) Added` : "Upload Document"}
+                    {(documents || []).length > 0 ? 'Add More Documents' : 'Upload Document'}
                 </Text>
             </TouchableOpacity>
         </View>

@@ -301,6 +301,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const [paymentPlan, setPaymentPlan] = useState(() => buildPaymentPlan(variant));
     const [activeMilestoneIndex, setActiveMilestoneIndex] = useState(null);
     const [collectAmount, setCollectAmount] = useState("");
+    const [collectPaymentMode, setCollectPaymentMode] = useState("cash");
     const [collectError, setCollectError] = useState("");
     const [loadingSchedule, setLoadingSchedule] = useState(false);
     const [savingCollection, setSavingCollection] = useState(false);
@@ -365,6 +366,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         if (!milestone || milestone.collectedAmount >= milestone.totalAmount) return;
         setActiveMilestoneIndex(milestoneIndex);
         setCollectAmount(String(Math.max(1, Math.round(milestone.totalAmount - milestone.collectedAmount))));
+        setCollectPaymentMode("cash");
         setCollectError("");
         setSheetView("collect");
     };
@@ -373,6 +375,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         setSheetView("schedule");
         setActiveMilestoneIndex(null);
         setCollectAmount("");
+        setCollectPaymentMode("cash");
         setCollectError("");
     };
 
@@ -380,8 +383,13 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         const amount = parseAmount(collectAmount);
         const milestoneIndex = activeMilestoneIndex;
 
-        if (milestoneIndex === null || !paymentPlan[milestoneIndex] || !activeDealId) {
-            Alert.alert("Error", "Missing configuration parameter metadata properties.");
+        if (milestoneIndex === null || !paymentPlan[milestoneIndex]) {
+            Alert.alert("Error", "No milestone selected. Please try again.");
+            return;
+        }
+
+        if (!activeDealId) {
+            Alert.alert("Error", "Deal ID not found. Please close and reopen the deal to retry.");
             return;
         }
         
@@ -406,7 +414,8 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                 milestone_id: selectedMilestone.id,
                 payment_milestone_id: selectedMilestone.id,
                 milestone_title: selectedMilestone.title,
-                milestone: selectedMilestone.key || selectedMilestone.title
+                milestone: selectedMilestone.key || selectedMilestone.title,
+                payment_mode: collectPaymentMode,
             });
 
             if (response?.success !== false) {
@@ -462,7 +471,14 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         ? formatAmount(rawTotalAmount)
         : variant.price || variant.priceRange || variant.footerTotal || project.avg_price_per_sqft || project.avgPrice || "Contact for price";
         
-    const possession = firstPresent(variant.possession, project.possession, EMPTY_LABEL);
+    const possession = (() => {
+        const raw = firstPresent(variant.possession, project.possession);
+        if (!raw) return 'Already Possessed';
+        if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+            return new Date(raw).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+        }
+        return raw;
+    })();
     const area = firstPresent(variant.area, variant.area_sqft, variant.property?.area, project.total_area, project.area, EMPTY_LABEL);
     
     const bookedBy = firstPresent(dealData?.booked_by_name, dealData?.bookedBy, dealData?.customer_name, dealData?.customer?.name, dealData?.booked_by?.name, variant.contactName, EMPTY_LABEL);
@@ -475,7 +491,16 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const pending = formatAmount(paymentSummaryState.pendingAmount);
     
     // ✅ FIXED: Safely maps avgPrice using available project fields to clear out the ReferenceError crash
-    const avgPrice = firstPresent(variant.avgPricePerSqft, project.avg_price_per_sqft, project.avgPrice, EMPTY_LABEL);
+    const avgPrice = (() => {
+        const raw = firstPresent(variant.avgPricePerSqft, project.avg_price_per_sqft, project.avgPrice);
+        if (!raw) return EMPTY_LABEL;
+        // Already formatted (e.g. "₹1,23,456" or "₹1,23,456/sqft")
+        if (typeof raw === 'string' && raw.includes('₹')) return raw.includes('/sqft') ? raw : `${raw}/sqft`;
+        // Raw number — format it
+        const num = Number(raw);
+        if (!Number.isFinite(num) || num <= 0) return EMPTY_LABEL;
+        return `₹${Math.round(num).toLocaleString('en-IN')}/sqft`;
+    })();
     
     const nextDue = firstPresent(dealData?.next_due_label, dealData?.nextDue, dealData?.next_due_date, paymentSummaryState.nextDueLabel);
     const dealStatus = paymentSummaryState.allPaid ? "Paid" : "Upcoming";
@@ -906,6 +931,23 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                     returnKeyType="done"
                                 />
                                 {collectError ? <Text className="mt-1 text-[11px] text-red-500">{collectError}</Text> : null}
+                            </View>
+
+                            <View className="mt-4">
+                                <Text className="text-[10px] font-lato-bold text-[#6B7280] uppercase mb-1.5">Payment Mode</Text>
+                                <View className="flex-row flex-wrap gap-2">
+                                    {["cash", "upi", "bank_transfer", "cheque", "card", "other"].map((mode) => (
+                                        <TouchableOpacity
+                                            key={mode}
+                                            onPress={() => setCollectPaymentMode(mode)}
+                                            className={`px-3 py-2 rounded-full border ${collectPaymentMode === mode ? "bg-[#4A43EC] border-[#4A43EC]" : "bg-white border-[#E5E7EB]"}`}
+                                        >
+                                            <Text className={`text-[11px] font-lato-bold capitalize ${collectPaymentMode === mode ? "text-white" : "text-[#374151]"}`}>
+                                                {mode.replace("_", " ")}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
                             </View>
                         </View>
                     </View>
