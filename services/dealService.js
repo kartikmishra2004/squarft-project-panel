@@ -75,15 +75,14 @@ export const dealService = {
     }
   },
   
-  // Collect payment for a deal
-  collectPayment: async (dealId, paymentData) => {
+  // Collect payment for a milestone
+  collectPayment: async (milestoneId, paymentData) => {
     try {
-      console.log('🔵 [DEAL SERVICE] Collecting payment for deal:', dealId);
-      // Prefer milestone-level collect when a milestone_id is present
-      const url = paymentData.milestone_id
-        ? `/api/project-developer/inventory-deal-milestones/${paymentData.milestone_id}/collect`
-        : `/api/project-developer/inventory-deals/${dealId}/payment-schedule`;
-      const response = await api.post(url, paymentData);
+      console.log('🔵 [DEAL SERVICE] Collecting payment for milestone:', milestoneId);
+      const response = await api.post(
+        `/api/project-developer/inventory-deal-milestones/${milestoneId}/collect`,
+        paymentData
+      );
       console.log('✅ [DEAL SERVICE] Payment collected:', response.data);
       return response.data;
     } catch (error) {

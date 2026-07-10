@@ -74,7 +74,12 @@ const getObjectCandidates = (payload) => {
 const getDealPayload = (variant) => {
     const candidates = getObjectCandidates(variant);
     const primary = candidates[0] || {};
-    return primary.deal_summary || primary.dealSummary || primary.user_deal || primary.userDeal || candidates[0] || {};
+    const inner = primary.deal_summary || primary.dealSummary || primary.user_deal || primary.userDeal || candidates[0] || {};
+    const dealId = firstPresent(variant?.deal_id, variant?.dealId, inner?.deal_id, inner?.dealId, inner?.id);
+
+    return dealId && !inner?.deal_id && !inner?.dealId
+        ? { ...inner, deal_id: dealId, dealId }
+        : inner;
 };
 
 const extractPaymentSchedule = (payload) => {
@@ -224,23 +229,21 @@ const buildPaymentPlan = (variant) => {
         .filter((item) => !usedScheduleItems.has(item))
         .map((item, index) => normalizeMilestone(getMilestoneTitle(item, `Milestone ${index + 1}`), item));
 
-    return [...orderedMilestones, ...extraMilestones];
+    return [...orderedMilestones, ...extraMilestones].filter((milestone) => milestone.totalAmount > 0 || milestone.id);
 };
 
 const derivePaymentSummary = (paymentPlan, variant) => {
     const target = getDealPayload(variant);
-    
-    // Prioritize deal data from variant over milestone calculation
-    const dealTotalAmount = parseAmount(firstPresent(target?.total_amount, target?.total_value, target?.deal_value, target?.dealValue, variant?.total_amount, variant?.deal_value, variant?.dealValue, target?.amount));
-    const dealCollectedAmount = parseAmount(firstPresent(target?.paid_amount, target?.received_amount, target?.receivedAmount, target?.received, target?.paid, variant?.received_amount, variant?.paid_amount));
-    
-    // Calculate from milestones as fallback
+
     const milestoneTotalAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.totalAmount, 0);
     const milestoneCollectedAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.collectedAmount, 0);
-    
-    // Use deal data if available, otherwise use milestone calculation
+    const hasScheduleMilestones = paymentPlan.some((milestone) => milestone.id || milestone.totalAmount > 0);
+
+    const dealTotalAmount = parseAmount(firstPresent(target?.total_amount, target?.total_value, target?.deal_value, target?.dealValue, variant?.total_amount, variant?.deal_value, variant?.dealValue, target?.amount));
+    const dealCollectedAmount = parseAmount(firstPresent(target?.paid_amount, target?.received_amount, target?.receivedAmount, target?.received, target?.paid, variant?.received_amount, variant?.paid_amount));
+
     const totalAmount = dealTotalAmount > 0 ? dealTotalAmount : milestoneTotalAmount;
-    const collectedAmount = dealTotalAmount > 0 ? dealCollectedAmount : milestoneCollectedAmount;
+    const collectedAmount = hasScheduleMilestones ? milestoneCollectedAmount : (dealCollectedAmount > 0 ? dealCollectedAmount : milestoneCollectedAmount);
     const pendingAmount = Math.max(totalAmount - collectedAmount, 0);
     const nextDueMilestone = paymentPlan.find((milestone) => milestone.collectedAmount < milestone.totalAmount);
     const progress = totalAmount > 0 ? Math.min(100, Math.round((collectedAmount / totalAmount) * 100)) : (target?.progress || target?.payment_progress_percent || 0);
@@ -284,6 +287,7 @@ const getActiveDealId = (variant) => {
     return firstPresent(
         variant?.deal_id,
         variant?.dealId,
+        variant?.id,              // deals list items have id = deal UUID
         variant?.user_deal_id,
         variant?.userDealId,
         target?.deal_id,
@@ -361,9 +365,46 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const goToProperty = () => setSheetView("property");
     const paymentSummaryState = derivePaymentSummary(paymentPlan, variant);
 
-    const openCollectForm = (milestoneIndex) => {
+    const openCollectForm = async (milestoneIndex) => {
         const milestone = paymentPlan[milestoneIndex];
         if (!milestone || milestone.collectedAmount >= milestone.totalAmount) return;
+
+        // If milestone has no ID yet, fetch the real schedule first
+        if (!milestone.id && activeDealId) {
+            try {
+                setLoadingSchedule(true);
+                const response = await dealService.getPaymentSchedule(activeDealId);
+                const extractedSchedule = extractPaymentSchedule(response);
+                if (extractedSchedule.length) {
+                    const nextPlan = buildPaymentPlan({ ...getDealPayload(variant), payment_schedule: extractedSchedule });
+                    setRealPaymentSchedule(extractedSchedule);
+                    setPaymentPlan(nextPlan);
+                    // Use the updated milestone with real ID
+                    const updatedMilestone = nextPlan[milestoneIndex];
+                    if (!updatedMilestone?.id) {
+                        Alert.alert('Error', 'Could not load milestone details. Please try again.');
+                        return;
+                    }
+                    setActiveMilestoneIndex(milestoneIndex);
+                    setCollectAmount(String(Math.max(1, Math.round(updatedMilestone.totalAmount - updatedMilestone.collectedAmount))));
+                    setCollectPaymentMode("cash");
+                    setCollectError("");
+                    setSheetView("collect");
+                    return;
+                }
+            } catch (error) {
+                Alert.alert('Error', 'Failed to load payment schedule. Please try again.');
+                return;
+            } finally {
+                setLoadingSchedule(false);
+            }
+        }
+
+        if (!milestone.id) {
+            Alert.alert('Error', 'Milestone ID not available. Please reload the payment schedule.');
+            return;
+        }
+
         setActiveMilestoneIndex(milestoneIndex);
         setCollectAmount(String(Math.max(1, Math.round(milestone.totalAmount - milestone.collectedAmount))));
         setCollectPaymentMode("cash");
@@ -387,11 +428,6 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
             Alert.alert("Error", "No milestone selected. Please try again.");
             return;
         }
-
-        if (!activeDealId) {
-            Alert.alert("Error", "Deal ID not found. Please close and reopen the deal to retry.");
-            return;
-        }
         
         if (!Number.isFinite(amount) || amount <= 0) {
             setCollectError("Enter a valid amount");
@@ -407,14 +443,15 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
 
         try {
             setSavingCollection(true);
-            console.log(`📤 [MODAL] Posting transaction event data block to backend for Deal ID: ${activeDealId}`);
-            
-            const response = await dealService.collectPayment(activeDealId, {
+            console.log(`📤 [MODAL] Collecting payment for milestone: ${selectedMilestone.id}`);
+
+            if (!selectedMilestone.id) {
+                setCollectError("Milestone ID missing. Please go back and reopen the payment schedule.");
+                return;
+            }
+
+            const response = await dealService.collectPayment(selectedMilestone.id, {
                 amount: amount,
-                milestone_id: selectedMilestone.id,
-                payment_milestone_id: selectedMilestone.id,
-                milestone_title: selectedMilestone.title,
-                milestone: selectedMilestone.key || selectedMilestone.title,
                 payment_mode: collectPaymentMode,
             });
 

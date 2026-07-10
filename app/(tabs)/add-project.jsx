@@ -15,11 +15,13 @@ import {
     Modal,
     ActivityIndicator,
     FlatList,
+    Alert,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as Location from "expo-location";
 import { useDispatch, useSelector } from "react-redux";
 import {
     setStep,
@@ -129,6 +131,74 @@ const OWNERSHIP_TYPES = [
     "Collaboration Project",
     "Other",
 ];
+
+const hasValidGoogleMapsKey = () => {
+    const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    return Boolean(key && !/your_google_maps_api_key_here|placeholder|changeme/i.test(key));
+};
+
+const parseReverseGeocode = (place = {}) => {
+    const streetParts = [place.streetNumber, place.street, place.name].filter(Boolean);
+    const locationStr = streetParts.join(" ").trim()
+        || [place.district, place.subregion].filter(Boolean).join(", ").trim();
+
+    return {
+        location: locationStr,
+        city: place.city || place.district || place.subregion || "",
+        state: place.region || "",
+        pincode: place.postalCode || "",
+    };
+};
+
+const fetchAddressFromGoogle = async (latitude, longitude) => {
+    if (!hasValidGoogleMapsKey()) return null;
+
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
+    );
+    const data = await res.json();
+
+    if (data.status !== "OK" || !data.results?.length) return null;
+
+    const components = data.results[0].address_components;
+    const get = (type) => components.find((c) => c.types.includes(type))?.long_name || "";
+    const sublocality = get("sublocality_level_1") || get("sublocality") || get("neighborhood");
+    const route = get("route");
+
+    return {
+        location: [route, sublocality].filter(Boolean).join(", ") || data.results[0].formatted_address,
+        city: get("locality") || get("administrative_area_level_2"),
+        state: get("administrative_area_level_1"),
+        pincode: get("postal_code"),
+    };
+};
+
+const fetchAddressFromCoordinates = async (latitude, longitude) => {
+    try {
+        const places = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (places?.length) {
+            const parsed = parseReverseGeocode(places[0]);
+            if (parsed.location || parsed.city) return parsed;
+        }
+    } catch (error) {
+        console.log("Native reverse geocode failed:", error);
+    }
+
+    return fetchAddressFromGoogle(latitude, longitude);
+};
+
+const getDeviceCoordinates = async () => {
+    try {
+        return await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+        });
+    } catch (error) {
+        const lastKnown = await Location.getLastKnownPositionAsync();
+        if (lastKnown) return lastKnown;
+        throw error;
+    }
+};
 
 export default function AddProject() {
     const dispatch = useDispatch();
@@ -1302,6 +1372,8 @@ export default function AddProject() {
 function Step1({ errors = {}, setErrors }) {
     const dispatch = useDispatch();
     const { step1 } = useSelector((state) => state.project);
+    const [locationLoading, setLocationLoading] = useState(false);
+
     const updateField = (field, value) => {
         dispatch(updateStep1({ [field]: value }));
         if (setErrors) {
@@ -1311,6 +1383,38 @@ function Step1({ errors = {}, setErrors }) {
                 delete copy[field];
                 return copy;
             });
+        }
+    };
+
+    const fetchCurrentLocation = async () => {
+        try {
+            setLocationLoading(true);
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Denied', 'Location permission is required to fetch current location.');
+                return;
+            }
+
+            const loc = await getDeviceCoordinates();
+            const { latitude, longitude } = loc.coords;
+            const address = await fetchAddressFromCoordinates(latitude, longitude);
+
+            if (!address || (!address.location && !address.city)) {
+                Alert.alert('Error', 'Could not fetch address. Try again or enter it manually.');
+                return;
+            }
+
+            dispatch(updateStep1({
+                location: address.location || step1.location,
+                city: address.city || step1.city,
+                state: address.state || step1.state,
+                pincode: address.pincode || step1.pincode,
+            }));
+        } catch (err) {
+            Alert.alert('Error', 'Failed to fetch location. Please try again.');
+            console.log('Location fetch error:', err);
+        } finally {
+            setLocationLoading(false);
         }
     };
     const projectNameRef = useRef(null);
@@ -1358,9 +1462,16 @@ function Step1({ errors = {}, setErrors }) {
                         onChangeText={(v) => updateField('location', v)}
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
-                    <View className="w-7 h-7 rounded-lg bg-[#EBEAFF] items-center justify-center">
-                        <Ionicons name="locate" size={16} color="#4A43EC" />
-                    </View>
+                    <TouchableOpacity
+                        onPress={fetchCurrentLocation}
+                        disabled={locationLoading}
+                        className="w-7 h-7 rounded-lg bg-[#EBEAFF] items-center justify-center"
+                    >
+                        {locationLoading
+                            ? <ActivityIndicator size={12} color="#4A43EC" />
+                            : <Ionicons name="locate" size={16} color="#4A43EC" />
+                        }
+                    </TouchableOpacity>
                 </Pressable>
                 {errors.location && (
                     <Text className="text-[11px] text-red-500 mt-1">{errors.location}</Text>

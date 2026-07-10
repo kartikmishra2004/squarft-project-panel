@@ -542,16 +542,12 @@ export default function Home() {
             }
 
             if (upcomingResponse.success) {
-                setUpcomingVisits(upcomingResponse.data);
-                console.log('✅ [HOME] Upcoming visits loaded:', upcomingResponse.data.length);
+                setUpcomingVisits(Array.isArray(upcomingResponse.data) ? upcomingResponse.data : []);
+                console.log('✅ [HOME] Upcoming visits loaded:', upcomingResponse.data?.length);
             }
         } catch (error) {
             console.log('❌ [HOME] Failed to fetch visit data:', error);
-            Alert.alert(
-                'Error Loading Visits',
-                error.message || 'Failed to load visit data. Please try again.',
-                [{ text: 'OK' }]
-            );
+            // Silently fail — show empty state instead of crashing with Alert
         } finally {
             setVisitsLoading(false);
         }
@@ -2035,7 +2031,7 @@ export default function Home() {
                             
                         
                             (Array.isArray(deals) ? deals : deals?.data || []).map((deal) => {
-
+                                const dealId = deal.deal_id || deal.id;
                                 const totalAmount = Number(deal.total_amount || deal.deal_value || deal.amount || 0);
                                 const paidAmount = Number(
                                     deal.received_amount ||
@@ -2044,20 +2040,22 @@ export default function Home() {
                                 );
 
                                 // Calculate dynamic percentage safely without dividing by zero
-                                const paymentPercentage = totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0;
+                                const paymentPercentage = deal.payment_progress_percent ?? (totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0);
 
-                                const customerName = deal.customer_name || deal.customer?.name || 'Customer';
-                                const customerPhone = deal.customer_phone || deal.customer?.phone || 'N/A';
-                                const propertyTitle = deal.property_title || deal.property?.title || 'Property Unit';
+                                const customerName = deal.booked_by_name || deal.customer_name || deal.customer?.name || 'Customer';
+                                const customerPhone = deal.booked_by_mobile || deal.mobile || deal.customer_phone || deal.customer?.phone || 'N/A';
+                                const propertyTitle = deal.unit_title || deal.display_title || deal.property_title || deal.property?.title || 'Property Unit';
+                                const dealStatus = deal.deal_status || deal.status;
 
                                 return (
                                     <TouchableOpacity
-                                        key={deal.id || Math.random().toString()}
+                                        key={dealId || Math.random().toString()}
                                         activeOpacity={0.9}
                                         onPress={async () => {
                                             const base = {
-                                                deal_id: deal.id,
-                                                dealId: deal.id,
+                                                id: dealId,
+                                                deal_id: dealId,
+                                                dealId: dealId,
                                                 inventory_unit_id: deal.inventory_unit_id,
                                                 title: propertyTitle,
                                                 property_title: propertyTitle,
@@ -2075,9 +2073,10 @@ export default function Home() {
                                                 paid_amount: paidAmount,
                                                 progress: paymentPercentage,
                                                 payment_progress_percent: paymentPercentage,
-                                                pending_amount: totalAmount - paidAmount,
+                                                pending_amount: deal.pending_amount ?? (totalAmount - paidAmount),
                                                 token_amount: deal.token_amount || null,
                                                 tokenAmount: deal.token_amount || null,
+                                                payment_schedule: deal.payment_schedule || [],
                                                 area: deal.area || deal.area_sqft || null,
                                                 possession: deal.possession || deal.possession_date || null,
                                                 amenities: [],
@@ -2106,6 +2105,9 @@ export default function Home() {
                                                         if (details.deal_summary?.token_amount) {
                                                             base.token_amount = details.deal_summary.token_amount;
                                                             base.tokenAmount = details.deal_summary.token_amount;
+                                                        }
+                                                        if (details.deal_summary?.payment_schedule?.length) {
+                                                            base.payment_schedule = details.deal_summary.payment_schedule;
                                                         }
                                                     }
                                                 } catch (err) {
@@ -2138,8 +2140,8 @@ export default function Home() {
                                                     </Text>
                                                 </View>
                                                 <View className="items-end">
-                                                    <View className={`px-2 py-0.5 rounded-full ${getDealStatusStyle(deal.status === 'closed' || deal.status === 'completed' ? 'success' : deal.status === 'active' ? 'info' : 'muted')}`}>
-                                                        <Text className="text-[9px] font-lato-bold">{(deal.status || 'PENDING').toUpperCase()}</Text>
+                                                    <View className={`px-2 py-0.5 rounded-full ${getDealStatusStyle(dealStatus === 'closed' || dealStatus === 'completed' ? 'success' : dealStatus === 'active' || dealStatus === 'tokened' ? 'info' : 'muted')}`}>
+                                                        <Text className="text-[9px] font-lato-bold">{(dealStatus || 'PENDING').toUpperCase()}</Text>
                                                     </View>
                                                     <Text className="mt-1 text-[10px] font-lato text-[#8E98AA]">
                                                         {deal.created_at ? new Date(deal.created_at).toLocaleDateString() : 'N/A'}
