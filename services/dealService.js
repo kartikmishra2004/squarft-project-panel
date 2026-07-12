@@ -1,17 +1,5 @@
 import api from './api';
 
-const requestWithFallback = async (primaryRequest, fallbackRequest) => {
-  try {
-    return await primaryRequest();
-  } catch (error) {
-    if (!fallbackRequest || (error.response?.status !== 404 && error.response?.status !== 405)) {
-      throw error;
-    }
-
-    return fallbackRequest();
-  }
-};
-
 const normalizeServiceError = (error, fallbackMessage) => ({
   message: error.response?.data?.message || error.message || fallbackMessage,
   status: error.response?.status,
@@ -23,13 +11,7 @@ export const dealService = {
   getDealsByProjectId: async (projectId) => {
     try {
       console.log('🔵 [DEAL SERVICE] Fetching deals for project:', projectId);
-      const response = await requestWithFallback(
-        () => api.get(`/api/project-developer/projects/${projectId}/deals`),
-        () => requestWithFallback(
-          () => api.get(`/api/v1/project-panel/projects/${projectId}/deals`),
-          () => api.get(`/api/project-panel/projects/${projectId}/deals`)
-        )
-      );
+      const response = await api.get(`/api/project-developer/projects/${projectId}/deals`);
       console.log('✅ [DEAL SERVICE] Deals received:', response.data);
       return response.data;
     } catch (error) {
@@ -46,10 +28,7 @@ export const dealService = {
   getDealById: async (dealId) => {
     try {
       console.log('🔵 [DEAL SERVICE] Fetching deal:', dealId);
-      const response = await requestWithFallback(
-        () => api.get(`/api/v1/project-panel/deals/${dealId}`),
-        () => api.get(`/api/project-panel/deals/${dealId}`)
-      );
+      const response = await api.get(`/api/project-panel/deals/${dealId}`);
       console.log('✅ [DEAL SERVICE] Deal received:', response.data);
       return response.data;
     } catch (error) {
@@ -83,10 +62,7 @@ export const dealService = {
   getPaymentTransactions: async (dealId) => {
     try {
       console.log('🔵 [DEAL SERVICE] Fetching payment transactions for deal:', dealId);
-      const response = await requestWithFallback(
-        () => api.get(`/api/v1/project-panel/deals/${dealId}/payment-transactions`),
-        () => api.get(`/api/project-panel/deals/${dealId}/payment-transactions`)
-      );
+      const response = await api.get(`/api/project-panel/deals/${dealId}/payment-transactions`);
       console.log('✅ [DEAL SERVICE] Payment transactions received:', response.data);
       return response.data;
     } catch (error) {
@@ -99,15 +75,14 @@ export const dealService = {
     }
   },
   
-  // Collect payment for a deal
-  collectPayment: async (dealId, paymentData) => {
+  // Collect payment for a milestone
+  collectPayment: async (milestoneId, paymentData) => {
     try {
-      console.log('🔵 [DEAL SERVICE] Collecting payment for deal:', dealId);
-      // Prefer milestone-level collect when a milestone_id is present
-      const url = paymentData.milestone_id
-        ? `/api/project-developer/inventory-deal-milestones/${paymentData.milestone_id}/collect`
-        : `/api/project-developer/inventory-deals/${dealId}/payment-schedule`;
-      const response = await api.post(url, paymentData);
+      console.log('🔵 [DEAL SERVICE] Collecting payment for milestone:', milestoneId);
+      const response = await api.post(
+        `/api/project-developer/inventory-deal-milestones/${milestoneId}/collect`,
+        paymentData
+      );
       console.log('✅ [DEAL SERVICE] Payment collected:', response.data);
       return response.data;
     } catch (error) {
@@ -124,10 +99,7 @@ export const dealService = {
   getInventoryUnitDetails: async (unitId) => {
     try {
       console.log('[DEAL SERVICE] Fetching inventory unit details:', unitId);
-      const response = await requestWithFallback(
-        () => api.get(`/api/project-developer/inventory-units/${unitId}/details`),
-        () => api.get(`/api/v1/project-developer/inventory-units/${unitId}/details`)
-      );
+      const response = await api.get(`/api/project-developer/inventory-units/${unitId}/details`);
       console.log('[DEAL SERVICE] Inventory unit details received:', response.data);
       return response.data;
     } catch (error) {

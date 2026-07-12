@@ -80,6 +80,12 @@ const initialState = {
         titleReportDocuments: [],
         titleExpectedCompletionDate: '',
         financialOwnershipRemarks: '',
+        customerIncentives: '',
+        brokerIncentives: '',
+        videoUrl: '',
+        visibility: 'public',
+        salesOfficerId: null,
+        branchManagerId: null,
     },
     step6: {
         images: [],
@@ -187,15 +193,18 @@ const projectSlice = createSlice({
                                 floor: r.toString(),
                                 bhk: subType === 'office' ? (config.type || 'Co-working') : (config.type || '2 BHK'),
                                 officeType: subType === 'office' ? (config.type || 'Co-working') : '',
+                                variantName: config.name || '',
                                 area: (override.customArea || config.area || '0').toString(),
                                 areaUnit: subType === 'plot' ? 'Sq-yrd' : 'Sq-ft',
                                 price: (override.customPrice || config.price || '').toString().replace(/,/g, ''),
                                 images: config.images || [],
                                 brochure: config.brochure || null,
-                                amenities: (config.amenities || []).filter(Boolean).length > 0 ? (config.amenities || []).filter(Boolean) : [config.name || 'Standard'],
+                                amenities: (config.amenities || []).filter(Boolean).length > 0 ? (config.amenities || []).filter(Boolean) : [''],
                                 propertyNumber: propertyNumber,
                                 hasShop: false,
-                                extraCharges: [{ title: 'Maintenance', amount: '0' }]
+                                extraCharges: (config.extra_charges || []).filter(e => e && e.title).length > 0
+                                    ? config.extra_charges
+                                    : [{ title: '', amount: '' }]
                             };
 
                             newUnitConfigs.push(unitConfig);

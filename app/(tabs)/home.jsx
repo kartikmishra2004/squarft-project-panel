@@ -9,12 +9,12 @@ import { useRouter } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
 import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
-import { updateProject } from "../../store/slices/projectsSlice";
+import { updateProject, addProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
 import { setInventoryLoading, setInventoryData, setInventoryError } from "../../store/slices/inventorySlice";
 import { projectOverviewApi } from "../../services/api";
 import { visitService } from "../../services/visitService";
-import { projectService } from "../../services/projectService";
+
 import { dealService } from "../../services/dealService";
 import { inventoryService } from "../../services/inventoryService";
 
@@ -151,7 +151,9 @@ export default function Home() {
         try {
             setOverviewLoading(true);
             const res = await projectOverviewApi.getProjectOverview(projectId);
-            setOverviewData(res.data?.data || null);
+            const data = res.data?.data || null;
+            console.log('🏗️ [OVERVIEW] header:', JSON.stringify(data?.header));
+            setOverviewData(data);
         } catch (error) {
             console.error('Failed to fetch project overview:', error);
             setOverviewData(null);
@@ -484,20 +486,30 @@ export default function Home() {
     const fetchBackendProjects = useCallback(async () => {
         try {
             setProjectsLoading(true);
-            console.log('🔵 [HOME] Fetching backend projects');
-
-            const response = await projectService.listProjects();
-
-            if (response.data && response.data.length > 0) {
-                setBackendProjects(response.data);
-                setProjectsList(response.data); // use same data for dropdown
-                setSelectedProjectId(response.data[0].id);
-                console.log('✅ [HOME] Backend projects fetched:', response.data.length);
-                // Set the first project as default
-                setRealProjectId(response.data[0].id);
-                return response.data;
+            const res = await projectOverviewApi.getProjectsList();
+            const list = res.data?.data || [];
+            if (list.length > 0) {
+                setBackendProjects(list);
+                setProjectsList(list);
+                setSelectedProjectId(list[0].id);
+                setRealProjectId(list[0].id);
+                list.forEach((p) => {
+                    dispatch(addProject({
+                        id: p.id,
+                        title: p.name || p.title,
+                        location: [p.location, p.city, p.state].filter(Boolean).join(', '),
+                        developer: p.responsible_person_name || p.sales_officer_name || '',
+                        possession: p.possession_status || '',
+                        rera: !!p.rera_approved,
+                        inventory: {},
+                        deals: [],
+                        visits: { metrics: [], pipeline: { stages: [] }, followUps: [] },
+                    }));
+                });
+                console.log('✅ [HOME] Backend projects fetched:', list.length);
+                return list;
             } else {
-                console.log('⚠️ [HOME] No projects found in backend');
+                console.log('⚠️ [HOME] No projects found');
                 return [];
             }
         } catch (error) {
@@ -520,7 +532,7 @@ export default function Home() {
         } finally {
             setProjectsLoading(false);
         }
-    }, []);
+    }, [dispatch]);
 
     // Fetch visit data
     const fetchVisitData = useCallback(async (projectId) => {
@@ -544,16 +556,12 @@ export default function Home() {
             }
 
             if (upcomingResponse.success) {
-                setUpcomingVisits(upcomingResponse.data);
-                console.log('✅ [HOME] Upcoming visits loaded:', upcomingResponse.data.length);
+                setUpcomingVisits(Array.isArray(upcomingResponse.data) ? upcomingResponse.data : []);
+                console.log('✅ [HOME] Upcoming visits loaded:', upcomingResponse.data?.length);
             }
         } catch (error) {
             console.log('❌ [HOME] Failed to fetch visit data:', error);
-            Alert.alert(
-                'Error Loading Visits',
-                error.message || 'Failed to load visit data. Please try again.',
-                [{ text: 'OK' }]
-            );
+            // Silently fail — show empty state instead of crashing with Alert
         } finally {
             setVisitsLoading(false);
         }
@@ -641,13 +649,17 @@ export default function Home() {
         const backendProjectId = getBackendProjectId();
         if (!backendProjectId) return;
         setRefreshing(true);
-        if (activeTab === 'Visits') {
+        if (activeTab === 'Overview') {
+            await fetchOverview(backendProjectId);
+        } else if (activeTab === 'Inventory') {
+            await fetchInventoryData(backendProjectId, true); // force = true to bypass cache
+        } else if (activeTab === 'Visits') {
             await fetchVisitData(backendProjectId);
         } else if (activeTab === 'Deals') {
             await fetchDealsData(backendProjectId);
         }
         setRefreshing(false);
-    }, [getBackendProjectId, fetchVisitData, activeTab]);
+    }, [getBackendProjectId, fetchOverview, fetchInventoryData, fetchVisitData, fetchDealsData, activeTab]);
 
     // Fetch deals data
     const fetchDealsData = useCallback(async (projectId) => {
@@ -1135,10 +1147,18 @@ export default function Home() {
 
     const displayProjectTitle = apiHeader?.name || selectedProject?.title || "Select Project";
     const displayProjectLocation = apiHeader?.location || selectedProject?.location || "";
-    const displayPossession = apiHeader?.possession || selectedProject?.possession || "";
+    const displayPossession = (() => {
+        const raw = apiHeader?.possession_by || selectedProject?.possession || "";
+        if (!raw) return "";
+        // If it looks like a raw ISO date (YYYY-MM-DD), format it
+        if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+            return new Date(raw).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+        }
+        return raw;
+    })();
     const displayAvgPrice = apiHeader?.avg_price_per_sqft ? `₹${apiHeader.avg_price_per_sqft}/sqft` : selectedProject?.avgPrice || "";
-    const displayReraApproved = apiHeader?.rera?.is_approved ?? selectedProject?.rera ?? false;
-    const displayReraNumber = apiHeader?.rera?.number || "";
+    const displayReraApproved = apiHeader?.rera?.is_approved ?? apiHeader?.rera_approved ?? selectedProject?.rera ?? false;
+    const displayReraNumber = apiHeader?.rera?.number || apiHeader?.rera_number || "";
 
     const displayUnits = apiInventory ? {
         total: apiInventory.total,
@@ -1160,9 +1180,6 @@ export default function Home() {
     // Cover image from API media or fallback to Redux
     const displayCoverImage = apiMedia.length > 0 ? { uri: apiMedia[0] } : getProjectImageSource(selectedProject);
     const displayImageCount = apiMedia.length > 0 ? `1/${apiMedia.length}` : projectImagesLabel;
-
-    const visitsData = selectedProject.visits || { metrics: [], pipeline: { stages: [] }, followUps: [] };
-    const dealsData = selectedProject.deals || [];
 
     // ── Inventory from real API (falls back to Redux mock when not yet loaded) ──
     const backendProjectId = getBackendProjectId();
@@ -1410,12 +1427,22 @@ export default function Home() {
                                     </TouchableOpacity>
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
-                                            <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
-                                            {mockData.user.verified && (
-                                                <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
+                                            {overviewLoading ? (
+                                                <SkeletonBox width={110} height={13} borderRadius={6} style={{ backgroundColor: 'rgba(255,255,255,0.3)' }} />
+                                            ) : (
+                                                <>
+                                                    <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
+                                                    {(apiUserProfile?.is_verified ?? mockData.user.verified) && (
+                                                        <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
+                                                    )}
+                                                </>
                                             )}
                                         </View>
-                                        <Text className="text-white/70 text-[9px] font-lato">{displayUserDate}</Text>
+                                        {overviewLoading ? (
+                                            <SkeletonBox width={70} height={8} borderRadius={4} style={{ marginTop: 4, backgroundColor: 'rgba(255,255,255,0.2)' }} />
+                                        ) : (
+                                            <Text className="text-white/70 text-[9px] font-lato">{displayUserDate}</Text>
+                                        )}
                                     </View>
                                 </View>
                                 <TouchableOpacity
@@ -1443,38 +1470,14 @@ export default function Home() {
                                     >
                                         <Ionicons name="chevron-down" size={16} color="#4A43EC" />
                                         <Text className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]" numberOfLines={1}>
-                                            {displayProjectTitle}
+                                            {overviewLoading
+                                                ? <SkeletonBox width={120} height={10} borderRadius={5} />
+                                                : displayProjectTitle
+                                            }
                                         </Text>
                                     </TouchableOpacity>
 
-                                    {false && isProjectDropdownOpen ? (
-                                        <View
-                                            className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                            style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER, borderWidth: 1.5, borderColor: "#4A43EC" }}
-                                        >
-                                            {projectOptions.map((project) => {
-                                                const isSelected = project.id === selectedProjectId;
 
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={project.id}
-                                                        activeOpacity={0.85}
-                                                        onPress={() => {
-                                                            handleProjectSelect(project.id);
-                                                        }}
-                                                        className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
-                                                    >
-                                                        <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
-                                                            {project.title}
-                                                        </Text>
-                                                        <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
-                                                            {project.location}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
-                                    ) : null}
                                 </View>
                                 <TouchableOpacity
                                     className="h-9 px-3 rounded-xl flex-row items-center border border-white/50"
@@ -1607,39 +1610,15 @@ export default function Home() {
                                     className="flex-row items-center max-w-full"
                                 >
                                     <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1" numberOfLines={1}>
-                                        {displayProjectTitle}
+                                        {overviewLoading
+                                            ? <SkeletonBox width={140} height={14} borderRadius={6} />
+                                            : displayProjectTitle
+                                        }
                                     </Text>
                                     <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
                                 </TouchableOpacity>
 
-                                {false && isProjectDropdownOpen ? (
-                                    <View
-                                        className="absolute left-0 right-0 top-10 bg-white rounded-xl border border-gray-100 overflow-hidden"
-                                        style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER, maxHeight: 260, borderWidth: 1.5, borderColor: "#4A43EC" }}
-                                    >
-                                        <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                                            {projectOptions.map((project) => {
-                                                const isSelected = project.id === selectedProjectId;
 
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={project.id}
-                                                        activeOpacity={0.85}
-                                                        onPress={() => handleProjectSelect(project.id)}
-                                                        className={`px-3 py-3 ${isSelected ? "bg-[#F4F3FF]" : "bg-white"}`}
-                                                    >
-                                                        <Text className={`font-lato-bold text-[12px] ${isSelected ? "text-[#4A43EC]" : "text-[#1A1A1A]"}`} numberOfLines={1}>
-                                                            {project.title}
-                                                        </Text>
-                                                        <Text className="mt-0.5 text-[10px] font-lato text-[#8E9AAF]" numberOfLines={1}>
-                                                            {project.location || "Location pending"}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </ScrollView>
-                                    </View>
-                                ) : null}
                             </View>
                             <View className="w-10" />
                         </View>
@@ -1758,27 +1737,34 @@ export default function Home() {
 
                                     <View className="flex-row items-center justify-between mb-0.5">
                                         <Text className="text-[#1A1A1A] text-[18px] font-lato-bold">{displayProjectTitle}</Text>
-                                        {displayReraApproved && (
+                                        {displayReraApproved ? (
                                             <View className="bg-green-50 px-1.5 py-0.5 rounded flex-row items-center border border-green-100">
                                                 <Text className="text-[#10B981] text-[8px] font-lato-bold mr-1">RERA</Text>
                                                 <Ionicons name="checkmark-circle" size={9} color="#10B981" />
+                                            </View>
+                                        ) : (
+                                            <View className="bg-red-50 px-1.5 py-0.5 rounded flex-row items-center border border-red-100">
+                                                <Text className="text-red-400 text-[8px] font-lato-bold mr-1">RERA</Text>
+                                                <Ionicons name="close-circle" size={9} color="#F87171" />
                                             </View>
                                         )}
                                     </View>
                                     <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
 
                                     <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
-                                        <View className="flex-row">
-                                            {displayApartments.map((apt, idx) => (
-                                                <View key={idx} className={`flex-1 ${idx === 0 ? "border-r border-gray-100 pr-3" : "pl-3"}`}>
-                                                    <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
-                                                    <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
-                                                </View>
-                                            ))}
-                                            {displayApartments.length === 0 && (
-                                                <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
-                                            )}
-                                        </View>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                            <View className="flex-row">
+                                                {displayApartments.map((apt, idx) => (
+                                                    <View key={idx} className={`${idx !== 0 ? "border-l border-gray-100 pl-3 ml-3" : ""} min-w-[80px]`}>
+                                                        <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
+                                                        <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
+                                                    </View>
+                                                ))}
+                                                {displayApartments.length === 0 && (
+                                                    <Text className="text-gray-400 text-[11px] font-lato">No unit summary added yet.</Text>
+                                                )}
+                                            </View>
+                                        </ScrollView>
                                     </View>
 
                                     <View className="flex-row justify-between mb-4">
@@ -2059,7 +2045,7 @@ export default function Home() {
                             
                         
                             (Array.isArray(deals) ? deals : deals?.data || []).map((deal) => {
-
+                                const dealId = deal.deal_id || deal.id;
                                 const totalAmount = Number(deal.total_amount || deal.deal_value || deal.amount || 0);
                                 const paidAmount = Number(
                                     deal.received_amount ||
@@ -2068,20 +2054,22 @@ export default function Home() {
                                 );
 
                                 // Calculate dynamic percentage safely without dividing by zero
-                                const paymentPercentage = totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0;
+                                const paymentPercentage = deal.payment_progress_percent ?? (totalAmount > 0 ? Math.round((paidAmount / totalAmount) * 100) : 0);
 
-                                const customerName = deal.customer_name || deal.customer?.name || 'Customer';
-                                const customerPhone = deal.customer_phone || deal.customer?.phone || 'N/A';
-                                const propertyTitle = deal.property_title || deal.property?.title || 'Property Unit';
+                                const customerName = deal.booked_by_name || deal.customer_name || deal.customer?.name || 'Customer';
+                                const customerPhone = deal.booked_by_mobile || deal.mobile || deal.customer_phone || deal.customer?.phone || 'N/A';
+                                const propertyTitle = deal.unit_title || deal.display_title || deal.property_title || deal.property?.title || 'Property Unit';
+                                const dealStatus = deal.deal_status || deal.status;
 
                                 return (
                                     <TouchableOpacity
-                                        key={deal.id || Math.random().toString()}
+                                        key={dealId || Math.random().toString()}
                                         activeOpacity={0.9}
                                         onPress={async () => {
                                             const base = {
-                                                deal_id: deal.id,
-                                                dealId: deal.id,
+                                                id: dealId,
+                                                deal_id: dealId,
+                                                dealId: dealId,
                                                 inventory_unit_id: deal.inventory_unit_id,
                                                 title: propertyTitle,
                                                 property_title: propertyTitle,
@@ -2099,9 +2087,10 @@ export default function Home() {
                                                 paid_amount: paidAmount,
                                                 progress: paymentPercentage,
                                                 payment_progress_percent: paymentPercentage,
-                                                pending_amount: totalAmount - paidAmount,
+                                                pending_amount: deal.pending_amount ?? (totalAmount - paidAmount),
                                                 token_amount: deal.token_amount || null,
                                                 tokenAmount: deal.token_amount || null,
+                                                payment_schedule: deal.payment_schedule || [],
                                                 area: deal.area || deal.area_sqft || null,
                                                 possession: deal.possession || deal.possession_date || null,
                                                 amenities: [],
@@ -2130,6 +2119,9 @@ export default function Home() {
                                                         if (details.deal_summary?.token_amount) {
                                                             base.token_amount = details.deal_summary.token_amount;
                                                             base.tokenAmount = details.deal_summary.token_amount;
+                                                        }
+                                                        if (details.deal_summary?.payment_schedule?.length) {
+                                                            base.payment_schedule = details.deal_summary.payment_schedule;
                                                         }
                                                     }
                                                 } catch (err) {
@@ -2162,8 +2154,8 @@ export default function Home() {
                                                     </Text>
                                                 </View>
                                                 <View className="items-end">
-                                                    <View className={`px-2 py-0.5 rounded-full ${getDealStatusStyle(deal.status === 'closed' || deal.status === 'completed' ? 'success' : deal.status === 'active' ? 'info' : 'muted')}`}>
-                                                        <Text className="text-[9px] font-lato-bold">{(deal.status || 'PENDING').toUpperCase()}</Text>
+                                                    <View className={`px-2 py-0.5 rounded-full ${getDealStatusStyle(dealStatus === 'closed' || dealStatus === 'completed' ? 'success' : dealStatus === 'active' || dealStatus === 'tokened' ? 'info' : 'muted')}`}>
+                                                        <Text className="text-[9px] font-lato-bold">{(dealStatus || 'PENDING').toUpperCase()}</Text>
                                                     </View>
                                                     <Text className="mt-1 text-[10px] font-lato text-[#8E98AA]">
                                                         {deal.created_at ? new Date(deal.created_at).toLocaleDateString() : 'N/A'}

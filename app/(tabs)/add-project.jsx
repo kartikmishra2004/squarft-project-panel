@@ -15,11 +15,13 @@ import {
     Modal,
     ActivityIndicator,
     FlatList,
+    Alert,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as Location from "expo-location";
 import { useDispatch, useSelector } from "react-redux";
 import {
     setStep,
@@ -42,6 +44,7 @@ import { addNotification } from "../../store/slices/notificationSlice";
 import { projectFormApi, projectOverviewApi } from "../../services/api";
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { Linking } from 'react-native';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -129,6 +132,74 @@ const OWNERSHIP_TYPES = [
     "Other",
 ];
 
+const hasValidGoogleMapsKey = () => {
+    const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    return Boolean(key && !/your_google_maps_api_key_here|placeholder|changeme/i.test(key));
+};
+
+const parseReverseGeocode = (place = {}) => {
+    const streetParts = [place.streetNumber, place.street, place.name].filter(Boolean);
+    const locationStr = streetParts.join(" ").trim()
+        || [place.district, place.subregion].filter(Boolean).join(", ").trim();
+
+    return {
+        location: locationStr,
+        city: place.city || place.district || place.subregion || "",
+        state: place.region || "",
+        pincode: place.postalCode || "",
+    };
+};
+
+const fetchAddressFromGoogle = async (latitude, longitude) => {
+    if (!hasValidGoogleMapsKey()) return null;
+
+    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const res = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
+    );
+    const data = await res.json();
+
+    if (data.status !== "OK" || !data.results?.length) return null;
+
+    const components = data.results[0].address_components;
+    const get = (type) => components.find((c) => c.types.includes(type))?.long_name || "";
+    const sublocality = get("sublocality_level_1") || get("sublocality") || get("neighborhood");
+    const route = get("route");
+
+    return {
+        location: [route, sublocality].filter(Boolean).join(", ") || data.results[0].formatted_address,
+        city: get("locality") || get("administrative_area_level_2"),
+        state: get("administrative_area_level_1"),
+        pincode: get("postal_code"),
+    };
+};
+
+const fetchAddressFromCoordinates = async (latitude, longitude) => {
+    try {
+        const places = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (places?.length) {
+            const parsed = parseReverseGeocode(places[0]);
+            if (parsed.location || parsed.city) return parsed;
+        }
+    } catch (error) {
+        console.log("Native reverse geocode failed:", error);
+    }
+
+    return fetchAddressFromGoogle(latitude, longitude);
+};
+
+const getDeviceCoordinates = async () => {
+    try {
+        return await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+        });
+    } catch (error) {
+        const lastKnown = await Location.getLastKnownPositionAsync();
+        if (lastKnown) return lastKnown;
+        throw error;
+    }
+};
+
 export default function AddProject() {
     const dispatch = useDispatch();
     const { currentStep, step1, step2, step3, step4, step5, step6 } = useSelector((state) => state.project);
@@ -162,79 +233,465 @@ export default function AddProject() {
     const resumeDraft = async (draft) => {
         dispatch(resetForm());
         dispatch(setProjectId(draft.id));
+        setDraftsVisible(false);
 
-        // Step 1 data
-        dispatch(updateStep1({
-            projectName: draft.name || '',
-            location: draft.location || '',
-            city: draft.city || '',
-            state: draft.state || '',
-            pincode: draft.pincode || '',
-            salesOfficerName: draft.sales_officer_name || '',
-            salesOfficerContact: draft.sales_officer_contact || '',
-            responsiblePersonName: draft.responsible_person_name || '',
-            responsiblePersonContact: draft.responsible_person_contact || '',
-        }));
-
-        // Step 4 data — restore if any step4 field has data
-        if (draft.possession_status || draft.project_launch_status || draft.development_progress || draft.overall_approval_status) {
-            dispatch(updateStep4({
-                possessionStatus: draft.possession_status
-                    ? draft.possession_status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-                    : '',
-                possessionRemarks: draft.possession_remarks || '',
-                projectLaunchStatus: draft.project_launch_status || '',
-                projectLaunchDate: draft.project_launch_date || '',
-                expectedLaunchDate: draft.expected_launch_date || '',
-                developmentCompletionPercentage: draft.development_progress != null ? String(draft.development_progress) : '',
-                developmentRemarks: draft.development_remarks || '',
-                otherDevelopmentStage: draft.other_development_stage || '',
-                overallApprovalStatus: draft.overall_approval_status || 'Not verified yet',
-            }));
-        }
-
-        // Step 5 data — restore if any step5 field has data
-        if (draft.guideline_value || draft.ownership_type || draft.title_verification_status || draft.brokerage_type) {
-            dispatch(updateStep5({
-                guidelineValueAmount: draft.guideline_value != null ? String(draft.guideline_value) : '',
-                guidelineValueUnit: draft.guideline_value_unit || '',
-                ownershipType: draft.ownership_type || '',
-                titleVerificationStatus: draft.title_verification_status || '',
-            }));
-        }
-
-        // Step 2 data — restore selectedTypes from variants in DB
         try {
-            const res = await projectFormApi.getDraftStepData(draft.id);
-            const { variants } = res.data?.data || {};
-            if (variants && variants.length > 0) {
-                // Deduplicate by mainType+subType
-                const seen = new Set();
-                variants.forEach((v) => {
-                    const mainType = v.type === 'commercial' ? 'commercial' : 'residential';
-                    const subType = v.property_subtype;
-                    const key = `${mainType}_${subType}`;
+            const res = await projectFormApi.getProjectFormResume(draft.id);
+            const resumeData = res.data?.data;
+            if (!resumeData) throw new Error("Empty resume data");
+
+            const s1 = resumeData.step1 || {};
+            const s2 = resumeData.step2 || {};
+            const s4 = resumeData.step4 || {};
+            const s5 = resumeData.step5 || {};
+
+            console.log('🔍 [RESUME step5]', JSON.stringify(s5, null, 2));
+
+            // Step 1
+            dispatch(updateStep1({
+                projectName: s1.name || '',
+                location: s1.location || '',
+                city: s1.city || '',
+                state: s1.state || '',
+                pincode: s1.pincode || '',
+                salesOfficerName: s1.sales_officer_name || '',
+                salesOfficerContact: s1.sales_officer_contact || '',
+                responsiblePersonName: s1.responsible_person_name || '',
+                responsiblePersonContact: s1.responsible_person_contact || '',
+            }));
+
+            // Step 2 — deduplicated property types from variants
+            const variants = resumeData.step3?.variants || [];
+            const dbUnits  = resumeData.step3?.units    || [];
+            const seen = new Set();
+            // typeId -> { mainType, subType, typeId }
+            const typeMap = {};
+
+            variants.forEach((v) => {
+                const mainType = v.property_type === 'commercial' ? 'commercial' : 'residential';
+                const subType  = String(v.property_subtype || '');
+                const key      = `${mainType}_${subType}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    dispatch(addPropertyType({ id: subType, mainType, subType }));
+                    typeMap[subType] = { mainType, subType, typeId: subType };
+                }
+            });
+
+            // Also restore from step2.property_types if variants are empty
+            if (variants.length === 0) {
+                (s2.property_types || []).forEach((pt) => {
+                    const key = `${pt.main_type}_${pt.sub_type}`;
                     if (!seen.has(key)) {
                         seen.add(key);
-                        dispatch(addPropertyType({
-                            id: v.id,
-                            mainType,
-                            subType,
-                        }));
+                        dispatch(addPropertyType({ id: String(pt.sub_type || ''), mainType: pt.main_type, subType: String(pt.sub_type || '') }));
+                        typeMap[pt.sub_type] = { mainType: pt.main_type, subType: String(pt.sub_type || ''), typeId: String(pt.sub_type || '') };
                     }
                 });
             }
-        } catch (e) {
-            console.warn("Could not restore step 2 data", e);
-        }
 
-        // Jump to next step after last completed — done last so all state is set first
-        const hasStep5Data = !!(draft.guideline_value || draft.ownership_type || draft.title_verification_status || draft.brokerage_type);
-        const hasStep4Data = !!(draft.possession_status || draft.project_launch_status || draft.development_progress != null || draft.overall_approval_status);
-        const lastDone = draft.last_completed_step || (hasStep5Data ? 5 : hasStep4Data ? 4 : 1);
-        const nextStep = Math.min(lastDone + 1, 6);
-        setDraftsVisible(false);
-        setTimeout(() => dispatch(setStep(nextStep)), 100);
+            // Step 3 — rebuild unitConfigs from saved units + variants
+            const variantById = {};
+            variants.forEach((v) => { variantById[v.id] = v; });
+
+            // Group DB units by subType
+            const unitsBySubType = {};
+            dbUnits.forEach((u) => {
+                const variant = variantById[u.property_id];
+                if (!variant) return;
+                const subType = variant.property_subtype;
+                if (!unitsBySubType[subType]) unitsBySubType[subType] = [];
+                unitsBySubType[subType].push({ unit: u, variant });
+            });
+
+            const parseJsonField = (val) => {
+                if (Array.isArray(val)) return val;
+                try { return JSON.parse(val || '[]'); } catch { return []; }
+            };
+
+            const buildUnitConfig = (unit, variant) => {
+                const bhkLabel = variant.category_type || (variant.bedrooms ? `${variant.bedrooms} BHK` : variant.property_subtype);
+                return {
+                    tower:          unit?.block_name || '',
+                    floor:          unit?.floor != null ? String(unit.floor) : '',
+                    bhk:            bhkLabel,
+                    officeType:     bhkLabel,
+                    variantName:    variant.variant_name || '',
+                    area:           variant.area_sqft != null ? String(variant.area_sqft) : '',
+                    areaUnit:       variant.area_unit || unit?.area_unit || 'Sq-ft',
+                    price:          variant.selling_price != null ? String(variant.selling_price) : '',
+                    images:         normalizeImageList(variant.images),
+                    amenities:      parseJsonField(variant.amenities).length > 0 ? parseJsonField(variant.amenities) : [''],
+                    extraCharges:   parseJsonField(variant.extra_charges).length > 0 ? parseJsonField(variant.extra_charges) : [{ title: '', amount: '' }],
+                    brochure:       variant.brochure_url ? { uri: variant.brochure_url, name: 'Brochure', mimeType: '', size: 0 } : null,
+                    propertyNumber: unit?.unit_number || '',
+                    hasShop:        false,
+                };
+            };
+
+            // For each subType dispatch bulkUploadSubtype to restore unitConfigs + builder state
+            const RESUME_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'];
+
+            const parseFloorNum = (floorVal, fallback) => {
+                if (floorVal == null) return fallback;
+                const n = parseInt(String(floorVal).replace(/\D/g, ''), 10);
+                return isNaN(n) ? fallback : n;
+            };
+
+            const buildBuilderState = (subType, entries) => {
+                // Group by block_name
+                const sectionMap = {};
+                const sectionOrder = [];
+                entries.forEach(({ unit, variant }) => {
+                    const sec = unit?.block_name || 'Block A';
+                    if (!sectionMap[sec]) { sectionMap[sec] = []; sectionOrder.push(sec); }
+                    sectionMap[sec].push({ unit, variant });
+                });
+
+                const sections = sectionOrder.map((secName, secIdx) => {
+                    const sEntries = sectionMap[secName];
+                    // Build unique configs per variant
+                    const variantToConfigId = {};
+                    const configs = [];
+                    sEntries.forEach(({ variant }) => {
+                        if (!variantToConfigId[variant.id]) {
+                            const cfgId = 'cfg_' + variant.id;
+                            variantToConfigId[variant.id] = cfgId;
+                            configs.push({
+                                id: cfgId,
+                                type: variant.category_type || variant.property_subtype || '',
+                                name: variant.variant_name || '',
+                                area: variant.area_sqft != null ? String(variant.area_sqft) : '',
+                                areaUnit: variant.area_unit || 'Sq-ft',
+                                price: variant.selling_price != null ? String(variant.selling_price) : '',
+                                color: RESUME_COLORS[configs.length % RESUME_COLORS.length],
+                                images: normalizeImageList(variant.images),
+                                brochure: variant.brochure_url ? { uri: variant.brochure_url, name: 'Brochure', mimeType: '', size: 0 } : null,
+                                amenities: parseJsonField(variant.amenities).filter(Boolean).length > 0
+                                    ? parseJsonField(variant.amenities).filter(Boolean) : [''],
+                                extra_charges: parseJsonField(variant.extra_charges).length > 0
+                                    ? parseJsonField(variant.extra_charges)
+                                    : [{ title: '', amount: '' }],
+                            });
+                        }
+                    });
+
+                    // Group by floor for unitMap
+                    const floorGroups = {};
+                    sEntries.forEach(({ unit, variant }, idx) => {
+                        const floor = parseFloorNum(unit?.floor, idx + 1);
+                        if (!floorGroups[floor]) floorGroups[floor] = [];
+                        floorGroups[floor].push({ unit, variant });
+                    });
+
+                    const unitMap = {};
+                    const unitOverrides = {};
+                    const rowUnitCounts = {};
+
+                    const allFloors = Object.keys(floorGroups).map(Number).filter(n => !isNaN(n));
+                    // Prefer saved values from DB
+                    const savedFloors = sEntries[0]?.variant?.section_floors;
+                    const builderMeta = sEntries[0]?.variant?.builder_meta;
+                    const savedUnitsPerFloor = (builderMeta && typeof builderMeta === 'object')
+                        ? builderMeta.units_per_floor
+                        : (typeof builderMeta === 'string' ? JSON.parse(builderMeta || '{}')?.units_per_floor : null);
+
+                    // floorCount: saved value > max painted floor number > distinct floor count
+                    const maxPaintedFloor = allFloors.length > 0 ? Math.max(...allFloors) : sEntries.length;
+                    const floorCount = savedFloors || maxPaintedFloor;
+
+                    // units per floor = saved value, else max painted per any floor
+                    const maxPaintedPerFloor = Object.values(floorGroups).length > 0
+                        ? Math.max(...Object.values(floorGroups).map(g => g.length), 1)
+                        : 1;
+                    const maxCol = savedUnitsPerFloor || maxPaintedPerFloor;
+
+                    for (let row = 1; row <= floorCount; row++) {
+                        rowUnitCounts[row] = maxCol;
+                    }
+
+                    // Fill the actual assigned units for the floors that were saved
+                    allFloors.forEach((floor) => {
+                        const row = floor;
+                        const fEntries = floorGroups[floor];
+                        fEntries.forEach(({ unit, variant }, colIdx) => {
+                            let col = colIdx + 1; // fallback
+                            if (unit?.unit_number) {
+                                const numStr = String(unit.unit_number);
+                                const floorStr = String(floor);
+                                if (numStr.startsWith(floorStr)) {
+                                    const colPart = parseInt(numStr.slice(floorStr.length), 10);
+                                    if (!isNaN(colPart) && colPart > 0) col = colPart;
+                                }
+                            }
+                            const key = `${row}_${col}`;
+                            unitMap[key] = variantToConfigId[variant.id];
+                            if (unit?.unit_number) unitOverrides[key] = { customName: unit.unit_number };
+                        });
+                    });
+
+                    // Second pass: auto-fill room numbers for empty cells
+                    for (let r = 1; r <= floorCount; r++) {
+                        for (let c = 1; c <= maxCol; c++) {
+                            const key = `${r}_${c}`;
+                            if (!unitOverrides[key]) {
+                                const colStr = c < 10 ? `0${c}` : `${c}`;
+                                unitOverrides[key] = { customName: `${r}${colStr}` };
+                            }
+                        }
+                    }
+
+                    return {
+                        id: secIdx + 1,
+                        name: secName,
+                        floors: floorCount, rows: floorCount, lanes: floorCount,
+                        unitsPerFloor: maxCol, plotsPerRow: maxCol, villasPerLane: maxCol,
+                        configs, unitMap, rowUnitCounts, unitOverrides,
+                    };
+                });
+
+                const finalSections = sections.length > 0 ? sections : getDefaultBuilderState(subType).sections;
+                return {
+                    sections: finalSections,
+                    activeSectionId: finalSections[0]?.id || 1,
+                    activeConfigId: finalSections[0]?.configs[0]?.id || null,
+                    gridMode: 'paint',
+                    selectedUnitKey: null,
+                };
+            };
+
+            Object.entries(unitsBySubType).forEach(([subType, entries]) => {
+                const unitConfigs = entries.map(({ unit, variant }) => buildUnitConfig(unit, variant));
+                dispatch(bulkUploadSubtype({ typeId: subType, unitConfigs }));
+                dispatch(setUploadMode({ typeId: subType, mode: 'bulk' }));
+                dispatch(updateBuilderData({
+                    typeId: subType,
+                    subType,
+                    builderState: buildBuilderState(subType, entries),
+                }));
+            });
+
+            // Fallback: variants exist but no units saved — restore from variant data directly
+            variants.forEach((v) => {
+                const subType = v.property_subtype;
+                if (!unitsBySubType[subType]) {
+                    const unitConfigs = [buildUnitConfig(null, v)];
+                    dispatch(bulkUploadSubtype({ typeId: subType, unitConfigs }));
+                    dispatch(setUploadMode({ typeId: subType, mode: 'bulk' }));
+                    dispatch(updateBuilderData({
+                        typeId: subType,
+                        subType,
+                        builderState: buildBuilderState(subType, [{ unit: null, variant: v }]),
+                    }));
+                }
+            });
+
+            // Step 4
+            if (s4.possession_status || s4.project_launch_status || s4.development_progress != null || s4.overall_approval_status) {
+                // Parse development_checklist safely
+                const parseChecklist = (val) => {
+                    if (Array.isArray(val)) return val;
+                    try { return JSON.parse(val || '[]'); } catch { return []; }
+                };
+
+                dispatch(updateStep4({
+                    possessionStatus: s4.possession_status
+                        ? s4.possession_status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+                        : '',
+                    expectedPossessionDate: s4.expected_possession_date || '',
+                    possessionRemarks: s4.possession_remarks || '',
+                    projectLaunchStatus: s4.project_launch_status || '',
+                    projectLaunchDate: s4.project_launch_date || '',
+                    expectedLaunchDate: s4.expected_launch_date || '',
+                    developmentCompletionPercentage: s4.development_progress != null ? String(s4.development_progress) : '',
+                    currentDevelopmentStage: parseChecklist(s4.development_checklist),
+                    developmentRemarks: s4.development_remarks || '',
+                    otherDevelopmentStage: s4.other_development_stage || '',
+                    overallApprovalStatus: s4.overall_approval_status || 'Not verified yet',
+                }));
+
+                const approvals = s4.approvals || {};
+                // Only restore approval if it was explicitly set (expected_time present OR is_approved=true means it was set)
+                // is_approved=false with no expected_time = DB default, skip to avoid showing "No" on untouched approvals
+                const resolveApprovalStatus = (ap) => {
+                    if (!ap) return '';
+                    if (ap.is_approved === true) return 'Yes';
+                    if (ap.is_approved === false && ap.expected_time) return 'No';
+                    return ''; // not set by user
+                };
+
+                if (approvals.tncp) dispatch(updateStep4Approval({ approvalKey: 'tncp', data: { status: resolveApprovalStatus(approvals.tncp), expectedTime: approvals.tncp.expected_time || '', approvalNumber: approvals.tncp.referenceNumber || '', approvalDate: approvals.tncp.approvalDate || '', documents: approvals.tncp.documents || [] } }));
+                if (approvals.municipal) dispatch(updateStep4Approval({ approvalKey: 'buildingPermission', data: { status: resolveApprovalStatus(approvals.municipal), expectedTime: approvals.municipal.expected_time || '', permissionNumber: approvals.municipal.referenceNumber || '', permissionDate: approvals.municipal.approvalDate || '', documents: approvals.municipal.documents || [] } }));
+                if (approvals.rera) dispatch(updateStep4Approval({ approvalKey: 'rera', data: { status: resolveApprovalStatus(approvals.rera), registrationNumber: approvals.rera.rera_id || '', expectedTime: approvals.rera.expected_time || '', registrationDate: approvals.rera.approvalDate || '', documents: approvals.rera.documents || [] } }));
+                if (approvals.diversion) dispatch(updateStep4Approval({ approvalKey: 'diversion', data: { status: resolveApprovalStatus(approvals.diversion), expectedTime: approvals.diversion.expected_time || '', referenceNumber: approvals.diversion.referenceNumber || '', approvalDate: approvals.diversion.approvalDate || '', documents: approvals.diversion.documents || [] } }));
+                if (approvals.developmentPermission) dispatch(updateStep4Approval({ approvalKey: 'developmentPermission', data: { status: resolveApprovalStatus(approvals.developmentPermission), expectedTime: approvals.developmentPermission.expected_time || '', permissionNumber: approvals.developmentPermission.referenceNumber || '', permissionDate: approvals.developmentPermission.approvalDate || '', documents: approvals.developmentPermission.documents || [] } }));
+            }
+
+            // Step 5
+            const fin = s5.financial_details || {};
+            const legal = s5.legal_details || {};
+            const brokerage = s5.brokerage || {};
+            const bankLoan = fin.bank_loan || {};
+            const regCharges = (typeof fin.registry_charges === 'object' && fin.registry_charges) ? fin.registry_charges : {};
+
+            const parseJsonArray = (val) => {
+                if (Array.isArray(val)) return val;
+                if (!val || val === '[]' || val === 'null') return [];
+                if (typeof val === 'string') {
+                    try {
+                        const parsed = JSON.parse(val);
+                        return Array.isArray(parsed) ? parsed : [];
+                    } catch {
+                        return val.split(',').map(item => item.trim()).filter(Boolean);
+                    }
+                }
+                return [];
+            };
+
+            const parseJsonObject = (val) => {
+                if (val && typeof val === 'object' && !Array.isArray(val)) return val;
+                if (typeof val === 'string') {
+                    try {
+                        const parsed = JSON.parse(val);
+                        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                    } catch {
+                        return {};
+                    }
+                }
+                return {};
+            };
+
+            const jv = parseJsonObject(legal.jv_details);
+            const devAg = parseJsonObject(legal.dev_agreement_details);
+            const guidelineDocs = parseJsonArray(fin.guideline_reference_documents);
+            const requiredLoanDocs = parseJsonArray(bankLoan.required_loan_documents);
+
+            // Loan: bank_loan_approved DB default is false — only show 'Yes'/'No' if explicitly set
+            // We treat: is_approved=true → 'Yes', is_approved=false AND banks/status set → 'No', else ''
+            // bank_loan_approved is saved as explicit boolean — true=Yes, false=No
+            // We only treat it as "not set" if the entire bank_loan block has no meaningful data
+            const bankLoanHasData = bankLoan.is_approved === true ||
+                                    bankLoan.loan_approval_status ||
+                                    bankLoan.banks ||
+                                    bankLoan.maximum_loan_percentage ||
+                                    bankLoan.loan_approval_status === null; // explicitly saved as No
+            // Check if bank_loan_approved was explicitly saved (backend returns false by default)
+            // We distinguish "user picked No" vs "never touched" by checking if any related field exists
+            // Since backend always returns bank_loan_approved, we rely on loan_approval_status or banks being set for Yes
+            // For No: is_approved=false. For untouched: is_approved=false AND no other fields.
+            // So: if is_approved=true → Yes. If is_approved=false AND guideline/ownership fields were saved (step5 was submitted) → No. Else ''
+            const step5WasSubmitted = !!(fin.guideline_value || fin.guideline_value_unit || legal.ownership_type || fin.property_jurisdiction_area);
+            const loanAvailableVal = bankLoan.is_approved === true ? 'Yes'
+                : (bankLoan.is_approved === false && step5WasSubmitted) ? 'No'
+                : '';
+            const bankTieUpVal = bankLoan.banks ? 'Yes'
+                : (bankLoan.bank_tie_up_available === true ? 'Yes'
+                : (bankLoan.is_approved === true ? 'No' : ''));
+
+            dispatch(updateStep5({
+                // Brokerage
+                brokerageAvailable:   brokerage.type && brokerage.type !== 'none' ? 'Yes' : 'No',
+                brokeragePercentage:  brokerage.value ? String(brokerage.value) : '',
+                brokerageTerms:       brokerage.terms || '',
+
+                // Guideline
+                guidelineValueAmount:       fin.guideline_value != null ? String(fin.guideline_value) : '',
+                guidelineValueUnit:         fin.guideline_value_unit || '',
+                propertyJurisdictionArea:   fin.property_jurisdiction_area || '',
+                guidelineYear:              fin.guideline_year || '',
+                guidelineReferenceDocuments: guidelineDocs,
+
+                // Registry charges — if step5 was submitted and no charges saved, user picked "No"
+                registryChargesAvailable:   (regCharges.male || regCharges.female || regCharges.other)
+                    ? 'Yes'
+                    : (step5WasSubmitted ? 'No' : ''),
+                registryChargesMaleBuyer:   regCharges.male   ? String(regCharges.male)   : '',
+                registryChargesFemaleBuyer: regCharges.female ? String(regCharges.female) : '',
+                otherGovernmentCharges:     regCharges.other  ? String(regCharges.other)  : '',
+
+                // Loan
+                loanAvailable:          loanAvailableVal,
+                bankTieUpAvailable:     bankTieUpVal,
+                tieUpBankName:          Array.isArray(bankLoan.banks) ? bankLoan.banks.join(', ') : (bankLoan.banks || ''),
+                bankNameList:           Array.isArray(bankLoan.banks) ? bankLoan.banks.join(', ') : (bankLoan.banks || ''),
+                loanApprovalStatus:     bankLoan.loan_approval_status || '',
+                maximumLoanPercentage:  bankLoan.maximum_loan_percentage ? String(bankLoan.maximum_loan_percentage) : '',
+                requiredLoanDocuments:  requiredLoanDocs.join(', '),
+
+                // Ownership
+                ownershipType:              legal.ownership_type || '',
+                ownedOwnerCompanyName:      legal.owned_owner_company_name || '',
+                ownedDocuments:             parseJsonArray(legal.owned_documents),
+                otherOwnershipType:         legal.other_ownership_type || '',
+                ownershipSupportingDocuments: parseJsonArray(legal.ownership_supporting_documents),
+
+                // JV
+                jvLandOwnerName:            jv.land_owner || '',
+                jvDeveloperBuilderName:     jv.developer || '',
+                jvAgreementAvailable:       jv.agreement_available || '',
+                jvAgreementDocuments:       parseJsonArray(jv.documents),
+                jvRevenueAreaSharingDetails: jv.revenue_sharing || '',
+
+                // Development Agreement
+                developmentLandOwnerName:       devAg.land_owner || '',
+                developmentDeveloperName:        devAg.developer || '',
+                developmentAgreementAvailable:   devAg.agreement_available || '',
+                developmentAgreementDocuments:   parseJsonArray(devAg.documents),
+
+                // Title
+                titleVerificationStatus:   legal.title_verification_status || '',
+                titleVerificationDoneBy:   legal.title_verification_done_by || '',
+                titleVerificationDate:     legal.title_verification_date || '',
+                titleExpectedCompletionDate: legal.title_expected_completion_date || '',
+                titleReportDocuments:      parseJsonArray(legal.title_report_documents),
+
+                // Remarks
+                financialOwnershipRemarks: legal.financial_ownership_remarks || '',
+
+                // Incentives / settings / assignments / video
+                customerIncentives: s5.incentives?.customer || '',
+                brokerIncentives:   s5.incentives?.broker   || '',
+                videoUrl:           s5.video_url || '',
+                visibility:         s5.settings?.visibility || 'public',
+                salesOfficerId:     s5.assignments?.sales_officer_id || null,
+                branchManagerId:    s5.assignments?.branch_manager_id || null,
+            }));
+
+            // Navigate to resume_at_step from backend
+            const resumeAt = resumeData.resume_at_step || 1;
+
+            // Step 6 — restore already-uploaded media as images array
+            const savedMedia = resumeData.step6?.media || [];
+            if (savedMedia.length > 0) {
+                dispatch(updateStep6({
+                    images: savedMedia
+                        .filter(m => m.media_type === 'image')
+                        .map(m => ({ uri: m.url, isRemote: true })),
+                    documents: savedMedia
+                        .filter(m => m.media_type === 'document')
+                        .map(m => ({ uri: m.url, name: m.label || 'Document', isRemote: true })),
+                }));
+            }
+
+            setTimeout(() => dispatch(setStep(Math.min(resumeAt, 6))), 100);
+
+        } catch (e) {
+            console.warn("Resume API failed, falling back to basic draft data", e);
+            // Fallback: restore step1 from the draft list item and go to step 1
+            dispatch(updateStep1({
+                projectName: draft.name || '',
+                location: draft.location || '',
+                city: draft.city || '',
+                state: draft.state || '',
+                pincode: draft.pincode || '',
+                salesOfficerName: draft.sales_officer_name || '',
+                salesOfficerContact: draft.sales_officer_contact || '',
+                responsiblePersonName: draft.responsible_person_name || '',
+                responsiblePersonContact: draft.responsible_person_contact || '',
+            }));
+            const lastDone = draft.last_completed_step || 1;
+            setTimeout(() => dispatch(setStep(Math.min(lastDone + 1, 6))), 100);
+        }
     };
 
     useEffect(() => {
@@ -373,17 +830,31 @@ export default function AddProject() {
                         });
 
                         // Create one variant per unique combo, then sync its units
+                        // Also grab builder section data to persist floors/unitsPerFloor
+                        const builderSections = step3.builderData?.[type.id]?.sections || [];
+
                         await Promise.all(
                             Object.entries(variantMap).map(async ([, { blueprint, units: variantUnits }]) => {
+                                // Find the section this blueprint belongs to for floor/unit counts
+                                const section = builderSections.find(s => s.id === blueprint.sectionId) || builderSections[0];
+                                const sectionFloors = section?.floors ?? section?.rows ?? section?.lanes ?? null;
+                                const sectionUnitsPerFloor = section?.unitsPerFloor ?? section?.plotsPerRow ?? section?.villasPerLane ?? null;
+
                                 const variantPayload = {
-                                    category_type: blueprint.bhk || blueprint.officeType || type.subType,
-                                    variant_name: `${type.subType} - ${blueprint.bhk || blueprint.officeType || 'Standard'}`,
-                                    area_sqft: parseFloat(blueprint.area) || 0,
-                                    selling_price: parseFloat((blueprint.price || '').toString().replace(/,/g, '')) || 0,
-                                    property_type: type.mainType,
+                                    category_type:    blueprint.bhk || blueprint.officeType || type.subType,
+                                    variant_name:     blueprint.variantName || blueprint.bhk || blueprint.officeType || 'Standard',
+                                    area_sqft:        parseFloat(blueprint.area) || 0,
+                                    area_unit:        blueprint.areaUnit || 'Sq-ft',
+                                    selling_price:    parseFloat((blueprint.price || '').toString().replace(/,/g, '')) || 0,
+                                    property_type:    type.mainType,
                                     property_subtype: type.subType,
-                                    listing_type: 'buy',
-                                    images: blueprint.images || [],
+                                    listing_type:     'buy',
+                                    images:           blueprint.images || [],
+                                    amenities:        (blueprint.amenities || []).filter(Boolean),
+                                    extra_charges:    (blueprint.extraCharges || []).filter(e => e.title),
+                                    brochure_url:     blueprint.brochure || null,
+                                    floors:           sectionFloors,
+                                    units_per_floor:  sectionUnitsPerFloor,
                                 };
 
                                 const variantRes = await projectFormApi.createVariant(projectId, variantPayload);
@@ -418,7 +889,8 @@ export default function AddProject() {
                 dispatch(setStep(4));
             } catch (error) {
                 console.error("Step 3 API error:", error);
-                dispatch(setStep(4));
+                const msg = error.response?.data?.message || "Failed to save unit details. Please try again.";
+                setStep1Errors({ api: msg });
             } finally {
                 setIsSubmitting(false);
             }
@@ -433,13 +905,17 @@ export default function AddProject() {
                     setIsSubmitting(true);
 
                     const buildApproval = (s, extra = {}) => {
-                        if (!s.status) return null;
-                        const isApproved = s.status === 'Yes';
                         const { _allowEmptyTime, ...restExtra } = extra;
-                        if (!isApproved && !s.expectedTime && !_allowEmptyTime) return null;
+                        if (!s.status || s.status === 'Not Applicable') {
+                            return { is_approved: false, expected_time: null, ...restExtra };
+                        }
+                        const isApproved = s.status === 'Yes';
                         return {
                             is_approved: isApproved,
                             expected_time: isApproved ? null : (s.expectedTime || null),
+                            referenceNumber: s.referenceNumber || s.approvalNumber || s.permissionNumber || null,
+                            approvalDate: s.approvalDate || s.registrationDate || s.permissionDate || null,
+                            documents: s.documents || [],
                             ...restExtra,
                         };
                     };
@@ -448,21 +924,22 @@ export default function AddProject() {
                     const diversionApproval = buildApproval(step4.approvals.diversion);
                     const reraApproval = buildApproval(step4.approvals.rera, {
                         rera_id: step4.approvals.rera.registrationNumber || null,
-                        _allowEmptyTime: true, // RERA expectedTime is optional
                     });
                     const devPermApproval = buildApproval(step4.approvals.developmentPermission);
                     const municipalApproval = buildApproval(step4.approvals.buildingPermission);
 
+                    // Always send all approvals — backend SQL expects all fields to be present
                     const approvals = {
-                        ...(tncpApproval && { tncp: tncpApproval }),
-                        ...(diversionApproval && { diversion: diversionApproval }),
-                        ...(reraApproval && { rera: reraApproval }),
-                        ...(devPermApproval && { developmentPermission: devPermApproval }),
-                        ...(municipalApproval && { municipal: municipalApproval }),
+                        tncp: tncpApproval,
+                        diversion: diversionApproval,
+                        rera: reraApproval,
+                        developmentPermission: devPermApproval,
+                        municipal: municipalApproval,
                     };
                     await projectFormApi.finalizeStep4(projectId, {
                         possession_status: step4.possessionStatus || null,
                         possession_remarks: step4.possessionRemarks || null,
+                        expected_possession_date: step4.expectedPossessionDate || null,
                         project_launch_status: step4.projectLaunchStatus || null,
                         project_launch_date: step4.projectLaunchDate || null,
                         expected_launch_date: step4.expectedLaunchDate || null,
@@ -493,39 +970,68 @@ export default function AddProject() {
                 try {
                     setIsSubmitting(true);
                     await projectFormApi.finalizeStep5(projectId, {
-                        brokerage: { type: 'none', value: 0, terms: null },
-                        incentives: { customer: null, broker: null },
-                        settings: { visibility: 'public', status: 'active' },
-                        assignments: { sales_officer_id: null, branch_manager_id: null },
-                        video_url: null,
+                        brokerage: {
+                            type:  step5.brokerageAvailable === 'Yes' ? 'percentage' : 'none',
+                            value: step5.brokerageAvailable === 'Yes' ? (parseFloat(step5.brokeragePercentage) || 0) : 0,
+                            terms: step5.brokerageTerms || null,
+                        },
+                        incentives: { customer: step5.customerIncentives || null, broker: step5.brokerIncentives || null },
+                        settings: { visibility: step5.visibility || 'public' },
+                        assignments: { sales_officer_id: step5.salesOfficerId || null, branch_manager_id: step5.branchManagerId || null },
+                        video_url: step5.videoUrl || null,
                         financial_details: {
-                            guideline_value: step5.guidelineValueAmount ? parseFloat(step5.guidelineValueAmount) || null : null,
-                            guideline_value_unit: step5.guidelineValueUnit || null,
+                            guideline_value:               step5.guidelineValueAmount ? parseFloat(step5.guidelineValueAmount) || null : null,
+                            guideline_value_unit:          step5.guidelineValueUnit || null,
+                            property_jurisdiction_area:    step5.propertyJurisdictionArea || null,
+                            guideline_year:                step5.guidelineYear || null,
+                            guideline_reference_documents: step5.guidelineReferenceDocuments || [],
                             registry_charges: step5.registryChargesAvailable === 'Yes'
                                 ? {
-                                    male: step5.registryChargesMaleBuyer || null,
-                                    female: step5.registryChargesFemaleBuyer || null,
-                                    other: step5.otherGovernmentCharges || null,
+                                    male:   step5.registryChargesMaleBuyer    || null,
+                                    female: step5.registryChargesFemaleBuyer  || null,
+                                    other:  step5.otherGovernmentCharges      || null,
                                 }
                                 : null,
                             bank_loan: {
-                                is_approved: step5.loanAvailable === 'Yes',
-                                banks: step5.bankTieUpAvailable === 'Yes'
-                                    ? (step5.tieUpBankName || step5.bankNameList || null)
-                                    : null,
+                                is_approved:                step5.loanAvailable === 'Yes',
+                                bank_tie_up_available:      step5.bankTieUpAvailable === 'Yes',
+                                banks:                      step5.bankTieUpAvailable === 'Yes' ? (step5.tieUpBankName || step5.bankNameList || null) : null,
+                                loan_approval_status:       step5.loanApprovalStatus || null,
+                                maximum_loan_percentage:    step5.maximumLoanPercentage || null,
+                                required_loan_documents:    step5.requiredLoanDocuments
+                                    ? step5.requiredLoanDocuments.split(',').map(d => d.trim()).filter(Boolean)
+                                    : [],
                             },
                         },
                         legal_details: {
-                            ownership_type: step5.ownershipType || null,
+                            ownership_type:             step5.ownershipType || null,
+                            owned_owner_company_name:   step5.ownedOwnerCompanyName || null,
+                            owned_documents:            step5.ownedDocuments || [],
+                            other_ownership_type:       step5.otherOwnershipType || null,
+                            ownership_supporting_documents: step5.ownershipSupportingDocuments || [],
                             jv_details: step5.ownershipType === 'Joint Venture Project'
                                 ? {
-                                    land_owner: step5.jvLandOwnerName || null,
-                                    developer: step5.jvDeveloperBuilderName || null,
+                                    land_owner:          step5.jvLandOwnerName || null,
+                                    developer:           step5.jvDeveloperBuilderName || null,
                                     agreement_available: step5.jvAgreementAvailable || null,
-                                    revenue_sharing: step5.jvRevenueAreaSharingDetails || null,
+                                    revenue_sharing:     step5.jvRevenueAreaSharingDetails || null,
+                                    documents:           step5.jvAgreementDocuments || [],
                                 }
                                 : null,
-                            title_verification_status: step5.titleVerificationStatus || null,
+                            dev_agreement_details: step5.ownershipType === 'Development Agreement Project'
+                                ? {
+                                    land_owner:          step5.developmentLandOwnerName || null,
+                                    developer:           step5.developmentDeveloperName || null,
+                                    agreement_available: step5.developmentAgreementAvailable || null,
+                                    documents:           step5.developmentAgreementDocuments || [],
+                                }
+                                : null,
+                            title_verification_status:   step5.titleVerificationStatus || null,
+                            title_verification_done_by:  step5.titleVerificationDoneBy || null,
+                            title_verification_date:     step5.titleVerificationDate || null,
+                            title_expected_completion_date: step5.titleExpectedCompletionDate || null,
+                            title_report_documents:      step5.titleReportDocuments || [],
+                            financial_ownership_remarks: step5.financialOwnershipRemarks || null,
                         },
                     });
                     dispatch(setStep(6));
@@ -569,6 +1075,40 @@ export default function AddProject() {
                     const url = uploadRes.data?.data?.url || uploadRes.data?.url;
                     if (url) {
                         mediaItems.push({ media_type: 'image', url, is_cover: i === 0, sort_order: i });
+                    }
+                }
+
+                await projectFormApi.finalizeStep6(projectId, { media: mediaItems });
+
+                // Upload documents
+                for (let i = 0; i < (step6.documents || []).length; i++) {
+                    const doc = step6.documents[i];
+                    if (doc.uri?.startsWith('http') || doc.url?.startsWith('http')) {
+                        mediaItems.push({
+                            media_type: 'document',
+                            url: doc.uri || doc.url,
+                            label: doc.name || null,
+                            is_cover: false,
+                            sort_order: step6.images.length + i,
+                        });
+                        continue;
+                    }
+                    const formData = new FormData();
+                    formData.append('file', {
+                        uri: doc.uri,
+                        name: doc.name || `document_${i}.pdf`,
+                        type: doc.mimeType || 'application/pdf',
+                    });
+                    const uploadRes = await projectFormApi.uploadMedia(projectId, formData);
+                    const url = uploadRes.data?.data?.url || uploadRes.data?.url;
+                    if (url) {
+                        mediaItems.push({
+                            media_type: 'document',
+                            url,
+                            label: doc.name || null,
+                            is_cover: false,
+                            sort_order: step6.images.length + i,
+                        });
                     }
                 }
 
@@ -832,6 +1372,8 @@ export default function AddProject() {
 function Step1({ errors = {}, setErrors }) {
     const dispatch = useDispatch();
     const { step1 } = useSelector((state) => state.project);
+    const [locationLoading, setLocationLoading] = useState(false);
+
     const updateField = (field, value) => {
         dispatch(updateStep1({ [field]: value }));
         if (setErrors) {
@@ -841,6 +1383,38 @@ function Step1({ errors = {}, setErrors }) {
                 delete copy[field];
                 return copy;
             });
+        }
+    };
+
+    const fetchCurrentLocation = async () => {
+        try {
+            setLocationLoading(true);
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Denied', 'Location permission is required to fetch current location.');
+                return;
+            }
+
+            const loc = await getDeviceCoordinates();
+            const { latitude, longitude } = loc.coords;
+            const address = await fetchAddressFromCoordinates(latitude, longitude);
+
+            if (!address || (!address.location && !address.city)) {
+                Alert.alert('Error', 'Could not fetch address. Try again or enter it manually.');
+                return;
+            }
+
+            dispatch(updateStep1({
+                location: address.location || step1.location,
+                city: address.city || step1.city,
+                state: address.state || step1.state,
+                pincode: address.pincode || step1.pincode,
+            }));
+        } catch (err) {
+            Alert.alert('Error', 'Failed to fetch location. Please try again.');
+            console.log('Location fetch error:', err);
+        } finally {
+            setLocationLoading(false);
         }
     };
     const projectNameRef = useRef(null);
@@ -888,9 +1462,16 @@ function Step1({ errors = {}, setErrors }) {
                         onChangeText={(v) => updateField('location', v)}
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
-                    <View className="w-7 h-7 rounded-lg bg-[#EBEAFF] items-center justify-center">
-                        <Ionicons name="locate" size={16} color="#4A43EC" />
-                    </View>
+                    <TouchableOpacity
+                        onPress={fetchCurrentLocation}
+                        disabled={locationLoading}
+                        className="w-7 h-7 rounded-lg bg-[#EBEAFF] items-center justify-center"
+                    >
+                        {locationLoading
+                            ? <ActivityIndicator size={12} color="#4A43EC" />
+                            : <Ionicons name="locate" size={16} color="#4A43EC" />
+                        }
+                    </TouchableOpacity>
                 </Pressable>
                 {errors.location && (
                     <Text className="text-[11px] text-red-500 mt-1">{errors.location}</Text>
@@ -1268,10 +1849,43 @@ const getDefaultBuilderState = (subType) => {
     };
 };
 
+const normalizeImageSource = (value) => {
+    if (!value) return null;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed ? { uri: trimmed } : null;
+    }
+    if (typeof value === 'object') {
+        if (typeof value.uri === 'string' && value.uri.trim()) {
+            return { uri: value.uri.trim() };
+        }
+        if (typeof value.url === 'string' && value.url.trim()) {
+            return { uri: value.url.trim() };
+        }
+        if (typeof value.path === 'string' && value.path.trim()) {
+            return { uri: value.path.trim() };
+        }
+    }
+    return null;
+};
+
+const normalizeImageList = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => normalizeImageSource(item))
+            .filter(Boolean)
+            .map((item) => item.uri);
+    }
+    const normalized = normalizeImageSource(value);
+    return normalized ? [normalized.uri] : [];
+};
+
 // --- Step 3 Component ---
 function Step3() {
     const dispatch = useDispatch();
     const { step2, step3 } = useSelector((state) => state.project);
+    const projectId = useSelector((state) => state.project.projectId);
     const { width } = Dimensions.get('window');
     
     // Use the first selected type as the default active tab if available
@@ -1727,7 +2341,7 @@ function Step3() {
     const handleDownloadFormat = async (type) => {
         try {
             let headers = ['Sub Type', 'Property Number', 'Area', 'Area Unit'];
-            
+
             if (type.subType === 'apartment') {
                 headers.push('BHK', 'Tower', 'Floor');
             } else if (type.subType === 'villa' || type.subType === 'rowhouse') {
@@ -1735,11 +2349,9 @@ function Step3() {
             } else if (type.subType === 'office') {
                 headers.push('Office Type');
             }
-            
+
             headers.push('Selling Price', 'Price Negotiable', 'Tax Exclude', 'Payment Mode');
-            
-            const headersStr = headers.join(',');
-            
+
             const sampleRow = headers.map(h => {
                 if (h === 'Sub Type') return type.subType;
                 if (h === 'Property Number') return 'A-101';
@@ -1747,21 +2359,30 @@ function Step3() {
                 if (h === 'Area Unit') return 'Sq-ft';
                 if (h === 'BHK') return '2 BHK';
                 if (h === 'Tower') return 'Tower A';
-                if (h === 'Floor') return '1st';
+                if (h === 'Floor') return '1';
                 if (h === 'Office Type') return 'Co-working';
                 if (h === 'Selling Price') return '5000000';
                 if (h === 'Price Negotiable' || h === 'Tax Exclude') return 'false';
                 if (h === 'Payment Mode') return 'full';
                 return '';
-            }).join(',');
+            });
 
-            const csvContent = `${headersStr}\n${sampleRow}`;
-            const fileUri = `${FileSystem.documentDirectory}${type.subType}_format.csv`;
-            
-            await FileSystem.writeAsStringAsync(fileUri, csvContent);
-            await Sharing.shareAsync(fileUri);
+            const csvContent = [headers.join(','), sampleRow.join(',')].join('\n');
+            const fileName = `${type.subType}_format.csv`;
+            const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+
+            await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+                encoding: FileSystem.EncodingType.UTF8,
+            });
+
+            await Sharing.shareAsync(fileUri, {
+                mimeType: 'text/csv',
+                dialogTitle: `Download ${type.subType} CSV Format`,
+                UTI: 'public.comma-separated-values-text', // iOS
+            });
         } catch (error) {
-            console.error(error);
+            console.error('Download format error:', error);
+            alert('Could not download format. Please try again.');
         }
     };
 
@@ -1802,6 +2423,9 @@ function Step3() {
             // Also parse locally to update Redux state for UI preview
             const content = await FileSystem.readAsStringAsync(asset.uri);
             const data = parseCSV(content);
+            // Carry forward brochure from existing config so it isn't lost on bulk switch
+            const existingConfigs = step3.unitConfigs[type.id] || [];
+            const existingBrochure = existingConfigs[0]?.brochure || null;
             const unitConfigs = data
                 .filter(row => row['Property Number'])
                 .map(row => ({
@@ -1815,6 +2439,7 @@ function Step3() {
                     amenities: [''],
                     propertyNumber: row['Property Number'] || '',
                     hasShop: false,
+                    brochure: existingBrochure,
                     extraCharges: [{ title: '', amount: '' }],
                 }));
 
@@ -1854,7 +2479,7 @@ function Step3() {
                     const isActive = activeTypeTab === type.id;
                     return (
                         <TouchableOpacity
-                            key={type.id}
+                            key={String(type.id ?? type.subType ?? Math.random())}
                             onPress={() => setActiveTypeTab(type.id)}
                             className={`bg-white border rounded-lg px-3 py-2 mb-1 flex-row items-center mr-3 ${isActive ? 'border-[#4A43EC]' : 'border-gray-100'}`}
                         >
@@ -1938,9 +2563,39 @@ function Step3() {
                                 </TouchableOpacity>
                             </View>
                             {configsList.length > 0 && (
-                                <Text className="text-xs text-green-600 font-lato-bold mt-2">
-                                    ✓ {configsList.length} units currently added.
-                                </Text>
+                                <View className="w-full mt-1 gap-2">
+                                    <View className="flex-row items-center gap-2">
+                                        <Ionicons name="checkmark-circle" size={14} color="#16a34a" />
+                                        <Text className="text-xs text-green-600 font-lato-bold">
+                                            {configsList.length} units saved
+                                        </Text>
+                                    </View>
+                                    {/* Header row */}
+                                    <View className="flex-row bg-[#4A43EC]/10 rounded-lg px-3 py-2">
+                                        <Text className="flex-1 text-[9px] font-lato-bold text-[#4A43EC] uppercase">Unit #</Text>
+                                        <Text className="w-16 text-[9px] font-lato-bold text-[#4A43EC] uppercase">Tower/Block</Text>
+                                        <Text className="w-12 text-[9px] font-lato-bold text-[#4A43EC] uppercase">Floor</Text>
+                                        <Text className="w-14 text-[9px] font-lato-bold text-[#4A43EC] uppercase">BHK/Type</Text>
+                                        <Text className="w-16 text-[9px] font-lato-bold text-[#4A43EC] uppercase text-right">Price</Text>
+                                    </View>
+                                    {/* Unit rows — cap at 50 for perf */}
+                                    {configsList.slice(0, 50).map((u, idx) => (
+                                        <View key={idx} className={`flex-row px-3 py-2 rounded-lg ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border border-gray-100`}>
+                                            <Text className="flex-1 text-[10px] font-lato text-gray-700" numberOfLines={1}>{u.propertyNumber || '-'}</Text>
+                                            <Text className="w-16 text-[10px] font-lato text-gray-500" numberOfLines={1}>{u.tower || '-'}</Text>
+                                            <Text className="w-12 text-[10px] font-lato text-gray-500" numberOfLines={1}>{u.floor || '-'}</Text>
+                                            <Text className="w-14 text-[10px] font-lato text-gray-500" numberOfLines={1}>{u.bhk || u.officeType || '-'}</Text>
+                                            <Text className="w-16 text-[10px] font-lato-bold text-[#4A43EC] text-right" numberOfLines={1}>
+                                                {u.price ? `₹${Number(u.price).toLocaleString('en-IN')}` : '-'}
+                                            </Text>
+                                        </View>
+                                    ))}
+                                    {configsList.length > 50 && (
+                                        <Text className="text-[10px] text-gray-400 font-lato text-center py-1">
+                                            +{configsList.length - 50} more units
+                                        </Text>
+                                    )}
+                                </View>
                             )}
                         </View>
                     ) : (
@@ -2161,19 +2816,24 @@ function Step3() {
                                                     </Text>
 
                                                     <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
-                                                        {(activeConfig.images || []).map((uri) => (
-                                                            <View key={uri} className="mr-2 relative">
-                                                                <View className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
-                                                                    <Image source={{ uri }} className="w-full h-full" resizeMode="cover" />
+                                                        {(activeConfig.images || []).map((imageValue, index) => {
+                                                            const imageSource = normalizeImageSource(imageValue);
+                                                            if (!imageSource) return null;
+                                                            const itemKey = typeof imageValue === 'string' ? imageValue : imageValue?.uri || `${activeConfig.id}-${index}`;
+                                                            return (
+                                                                <View key={itemKey} className="mr-2 relative">
+                                                                    <View className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-200">
+                                                                        <Image source={imageSource} className="w-full h-full" resizeMode="cover" />
+                                                                    </View>
+                                                                    <TouchableOpacity
+                                                                        onPress={() => handleRemoveVariantImage(activeConfig.id, imageValue)}
+                                                                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 items-center justify-center"
+                                                                    >
+                                                                        <Ionicons name="close" size={12} color="white" />
+                                                                    </TouchableOpacity>
                                                                 </View>
-                                                                <TouchableOpacity
-                                                                    onPress={() => handleRemoveVariantImage(activeConfig.id, uri)}
-                                                                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 items-center justify-center"
-                                                                >
-                                                                    <Ionicons name="close" size={12} color="white" />
-                                                                </TouchableOpacity>
-                                                            </View>
-                                                        ))}
+                                                            );
+                                                        })}
 
                                                         {(activeConfig.images || []).length < 5 && (
                                                             <TouchableOpacity
@@ -2414,7 +3074,7 @@ function Step3() {
                                                                                 const override = section.unitOverrides?.[key] || {};
                                                                                 const displayNum = `${r}${c.toString().padStart(2, '0')}`;
                                                                                 const label = override.customName || displayNum;
-                                                                                const hasOverride = override.customName || override.customArea || override.customPrice;
+                                                                                const showBadge = Boolean(assignedCfg && /premium/i.test(`${assignedCfg.type || ''} ${assignedCfg.name || ''}`));
 
                                                                                 return (
                                                                                     <TouchableOpacity
@@ -2446,7 +3106,7 @@ function Step3() {
                                                                                             </Text>
                                                                                         )}
 
-                                                                                        {hasOverride && (
+                                                                                        {showBadge && (
                                                                                             <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
                                                                                                 <Ionicons name="star" size={9} color="white" />
                                                                                             </View>
@@ -2516,7 +3176,7 @@ function Step3() {
                                                                                 const override = section.unitOverrides?.[key] || {};
                                                                                 const displayNum = `${r}${c.toString().padStart(2, '0')}`;
                                                                                 const label = override.customName || displayNum;
-                                                                                const hasOverride = override.customName || override.customArea || override.customPrice;
+                                                                                const showBadge = Boolean(assignedCfg && /premium/i.test(`${assignedCfg.type || ''} ${assignedCfg.name || ''}`));
 
                                                                                 return (
                                                                                     <TouchableOpacity
@@ -2548,7 +3208,7 @@ function Step3() {
                                                                                             </Text>
                                                                                         )}
 
-                                                                                        {hasOverride && (
+                                                                                        {showBadge && (
                                                                                             <View className="absolute top-0 right-0 w-4 h-4 bg-[#F59E0B] rounded-bl-lg items-center justify-center shadow-xs">
                                                                                                 <Ionicons name="star" size={9} color="white" />
                                                                                             </View>
@@ -2842,22 +3502,57 @@ const DocumentUploadButton = ({ label, documents, onDocumentsPicked }) => {
             type: "*/*",
             multiple: true,
         });
-
         if (!result.canceled) {
             onDocumentsPicked([...(documents || []), ...result.assets]);
         }
     };
 
+    const openDocument = async (doc) => {
+        const uri = doc.uri || doc.url;
+        if (!uri) return;
+        try {
+            if (uri.startsWith('http')) {
+                await Linking.openURL(uri);
+            } else {
+                await Sharing.shareAsync(uri, { mimeType: doc.mimeType || '*/*' });
+            }
+        } catch {
+            alert('Could not open document.');
+        }
+    };
+
+    const removeDocument = (index) => {
+        const updated = (documents || []).filter((_, i) => i !== index);
+        onDocumentsPicked(updated);
+    };
+
     return (
-        <View>
-            <Text className="text-xs font-lato-bold text-black mb-2">{label}</Text>
+        <View className="gap-2">
+            <Text className="text-xs font-lato-bold text-black mb-1">{label}</Text>
+            {(documents || []).map((doc, index) => (
+                <TouchableOpacity
+                    key={index}
+                    onPress={() => openDocument(doc)}
+                    className="flex-row items-center bg-[#F4F7FF] border border-[#4A43EC]/20 rounded-xl px-3 py-3 gap-2"
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="document-text-outline" size={18} color="#4A43EC" />
+                    <Text className="flex-1 text-xs font-lato-medium text-gray-700" numberOfLines={1}>
+                        {doc.name || doc.label || `Document ${index + 1}`}
+                    </Text>
+                    <Ionicons name="eye-outline" size={15} color="#4A43EC" />
+                    <TouchableOpacity onPress={() => removeDocument(index)} className="pl-2 py-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
+                    </TouchableOpacity>
+                </TouchableOpacity>
+            ))}
             <TouchableOpacity
                 onPress={pickDocuments}
-                className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-5 items-center justify-center"
+                className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-4 items-center justify-center"
             >
                 <Ionicons name="document-attach-outline" size={20} color="#4A43EC" />
                 <Text className="text-xs font-lato-bold text-[#4A43EC] mt-2">
-                    {(documents || []).length > 0 ? `${documents.length} Document(s) Added` : "Upload Document"}
+                    {(documents || []).length > 0 ? 'Add More Documents' : 'Upload Document'}
                 </Text>
             </TouchableOpacity>
         </View>
@@ -3316,18 +4011,22 @@ function Step6() {
                 </TouchableOpacity>
                 {step6.images.length > 0 && (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-3">
-                        {step6.images.map((img, idx) => (
-                            <View key={`${img.uri}-${idx}`} className="mr-2 relative">
-                                <Image source={{ uri: img.uri }} className="w-16 h-16 rounded-lg" />
-                                <TouchableOpacity
-                                    onPress={() => removeImage(idx)}
-                                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 items-center justify-center"
-                                    activeOpacity={0.8}
-                                >
-                                    <Ionicons name="close" size={11} color="white" />
-                                </TouchableOpacity>
-                            </View>
-                        ))}
+                        {step6.images.map((img, idx) => {
+                            const imageSource = normalizeImageSource(img);
+                            if (!imageSource) return null;
+                            return (
+                                <View key={`${imageSource.uri}-${idx}`} className="mr-2 relative">
+                                    <Image source={imageSource} className="w-16 h-16 rounded-lg" />
+                                    <TouchableOpacity
+                                        onPress={() => removeImage(idx)}
+                                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 items-center justify-center"
+                                        activeOpacity={0.8}
+                                    >
+                                        <Ionicons name="close" size={11} color="white" />
+                                    </TouchableOpacity>
+                                </View>
+                            );
+                        })}
                     </ScrollView>
                 )}
             </View>

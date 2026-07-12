@@ -74,7 +74,12 @@ const getObjectCandidates = (payload) => {
 const getDealPayload = (variant) => {
     const candidates = getObjectCandidates(variant);
     const primary = candidates[0] || {};
-    return primary.deal_summary || primary.dealSummary || primary.user_deal || primary.userDeal || candidates[0] || {};
+    const inner = primary.deal_summary || primary.dealSummary || primary.user_deal || primary.userDeal || candidates[0] || {};
+    const dealId = firstPresent(variant?.deal_id, variant?.dealId, inner?.deal_id, inner?.dealId, inner?.id);
+
+    return dealId && !inner?.deal_id && !inner?.dealId
+        ? { ...inner, deal_id: dealId, dealId }
+        : inner;
 };
 
 const extractPaymentSchedule = (payload) => {
@@ -224,23 +229,21 @@ const buildPaymentPlan = (variant) => {
         .filter((item) => !usedScheduleItems.has(item))
         .map((item, index) => normalizeMilestone(getMilestoneTitle(item, `Milestone ${index + 1}`), item));
 
-    return [...orderedMilestones, ...extraMilestones];
+    return [...orderedMilestones, ...extraMilestones].filter((milestone) => milestone.totalAmount > 0 || milestone.id);
 };
 
 const derivePaymentSummary = (paymentPlan, variant) => {
     const target = getDealPayload(variant);
-    
-    // Prioritize deal data from variant over milestone calculation
-    const dealTotalAmount = parseAmount(firstPresent(target?.total_amount, target?.total_value, target?.deal_value, target?.dealValue, variant?.total_amount, variant?.deal_value, variant?.dealValue, target?.amount));
-    const dealCollectedAmount = parseAmount(firstPresent(target?.paid_amount, target?.received_amount, target?.receivedAmount, target?.received, target?.paid, variant?.received_amount, variant?.paid_amount));
-    
-    // Calculate from milestones as fallback
+
     const milestoneTotalAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.totalAmount, 0);
     const milestoneCollectedAmount = paymentPlan.reduce((sum, milestone) => sum + milestone.collectedAmount, 0);
-    
-    // Use deal data if available, otherwise use milestone calculation
+    const hasScheduleMilestones = paymentPlan.some((milestone) => milestone.id || milestone.totalAmount > 0);
+
+    const dealTotalAmount = parseAmount(firstPresent(target?.total_amount, target?.total_value, target?.deal_value, target?.dealValue, variant?.total_amount, variant?.deal_value, variant?.dealValue, target?.amount));
+    const dealCollectedAmount = parseAmount(firstPresent(target?.paid_amount, target?.received_amount, target?.receivedAmount, target?.received, target?.paid, variant?.received_amount, variant?.paid_amount));
+
     const totalAmount = dealTotalAmount > 0 ? dealTotalAmount : milestoneTotalAmount;
-    const collectedAmount = dealTotalAmount > 0 ? dealCollectedAmount : milestoneCollectedAmount;
+    const collectedAmount = hasScheduleMilestones ? milestoneCollectedAmount : (dealCollectedAmount > 0 ? dealCollectedAmount : milestoneCollectedAmount);
     const pendingAmount = Math.max(totalAmount - collectedAmount, 0);
     const nextDueMilestone = paymentPlan.find((milestone) => milestone.collectedAmount < milestone.totalAmount);
     const progress = totalAmount > 0 ? Math.min(100, Math.round((collectedAmount / totalAmount) * 100)) : (target?.progress || target?.payment_progress_percent || 0);
@@ -284,6 +287,7 @@ const getActiveDealId = (variant) => {
     return firstPresent(
         variant?.deal_id,
         variant?.dealId,
+        variant?.id,              // deals list items have id = deal UUID
         variant?.user_deal_id,
         variant?.userDealId,
         target?.deal_id,
@@ -301,6 +305,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const [paymentPlan, setPaymentPlan] = useState(() => buildPaymentPlan(variant));
     const [activeMilestoneIndex, setActiveMilestoneIndex] = useState(null);
     const [collectAmount, setCollectAmount] = useState("");
+    const [collectPaymentMode, setCollectPaymentMode] = useState("cash");
     const [collectError, setCollectError] = useState("");
     const [loadingSchedule, setLoadingSchedule] = useState(false);
     const [savingCollection, setSavingCollection] = useState(false);
@@ -360,11 +365,49 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const goToProperty = () => setSheetView("property");
     const paymentSummaryState = derivePaymentSummary(paymentPlan, variant);
 
-    const openCollectForm = (milestoneIndex) => {
+    const openCollectForm = async (milestoneIndex) => {
         const milestone = paymentPlan[milestoneIndex];
         if (!milestone || milestone.collectedAmount >= milestone.totalAmount) return;
+
+        // If milestone has no ID yet, fetch the real schedule first
+        if (!milestone.id && activeDealId) {
+            try {
+                setLoadingSchedule(true);
+                const response = await dealService.getPaymentSchedule(activeDealId);
+                const extractedSchedule = extractPaymentSchedule(response);
+                if (extractedSchedule.length) {
+                    const nextPlan = buildPaymentPlan({ ...getDealPayload(variant), payment_schedule: extractedSchedule });
+                    setRealPaymentSchedule(extractedSchedule);
+                    setPaymentPlan(nextPlan);
+                    // Use the updated milestone with real ID
+                    const updatedMilestone = nextPlan[milestoneIndex];
+                    if (!updatedMilestone?.id) {
+                        Alert.alert('Error', 'Could not load milestone details. Please try again.');
+                        return;
+                    }
+                    setActiveMilestoneIndex(milestoneIndex);
+                    setCollectAmount(String(Math.max(1, Math.round(updatedMilestone.totalAmount - updatedMilestone.collectedAmount))));
+                    setCollectPaymentMode("cash");
+                    setCollectError("");
+                    setSheetView("collect");
+                    return;
+                }
+            } catch (error) {
+                Alert.alert('Error', 'Failed to load payment schedule. Please try again.');
+                return;
+            } finally {
+                setLoadingSchedule(false);
+            }
+        }
+
+        if (!milestone.id) {
+            Alert.alert('Error', 'Milestone ID not available. Please reload the payment schedule.');
+            return;
+        }
+
         setActiveMilestoneIndex(milestoneIndex);
         setCollectAmount(String(Math.max(1, Math.round(milestone.totalAmount - milestone.collectedAmount))));
+        setCollectPaymentMode("cash");
         setCollectError("");
         setSheetView("collect");
     };
@@ -373,6 +416,7 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         setSheetView("schedule");
         setActiveMilestoneIndex(null);
         setCollectAmount("");
+        setCollectPaymentMode("cash");
         setCollectError("");
     };
 
@@ -380,8 +424,8 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         const amount = parseAmount(collectAmount);
         const milestoneIndex = activeMilestoneIndex;
 
-        if (milestoneIndex === null || !paymentPlan[milestoneIndex] || !activeDealId) {
-            Alert.alert("Error", "Missing configuration parameter metadata properties.");
+        if (milestoneIndex === null || !paymentPlan[milestoneIndex]) {
+            Alert.alert("Error", "No milestone selected. Please try again.");
             return;
         }
         
@@ -399,14 +443,16 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
 
         try {
             setSavingCollection(true);
-            console.log(`📤 [MODAL] Posting transaction event data block to backend for Deal ID: ${activeDealId}`);
-            
-            const response = await dealService.collectPayment(activeDealId, {
+            console.log(`📤 [MODAL] Collecting payment for milestone: ${selectedMilestone.id}`);
+
+            if (!selectedMilestone.id) {
+                setCollectError("Milestone ID missing. Please go back and reopen the payment schedule.");
+                return;
+            }
+
+            const response = await dealService.collectPayment(selectedMilestone.id, {
                 amount: amount,
-                milestone_id: selectedMilestone.id,
-                payment_milestone_id: selectedMilestone.id,
-                milestone_title: selectedMilestone.title,
-                milestone: selectedMilestone.key || selectedMilestone.title
+                payment_mode: collectPaymentMode,
             });
 
             if (response?.success !== false) {
@@ -462,7 +508,14 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         ? formatAmount(rawTotalAmount)
         : variant.price || variant.priceRange || variant.footerTotal || project.avg_price_per_sqft || project.avgPrice || "Contact for price";
         
-    const possession = firstPresent(variant.possession, project.possession, EMPTY_LABEL);
+    const possession = (() => {
+        const raw = firstPresent(variant.possession, project.possession);
+        if (!raw) return 'Already Possessed';
+        if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+            return new Date(raw).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+        }
+        return raw;
+    })();
     const area = firstPresent(variant.area, variant.area_sqft, variant.property?.area, project.total_area, project.area, EMPTY_LABEL);
     
     const bookedBy = firstPresent(dealData?.booked_by_name, dealData?.bookedBy, dealData?.customer_name, dealData?.customer?.name, dealData?.booked_by?.name, variant.contactName, EMPTY_LABEL);
@@ -475,7 +528,16 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     const pending = formatAmount(paymentSummaryState.pendingAmount);
     
     // ✅ FIXED: Safely maps avgPrice using available project fields to clear out the ReferenceError crash
-    const avgPrice = firstPresent(variant.avgPricePerSqft, project.avg_price_per_sqft, project.avgPrice, EMPTY_LABEL);
+    const avgPrice = (() => {
+        const raw = firstPresent(variant.avgPricePerSqft, project.avg_price_per_sqft, project.avgPrice);
+        if (!raw) return EMPTY_LABEL;
+        // Already formatted (e.g. "₹1,23,456" or "₹1,23,456/sqft")
+        if (typeof raw === 'string' && raw.includes('₹')) return raw.includes('/sqft') ? raw : `${raw}/sqft`;
+        // Raw number — format it
+        const num = Number(raw);
+        if (!Number.isFinite(num) || num <= 0) return EMPTY_LABEL;
+        return `₹${Math.round(num).toLocaleString('en-IN')}/sqft`;
+    })();
     
     const nextDue = firstPresent(dealData?.next_due_label, dealData?.nextDue, dealData?.next_due_date, paymentSummaryState.nextDueLabel);
     const dealStatus = paymentSummaryState.allPaid ? "Paid" : "Upcoming";
@@ -906,6 +968,23 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                                     returnKeyType="done"
                                 />
                                 {collectError ? <Text className="mt-1 text-[11px] text-red-500">{collectError}</Text> : null}
+                            </View>
+
+                            <View className="mt-4">
+                                <Text className="text-[10px] font-lato-bold text-[#6B7280] uppercase mb-1.5">Payment Mode</Text>
+                                <View className="flex-row flex-wrap gap-2">
+                                    {["cash", "upi", "bank_transfer", "cheque", "card", "other"].map((mode) => (
+                                        <TouchableOpacity
+                                            key={mode}
+                                            onPress={() => setCollectPaymentMode(mode)}
+                                            className={`px-3 py-2 rounded-full border ${collectPaymentMode === mode ? "bg-[#4A43EC] border-[#4A43EC]" : "bg-white border-[#E5E7EB]"}`}
+                                        >
+                                            <Text className={`text-[11px] font-lato-bold capitalize ${collectPaymentMode === mode ? "text-white" : "text-[#374151]"}`}>
+                                                {mode.replace("_", " ")}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
                             </View>
                         </View>
                     </View>

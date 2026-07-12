@@ -102,6 +102,7 @@ export const projectFormApi = {
         { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }
     ),
     getDraftStepData: (projectId) => api.get(`/api/v1/project-panel/form/${projectId}/step-data`),
+    getProjectFormResume: (projectId) => api.get(`/api/v1/project-panel/form/${projectId}/resume`),
 };
 
 // Project Overview APIs

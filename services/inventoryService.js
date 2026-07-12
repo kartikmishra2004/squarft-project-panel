@@ -6,6 +6,22 @@ const normalizeError = (error, fallback) => ({
   details: error.response?.data,
 });
 
+const parseMilestoneAmount = (item) => {
+  const raw = item?.amount ?? item?.milestone_amount ?? item?.total_amount ?? item?.totalAmount ?? 0;
+  const parsed = Number(String(raw).replace(/[^\d.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const sanitizeDealSummaryPayload = (data = {}) => {
+  const payload = { ...data };
+
+  if (Array.isArray(payload.payment_schedule)) {
+    payload.payment_schedule = payload.payment_schedule.filter((item) => parseMilestoneAmount(item) > 0);
+  }
+
+  return payload;
+};
+
 export const inventoryService = {
   // GET /api/project-developer/projects/:projectId/inventory
   // Pass type to fetch a single tab, omit for all seven tabs
@@ -54,7 +70,7 @@ export const inventoryService = {
   // POST /api/project-developer/inventory-units/:unitId/deal-summary
   createDealSummary: async (unitId, data) => {
     try {
-      const response = await api.post(`/api/project-developer/inventory-units/${unitId}/deal-summary`, data);
+      const response = await api.post(`/api/project-developer/inventory-units/${unitId}/deal-summary`, sanitizeDealSummaryPayload(data));
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'Failed to create deal summary');
@@ -64,7 +80,7 @@ export const inventoryService = {
   // PUT /api/project-developer/inventory-units/:unitId/deal-summary
   updateDealSummary: async (unitId, data) => {
     try {
-      const response = await api.put(`/api/project-developer/inventory-units/${unitId}/deal-summary`, data);
+      const response = await api.put(`/api/project-developer/inventory-units/${unitId}/deal-summary`, sanitizeDealSummaryPayload(data));
       return response.data;
     } catch (error) {
       throw normalizeError(error, 'Failed to update deal summary');

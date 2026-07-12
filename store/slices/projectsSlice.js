@@ -1,5 +1,4 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { mockData } from '../../constants/mockData';
 
 const toTitleCase = (value = '') => value
     .replace(/[-_]/g, ' ')
@@ -196,7 +195,7 @@ const normalizeProject = (project) => {
 };
 
 const initialState = {
-    projects: mockData.projects.map(normalizeProject),
+    projects: [],
 };
 
 const projectsSlice = createSlice({

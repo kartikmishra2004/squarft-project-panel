@@ -30,6 +30,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow SquarFT Project Panel to use your location to auto-fill the project address.",
+          "locationWhenInUsePermission": "Allow SquarFT Project Panel to use your location to auto-fill the project address."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/icons/icon.png",
