@@ -47,6 +47,9 @@ import * as Sharing from 'expo-sharing';
 import { Linking } from 'react-native';
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import DateTimePicker from '@react-native-community/datetimepicker';
+import MapView, { PROVIDER_GOOGLE } from 'react-native-maps';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
 const { width } = Dimensions.get("window");
 
@@ -133,14 +136,18 @@ const OWNERSHIP_TYPES = [
 ];
 
 const hasValidGoogleMapsKey = () => {
-    const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const key = Constants.expoConfig?.extra?.googleMapsApiKey || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
     return Boolean(key && !/your_google_maps_api_key_here|placeholder|changeme/i.test(key));
 };
 
+const isPlusCode = (value = "") => /\b[A-Z0-9]{4,8}\+[A-Z0-9]{2,3}\b/i.test(String(value));
+
 const parseReverseGeocode = (place = {}) => {
-    const streetParts = [place.streetNumber, place.street, place.name].filter(Boolean);
-    const locationStr = streetParts.join(" ").trim()
-        || [place.district, place.subregion].filter(Boolean).join(", ").trim();
+    const safeName = !isPlusCode(place.name) ? place.name : "";
+    const streetLine = [place.streetNumber, place.street].filter(Boolean).join(" ").trim();
+    const locationStr = [streetLine || safeName, place.district, place.subregion, place.city, place.region, place.postalCode]
+        .filter((part, index, parts) => part && !isPlusCode(part) && parts.indexOf(part) === index)
+        .join(", ");
 
     return {
         location: locationStr,
@@ -153,7 +160,7 @@ const parseReverseGeocode = (place = {}) => {
 const fetchAddressFromGoogle = async (latitude, longitude) => {
     if (!hasValidGoogleMapsKey()) return null;
 
-    const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const apiKey = Constants.expoConfig?.extra?.googleMapsApiKey || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
     const res = await fetch(
         `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
     );
@@ -161,31 +168,166 @@ const fetchAddressFromGoogle = async (latitude, longitude) => {
 
     if (data.status !== "OK" || !data.results?.length) return null;
 
-    const components = data.results[0].address_components;
+    const preferredResult = data.results.find((result) =>
+        result.types?.some((type) => ["street_address", "premise", "subpremise", "establishment", "route"].includes(type))
+        && !result.types?.includes("plus_code")
+        && !isPlusCode(result.formatted_address)
+    ) || data.results.find((result) => !result.types?.includes("plus_code") && !isPlusCode(result.formatted_address));
+
+    if (!preferredResult) return null;
+
+    const components = preferredResult.address_components;
     const get = (type) => components.find((c) => c.types.includes(type))?.long_name || "";
     const sublocality = get("sublocality_level_1") || get("sublocality") || get("neighborhood");
-    const route = get("route");
+    const streetLine = [get("street_number"), get("route")].filter(Boolean).join(" ");
+    const city = get("locality") || get("administrative_area_level_2");
+    const state = get("administrative_area_level_1");
+    const pincode = get("postal_code");
+    const standardAddress = [
+        get("premise") || get("establishment"),
+        streetLine,
+        sublocality,
+        city,
+        state,
+        pincode,
+    ].filter((part, index, parts) => part && !isPlusCode(part) && parts.indexOf(part) === index).join(", ");
 
     return {
-        location: [route, sublocality].filter(Boolean).join(", ") || data.results[0].formatted_address,
-        city: get("locality") || get("administrative_area_level_2"),
-        state: get("administrative_area_level_1"),
-        pincode: get("postal_code"),
+        location: standardAddress || preferredResult.formatted_address,
+        city,
+        state,
+        pincode,
     };
 };
 
+const DEFAULT_MAP_REGION = {
+    latitude: 12.9716,
+    longitude: 77.5946,
+    latitudeDelta: 0.015,
+    longitudeDelta: 0.015,
+};
+
+function LocationMapPicker({ visible, initialAddress, onClose, onConfirm }) {
+    const mapRef = useRef(null);
+    const mountedRef = useRef(true);
+    const geocodeRequestRef = useRef(0);
+    const [region, setRegion] = useState(DEFAULT_MAP_REGION);
+    const [address, setAddress] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [mapReady, setMapReady] = useState(false);
+
+    const resolveAddress = useCallback(async (nextRegion) => {
+        const requestId = ++geocodeRequestRef.current;
+        setLoading(true);
+        try {
+            const result = await fetchAddressFromCoordinates(nextRegion.latitude, nextRegion.longitude);
+            if (mountedRef.current && requestId === geocodeRequestRef.current) setAddress(result);
+        } catch (error) {
+            console.log('[MAP PICKER] Reverse geocoding failed:', error);
+            if (mountedRef.current && requestId === geocodeRequestRef.current) setAddress(null);
+        } finally {
+            if (mountedRef.current && requestId === geocodeRequestRef.current) setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => () => { mountedRef.current = false; }, []);
+
+    useEffect(() => {
+        if (!visible) return;
+        mountedRef.current = true;
+        setMapReady(false);
+        setAddress(initialAddress?.location ? initialAddress : null);
+
+        (async () => {
+            try {
+                const permission = await Location.requestForegroundPermissionsAsync();
+                if (permission.status !== 'granted') {
+                    Alert.alert('Location permission', 'You can still choose a location by moving the map.');
+                    return;
+                }
+                const current = await getDeviceCoordinates();
+                const nextRegion = { ...DEFAULT_MAP_REGION, latitude: current.coords.latitude, longitude: current.coords.longitude };
+                if (!mountedRef.current) return;
+                setRegion(nextRegion);
+                mapRef.current?.animateToRegion(nextRegion, 350);
+                resolveAddress(nextRegion);
+            } catch (error) {
+                console.log('[MAP PICKER] Current location unavailable:', error);
+                resolveAddress(DEFAULT_MAP_REGION);
+            }
+        })();
+    }, [visible, resolveAddress, initialAddress]);
+
+    const handleRegionComplete = useCallback((nextRegion) => {
+        setRegion(nextRegion);
+        resolveAddress(nextRegion);
+    }, [resolveAddress]);
+
+    return (
+        <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+            <View className="flex-1 bg-white">
+                <MapView
+                    ref={mapRef}
+                    provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                    style={{ flex: 1 }}
+                    initialRegion={DEFAULT_MAP_REGION}
+                    onMapReady={() => setMapReady(true)}
+                    onRegionChangeComplete={handleRegionComplete}
+                    showsUserLocation
+                    showsMyLocationButton
+                    toolbarEnabled={false}
+                    moveOnMarkerPress={false}
+                />
+                <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: '50%', alignItems: 'center', transform: [{ translateY: -38 }] }}>
+                    <Ionicons name="location" size={44} color="#4A43EC" />
+                    <View style={{ width: 8, height: 4, borderRadius: 4, backgroundColor: 'rgba(0,0,0,0.2)', marginTop: -4 }} />
+                </View>
+
+                <SafeAreaView style={{ position: 'absolute', top: 0, left: 0, right: 0 }} pointerEvents="box-none">
+                    <TouchableOpacity onPress={onClose} className="ml-4 mt-2 w-11 h-11 rounded-full bg-white items-center justify-center shadow-lg">
+                        <Ionicons name="close" size={24} color="#111827" />
+                    </TouchableOpacity>
+                </SafeAreaView>
+
+                <SafeAreaView edges={['bottom']} className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl px-5 pt-5 pb-3 shadow-2xl">
+                    <Text className="text-base font-lato-bold text-gray-900">Selected address</Text>
+                    <View className="min-h-14 mt-2 flex-row items-center">
+                        {loading ? <ActivityIndicator color="#4A43EC" /> : <Ionicons name="location-outline" size={21} color="#4A43EC" />}
+                        <Text className="flex-1 ml-3 text-[13px] leading-5 text-gray-700 font-lato-medium">
+                            {loading ? 'Finding address…' : address?.location || 'Move the map to pinpoint an address'}
+                        </Text>
+                    </View>
+                    <TouchableOpacity
+                        disabled={!mapReady || loading || !address?.location}
+                        onPress={() => onConfirm({ ...address, latitude: region.latitude, longitude: region.longitude })}
+                        className={`mt-3 rounded-2xl py-4 items-center ${!mapReady || loading || !address?.location ? 'bg-indigo-300' : 'bg-[#4A43EC]'}`}
+                    >
+                        <Text className="text-white text-[15px] font-lato-bold">Add this address</Text>
+                    </TouchableOpacity>
+                </SafeAreaView>
+            </View>
+        </Modal>
+    );
+}
+
 const fetchAddressFromCoordinates = async (latitude, longitude) => {
+    try {
+        const googleAddress = await fetchAddressFromGoogle(latitude, longitude);
+        if (googleAddress?.location && !isPlusCode(googleAddress.location)) return googleAddress;
+    } catch (error) {
+        console.log("Google reverse geocode failed:", error);
+    }
+
     try {
         const places = await Location.reverseGeocodeAsync({ latitude, longitude });
         if (places?.length) {
             const parsed = parseReverseGeocode(places[0]);
-            if (parsed.location || parsed.city) return parsed;
+            if ((parsed.location || parsed.city) && !isPlusCode(parsed.location)) return parsed;
         }
     } catch (error) {
         console.log("Native reverse geocode failed:", error);
     }
-
-    return fetchAddressFromGoogle(latitude, longitude);
+    return null;
 };
 
 const getDeviceCoordinates = async () => {
@@ -1372,7 +1514,7 @@ export default function AddProject() {
 function Step1({ errors = {}, setErrors }) {
     const dispatch = useDispatch();
     const { step1 } = useSelector((state) => state.project);
-    const [locationLoading, setLocationLoading] = useState(false);
+    const [mapPickerVisible, setMapPickerVisible] = useState(false);
 
     const updateField = (field, value) => {
         dispatch(updateStep1({ [field]: value }));
@@ -1386,36 +1528,17 @@ function Step1({ errors = {}, setErrors }) {
         }
     };
 
-    const fetchCurrentLocation = async () => {
-        try {
-            setLocationLoading(true);
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission Denied', 'Location permission is required to fetch current location.');
-                return;
-            }
-
-            const loc = await getDeviceCoordinates();
-            const { latitude, longitude } = loc.coords;
-            const address = await fetchAddressFromCoordinates(latitude, longitude);
-
-            if (!address || (!address.location && !address.city)) {
-                Alert.alert('Error', 'Could not fetch address. Try again or enter it manually.');
-                return;
-            }
-
-            dispatch(updateStep1({
-                location: address.location || step1.location,
-                city: address.city || step1.city,
-                state: address.state || step1.state,
-                pincode: address.pincode || step1.pincode,
-            }));
-        } catch (err) {
-            Alert.alert('Error', 'Failed to fetch location. Please try again.');
-            console.log('Location fetch error:', err);
-        } finally {
-            setLocationLoading(false);
-        }
+    const confirmMapAddress = (address) => {
+        dispatch(updateStep1({
+            location: address.location,
+            city: address.city || step1.city,
+            state: address.state || step1.state,
+            pincode: address.pincode || step1.pincode,
+            latitude: address.latitude,
+            longitude: address.longitude,
+        }));
+        setErrors?.((previous) => ({ ...(previous || {}), location: undefined }));
+        setMapPickerVisible(false);
     };
     const projectNameRef = useRef(null);
     const locationRef = useRef(null);
@@ -1463,19 +1586,21 @@ function Step1({ errors = {}, setErrors }) {
                         style={{ paddingVertical: 0, textAlignVertical: 'center', includeFontPadding: false }}
                     />
                     <TouchableOpacity
-                        onPress={fetchCurrentLocation}
-                        disabled={locationLoading}
+                        onPress={() => { Keyboard.dismiss(); setMapPickerVisible(true); }}
                         className="w-7 h-7 rounded-lg bg-[#EBEAFF] items-center justify-center"
                     >
-                        {locationLoading
-                            ? <ActivityIndicator size={12} color="#4A43EC" />
-                            : <Ionicons name="locate" size={16} color="#4A43EC" />
-                        }
+                        <Ionicons name="map-outline" size={16} color="#4A43EC" />
                     </TouchableOpacity>
                 </Pressable>
                 {errors.location && (
                     <Text className="text-[11px] text-red-500 mt-1">{errors.location}</Text>
                 )}
+                <LocationMapPicker
+                    visible={mapPickerVisible}
+                    initialAddress={step1}
+                    onClose={() => setMapPickerVisible(false)}
+                    onConfirm={confirmMapAddress}
+                />
             </View>
 
             {/* City, State, Pincode */}

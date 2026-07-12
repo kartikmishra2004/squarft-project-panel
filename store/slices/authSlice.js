@@ -7,9 +7,16 @@ export const fetchDeveloperKyc = createAsyncThunk(
     'auth/fetchDeveloperKyc',
     async (_, { rejectWithValue }) => {
         try {
+            console.log('[KYC THUNK] fetchDeveloperKyc started');
             return await kycService.getMyKyc();
         } catch (error) {
-            return rejectWithValue(error.message || 'Unable to fetch KYC status');
+            const diagnostic = {
+                message: error.message || 'Unable to fetch KYC status',
+                status: error.status,
+                data: error.data,
+            };
+            console.error('[KYC THUNK] fetchDeveloperKyc rejected:', diagnostic);
+            return rejectWithValue(diagnostic);
         }
     }
 );
@@ -115,19 +122,22 @@ const authSlice = createSlice({
     extraReducers: (builder) => {
         builder
             .addCase(fetchDeveloperKyc.pending, (state) => {
+                console.log('[KYC REDUX] Request pending');
                 state.kycLoading = true;
                 state.kycError = null;
             })
             .addCase(fetchDeveloperKyc.fulfilled, (state, action) => {
                 const status = action.payload?.verification_status || null;
+                console.log('[KYC REDUX] Request fulfilled:', { hasKyc: !!action.payload, status });
                 state.kycLoading = false;
                 state.kyc = action.payload;
                 state.kycStatus = status;
                 state.isKycCompleted = isApprovedKycStatus(status);
             })
             .addCase(fetchDeveloperKyc.rejected, (state, action) => {
+                console.error('[KYC REDUX] Request rejected:', action.payload || action.error);
                 state.kycLoading = false;
-                state.kycError = action.payload;
+                state.kycError = action.payload?.message || action.error?.message;
                 state.isKycCompleted = false;
             })
             .addCase(uploadDeveloperKyc.pending, (state) => {

@@ -70,6 +70,11 @@ export const authService = {
         success: response.data.success,
         hasToken: !!response.data.token,
         hasUser: !!response.data.user,
+        userId: response.data.user?.id || response.data.user?._id,
+        userKeys: response.data.user ? Object.keys(response.data.user) : [],
+        region: response.data.user?.region,
+        regionId: response.data.user?.region_id || response.data.user?.regionId,
+        location: response.data.user?.location,
       });
 
       const { token, user } = response.data;
