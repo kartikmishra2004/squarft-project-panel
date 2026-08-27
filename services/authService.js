@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStoredExpoPushTokenAsync } from './pushNotifications';
 import { PUSH_NOTIFICATION_APP_KEY } from './pushNotificationConfig';
 
+const ROLE = 'project_developer';
+
 const getPushContextAsync = async () => {
   const expoPushToken = await getStoredExpoPushTokenAsync();
 
@@ -14,91 +16,99 @@ const getPushContextAsync = async () => {
   };
 };
 
+const persistSession = async (token, user) => {
+  if (!token) return;
+  try {
+    await AsyncStorage.setItem('authToken', token);
+    await AsyncStorage.setItem('userData', JSON.stringify(user));
+  } catch (storageError) {
+    console.warn('⚠️ [AUTH SERVICE] Could not store session:', storageError.message);
+  }
+};
+
+const toAuthError = (error, fallback) => ({
+  message: error.response?.data?.message || error.message || fallback,
+  status: error.response?.status,
+});
+
 export const authService = {
-  // Register project developer
-  register: async (userData) => {
+  // Send an OTP to a phone number. purpose: 'register' | 'login' | 'reset_password'
+  sendOtp: async (phone, purpose) => {
     try {
-      console.log('🔵 [AUTH SERVICE] Register attempt with data:', {
-        full_name: `${userData.first_name} ${userData.last_name}`.trim(),
-        company_name: userData.company_name,
-        company_type: userData.company_type,
-        rera_number: userData.rera_number,
-        phone: userData.phone,
-        location: userData.location,
-        password: '***hidden***',
-      });
-
-      const pushContext = await getPushContextAsync();
-
-      const response = await api.post('/api/project-developer/auth/register', {
-        full_name: `${userData.first_name} ${userData.last_name}`.trim(),
-        company_name: userData.company_name,
-        company_type: userData.company_type,
-        rera_number: userData.rera_number,
-        phone: userData.phone,
-        location: userData.location,
-        password: userData.password,
-        ...pushContext,
-      });
-      
-      console.log(' [AUTH SERVICE] Register response:', response.data);
+      const response = await api.post('/auth/send-otp', { phone, purpose, role: ROLE });
       return response.data;
     } catch (error) {
-      console.log(' [AUTH SERVICE] Register error:', error.response?.status, error.response?.data?.message);
-      
-      throw {
-        message: error.response?.data?.message || error.message || 'Registration failed',
-        status: error.response?.status,
-      };
+      console.log(' [AUTH SERVICE] Send OTP error:', error.response?.status, error.response?.data?.message);
+      throw toAuthError(error, 'Failed to send OTP');
     }
   },
 
-  // Login project developer
-  login: async (phone, password) => {
+  // Verify the OTP entered by the user, returns a short-lived verified_token
+  verifyOtp: async (otpToken, otp) => {
     try {
-      console.log('🔵 [AUTH SERVICE] Login attempt for phone:', phone);
+      const response = await api.post('/auth/verify-otp', { otp_token: otpToken, otp });
+      return response.data;
+    } catch (error) {
+      console.log(' [AUTH SERVICE] Verify OTP error:', error.response?.status, error.response?.data?.message);
+      throw toAuthError(error, 'OTP verification failed');
+    }
+  },
 
+  // Register a new project developer account using a verified_token from verifyOtp
+  register: async (userData) => {
+    try {
       const pushContext = await getPushContextAsync();
 
-      const response = await api.post('/api/project-developer/auth/login', {
-        phone,
-        password,
+      const response = await api.post('/auth/register', {
+        verified_token: userData.verified_token,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        role: ROLE,
+        company_name: userData.company_name,
+        company_type: userData.company_type,
+        rera_number: userData.rera_number,
+        location: userData.location,
         ...pushContext,
       });
 
-      console.log(' [AUTH SERVICE] Login response:', {
-        success: response.data.success,
-        hasToken: !!response.data.token,
-        hasUser: !!response.data.user,
-        userId: response.data.user?.id || response.data.user?._id,
-        userKeys: response.data.user ? Object.keys(response.data.user) : [],
-        region: response.data.user?.region,
-        regionId: response.data.user?.region_id || response.data.user?.regionId,
-        location: response.data.user?.location,
+      await persistSession(response.data.token, response.data.user);
+      return response.data;
+    } catch (error) {
+      console.log(' [AUTH SERVICE] Register error:', error.response?.status, error.response?.data?.message);
+      throw toAuthError(error, 'Registration failed');
+    }
+  },
+
+  // Log in an existing project developer using a verified_token from verifyOtp
+  login: async (verifiedToken) => {
+    try {
+      const pushContext = await getPushContextAsync();
+
+      const response = await api.post('/auth/login', {
+        verified_token: verifiedToken,
+        role: ROLE,
+        ...pushContext,
       });
 
-      const { token, user } = response.data;
-
-      // Store token and user data
-      if (token) {
-        try {
-          await AsyncStorage.setItem('authToken', token);
-          await AsyncStorage.setItem('userData', JSON.stringify(user));
-          console.log(' [AUTH SERVICE] Token and user data stored');
-        } catch (storageError) {
-          console.warn('⚠️ [AUTH SERVICE] Could not store token:', storageError.message);
-          // Continue anyway - token is in memory
-        }
-      }
-
+      await persistSession(response.data.token, response.data.user);
       return response.data;
     } catch (error) {
       console.log(' [AUTH SERVICE] Login error:', error.response?.status, error.response?.data?.message);
-      
-      throw {
-        message: error.response?.data?.message || error.message || 'Login failed',
-        status: error.response?.status,
-      };
+      throw toAuthError(error, 'Login failed');
+    }
+  },
+
+  // Set a new password after a reset_password OTP flow
+  resetPassword: async (verifiedToken, newPassword) => {
+    try {
+      const response = await api.post('/auth/reset-password', {
+        verified_token: verifiedToken,
+        new_password: newPassword,
+      });
+      return response.data;
+    } catch (error) {
+      console.log(' [AUTH SERVICE] Reset password error:', error.response?.status, error.response?.data?.message);
+      throw toAuthError(error, 'Failed to reset password');
     }
   },
 
