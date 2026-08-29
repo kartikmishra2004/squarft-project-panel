@@ -23,6 +23,42 @@ import { fetchDeveloperKyc, submitDeveloperKyc, uploadDeveloperKyc } from '../..
 const isApprovedStatus = (status) => ['verified', 'approved'].includes(String(status || '').toLowerCase());
 const isReviewStatus = (status) => ['under_review', 'pending'].includes(String(status || '').toLowerCase());
 
+const UploadBox = ({ label, value, existingUrl, icon, onPress, onRemove, useCamera }) => (
+    <View style={styles.fieldBlock}>
+        <Text style={styles.label}>{label}</Text>
+        {value || existingUrl ? (
+            <View style={styles.uploadedCard}>
+                <View style={styles.fileRow}>
+                    <View style={styles.fileIcon}>
+                        <MaterialCommunityIcons name={useCamera ? 'camera' : 'file-image-outline'} size={20} color="#4A43EC" />
+                    </View>
+                    <Text style={styles.fileName} numberOfLines={1}>
+                        {value?.fileName || 'Document uploaded'}
+                    </Text>
+                    {value ? (
+                        <Pressable onPress={onRemove} style={styles.removeButton}>
+                            <Ionicons name="trash-outline" size={18} color="#DC2626" />
+                        </Pressable>
+                    ) : (
+                        <Pressable onPress={onPress} style={styles.replaceButton}>
+                            <Text style={styles.replaceText}>Replace</Text>
+                        </Pressable>
+                    )}
+                </View>
+                <Image source={{ uri: value?.uri || existingUrl }} style={styles.preview} resizeMode="cover" />
+            </View>
+        ) : (
+            <Pressable onPress={onPress} style={styles.uploadBox}>
+                <View style={styles.uploadIcon}>
+                    <MaterialCommunityIcons name={icon} size={28} color="#4A43EC" />
+                </View>
+                <Text style={styles.uploadTitle}>{useCamera ? 'Take Selfie or Upload' : 'Upload Image'}</Text>
+                <Text style={styles.uploadHint}>JPG or PNG</Text>
+            </Pressable>
+        )}
+    </View>
+);
+
 const statusMeta = {
     verified: {
         icon: 'check-decagram-outline',
@@ -93,6 +129,18 @@ export default function KycScreen() {
         if (!result.canceled) setter(result.assets[0]);
     };
 
+    const pickSelfie = (setter) => {
+        Alert.alert(
+            'Profile Photo',
+            'Take a new selfie or upload one from your gallery.',
+            [
+                { text: 'Take Selfie', onPress: () => pickImage(setter, true) },
+                { text: 'Upload from Gallery', onPress: () => pickImage(setter, false) },
+                { text: 'Cancel', style: 'cancel' },
+            ],
+        );
+    };
+
     const handleSubmit = async () => {
         const needsProfile = !profilePhoto && !kyc?.profile_photo_url;
         const needsAadharFront = !aadharFront && !kyc?.aadhar_front_url;
@@ -134,42 +182,6 @@ export default function KycScreen() {
             setSubmitting(false);
         }
     };
-
-    const UploadBox = ({ label, value, existingUrl, icon, onPress, onRemove, useCamera }) => (
-        <View style={styles.fieldBlock}>
-            <Text style={styles.label}>{label}</Text>
-            {value || existingUrl ? (
-                <View style={styles.uploadedCard}>
-                    <View style={styles.fileRow}>
-                        <View style={styles.fileIcon}>
-                            <MaterialCommunityIcons name={useCamera ? 'camera' : 'file-image-outline'} size={20} color="#4A43EC" />
-                        </View>
-                        <Text style={styles.fileName} numberOfLines={1}>
-                            {value?.fileName || 'Document uploaded'}
-                        </Text>
-                        {value ? (
-                            <Pressable onPress={onRemove} style={styles.removeButton}>
-                                <Ionicons name="trash-outline" size={18} color="#DC2626" />
-                            </Pressable>
-                        ) : (
-                            <Pressable onPress={onPress} style={styles.replaceButton}>
-                                <Text style={styles.replaceText}>Replace</Text>
-                            </Pressable>
-                        )}
-                    </View>
-                    <Image source={{ uri: value?.uri || existingUrl }} style={styles.preview} resizeMode="cover" />
-                </View>
-            ) : (
-                <Pressable onPress={onPress} style={styles.uploadBox}>
-                    <View style={styles.uploadIcon}>
-                        <MaterialCommunityIcons name={icon} size={28} color="#4A43EC" />
-                    </View>
-                    <Text style={styles.uploadTitle}>{useCamera ? 'Open Camera' : 'Upload Image'}</Text>
-                    <Text style={styles.uploadHint}>JPG or PNG</Text>
-                </Pressable>
-            )}
-        </View>
-    );
 
     const currentStatus = String(kycStatus || '').toLowerCase();
     const showStatusOnly = isApprovedStatus(currentStatus) || isReviewStatus(currentStatus);
@@ -238,7 +250,7 @@ export default function KycScreen() {
                         existingUrl={kyc?.profile_photo_url}
                         icon="camera-outline"
                         useCamera
-                        onPress={() => pickImage(setProfilePhoto, true)}
+                        onPress={() => pickSelfie(setProfilePhoto)}
                         onRemove={() => setProfilePhoto(null)}
                     />
 

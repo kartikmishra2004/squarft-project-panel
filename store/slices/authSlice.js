@@ -112,6 +112,8 @@ const authSlice = createSlice({
         companyType: '',
         reraNumber: '',
         location: '',
+        branchId: '',
+        branchName: '',
         otp: ['', '', '', '', '', ''],
         otpFlow: 'register',
         otpToken: null,
@@ -138,6 +140,10 @@ const authSlice = createSlice({
         setCompanyType: (state, action) => { state.companyType = action.payload; },
         setReraNumber: (state, action) => { state.reraNumber = action.payload; },
         setLocation: (state, action) => { state.location = action.payload; },
+        setBranch: (state, action) => {
+            state.branchId = action.payload.id;
+            state.branchName = action.payload.name;
+        },
         setOtpDigit: (state, action) => {
             const { index, value } = action.payload;
             state.otp[index] = value;
@@ -172,6 +178,8 @@ const authSlice = createSlice({
             state.companyType = '';
             state.reraNumber = '';
             state.location = '';
+            state.branchId = '';
+            state.branchName = '';
             state.otpToken = null;
             state.verifiedToken = null;
             state.isLoggedIn = false;
@@ -210,6 +218,17 @@ const authSlice = createSlice({
                 state.token = action.payload.token;
                 state.user = action.payload.user || state.user;
                 state.isLoggedIn = true;
+                // A brand-new account can never already have KYC completed -
+                // force these back to their true defaults rather than leaving
+                // whatever isKycCompleted happened to hold. Without this, a
+                // developer who logged into an already-approved account and
+                // then registered a second, fresh account in the same app
+                // session (no logout in between) would carry the first
+                // account's "completed" flag onto the new one and skip
+                // straight to home instead of the KYC screen.
+                state.kyc = null;
+                state.kycStatus = null;
+                state.isKycCompleted = false;
             })
             .addCase(registerThunk.rejected, (state, action) => {
                 state.loading = false;
@@ -297,6 +316,7 @@ export const {
     setCompanyType,
     setReraNumber,
     setLocation,
+    setBranch,
     setOtpDigit,
     clearOtp,
     setOtpFlow,

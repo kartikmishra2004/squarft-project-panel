@@ -36,6 +36,7 @@ const inventorySlice = createSlice({
       delete state.loading[projectId];
       delete state.error[projectId];
     },
+    resetInventory: () => initialState,
   },
 });
 
@@ -44,6 +45,7 @@ export const {
   setInventoryData,
   setInventoryError,
   clearInventory,
+  resetInventory,
 } = inventorySlice.actions;
 
 export default inventorySlice.reducer;

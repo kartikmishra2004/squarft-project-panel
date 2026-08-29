@@ -1,19 +1,54 @@
-import { Text, View, TouchableOpacity, ScrollView, Alert, StatusBar } from "react-native";
+import { useEffect, useState } from "react";
+import { Text, View, TouchableOpacity, ScrollView, Alert, StatusBar, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDispatch, useSelector } from "react-redux";
-import { logout as logoutAction } from "../../store/slices/authSlice";
+import * as ImagePicker from "expo-image-picker";
+import { logout as logoutAction, setUser } from "../../store/slices/authSlice";
+import { clearProjects } from "../../store/slices/projectsSlice";
+import { resetInventory } from "../../store/slices/inventorySlice";
+import { clearNotifications } from "../../store/slices/notificationSlice";
 import { authService } from "../../services/authService";
+import { profileService } from "../../services/profileService";
 import { useRouter } from "expo-router";
-import { Ionicons, Feather } from "@expo/vector-icons";
+import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import Avatar from "../../components/Avatar";
+
+const KYC_BADGE = {
+    approved: { label: "KYC Approved", color: "#10B981", bg: "bg-emerald-500/20", border: "border-emerald-500/30", text: "text-emerald-300" },
+    verified: { label: "KYC Approved", color: "#10B981", bg: "bg-emerald-500/20", border: "border-emerald-500/30", text: "text-emerald-300" },
+    rejected: { label: "KYC Rejected", color: "#F87171", bg: "bg-red-500/20", border: "border-red-500/30", text: "text-red-300" },
+    under_review: { label: "KYC Under Review", color: "#FBBF24", bg: "bg-amber-500/20", border: "border-amber-500/30", text: "text-amber-300" },
+    pending: { label: "KYC Pending", color: "#FBBF24", bg: "bg-amber-500/20", border: "border-amber-500/30", text: "text-amber-300" },
+};
+
+const formatDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
 
 export default function Settings() {
     const router = useRouter();
     const dispatch = useDispatch();
     const insets = useSafeAreaInsets();
-    
+
     // Get logged-in user data from Redux store
     const user = useSelector((state) => state.auth.user);
+
+    const [profile, setProfile] = useState(null);
+    const [loadingProfile, setLoadingProfile] = useState(true);
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+    useEffect(() => {
+        let isMounted = true;
+        profileService.getMyProfile()
+            .then((data) => { if (isMounted) setProfile(data); })
+            .catch((error) => console.log("[SETTINGS] Failed to load full profile:", error?.message))
+            .finally(() => { if (isMounted) setLoadingProfile(false); });
+        return () => { isMounted = false; };
+    }, []);
 
     const handleLogout = () => {
         Alert.alert(
@@ -28,6 +63,9 @@ export default function Settings() {
                         try {
                             await authService.logout();
                             dispatch(logoutAction());
+                            dispatch(clearProjects());
+                            dispatch(resetInventory());
+                            dispatch(clearNotifications());
                             router.replace("/(auth)/login");
                         } catch (error) {
                             console.error("Logout error:", error);
@@ -53,21 +91,75 @@ export default function Settings() {
         );
     }
 
-    const displayName = user.full_name || user.name;
-    const displayPhone = user.phone || user.mobile;
-    const companyName = user.company_name;
-    const companyType = user.company_type;
-    const reraNumber = user.rera_number;
-    const location = user.location;
+    const displayName = profile?.full_name?.trim()
+        || [user.first_name, user.last_name].filter(Boolean).join(" ").trim()
+        || user.full_name
+        || user.name
+        || null;
+    const avatarUrl = profile?.avatar_url ?? user.avatar_url;
+    const displayPhone = profile?.phone || user.phone || user.mobile;
+    const displayEmail = profile?.email && profile.email !== "No email provided" ? profile.email : null;
+    const companyName = profile?.company_name || user.company_name;
+    const reraNumber = profile?.rera_number || user.rera_number;
+    const location = profile?.location || user.location;
+    const branch = profile?.branch;
+    const memberSince = formatDate(profile?.created_at);
+    const kycBadge = profile?.kyc_status ? KYC_BADGE[String(profile.kyc_status).toLowerCase()] : null;
+
+    const handleChangePhoto = () => {
+        Alert.alert(
+            "Profile Photo",
+            "Take a new photo or upload one from your gallery.",
+            [
+                { text: "Take Photo", onPress: () => pickAndUpload(true) },
+                { text: "Upload from Gallery", onPress: () => pickAndUpload(false) },
+                { text: "Cancel", style: "cancel" },
+            ]
+        );
+    };
+
+    const pickAndUpload = async (useCamera) => {
+        const permission = useCamera
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+        if (permission.status !== "granted") {
+            Alert.alert("Permission needed", useCamera ? "Camera permission is required." : "Photo library permission is required.");
+            return;
+        }
+
+        const result = useCamera
+            ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
+            });
+
+        if (result.canceled) return;
+
+        setUploadingPhoto(true);
+        try {
+            const updated = await profileService.updateProfilePicture(result.assets[0]);
+            const newAvatarUrl = updated?.profilePictureUrl || updated?.avatar_url || null;
+            setProfile((current) => ({ ...current, avatar_url: newAvatarUrl }));
+            dispatch(setUser({ ...user, avatar_url: newAvatarUrl }));
+        } catch (error) {
+            Alert.alert("Upload Failed", error?.message || "Unable to update your profile photo.");
+        } finally {
+            setUploadingPhoto(false);
+        }
+    };
 
     return (
         <View className="flex-1 bg-[#F8F9FE]">
             <StatusBar barStyle="light-content" />
-            
+
             <LinearGradient
                 colors={["#4A43EC", "#3D30F2"]}
-                style={{ 
-                    paddingTop: Math.max(insets.top, 20) + 16, 
+                style={{
+                    paddingTop: Math.max(insets.top, 20) + 16,
                     paddingBottom: 24,
                     paddingHorizontal: 20,
                     borderBottomLeftRadius: 32,
@@ -85,20 +177,30 @@ export default function Settings() {
 
                 {/* Profile Card Info */}
                 <View className="flex-row items-center gap-4">
-                    <View className="w-16 h-16 rounded-2xl bg-white/20 border border-white/30 items-center justify-center">
-                        <Text className="text-white text-2xl font-lato-bold">
-                            {displayName ? displayName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "PD"}
-                        </Text>
-                    </View>
+                    <TouchableOpacity onPress={handleChangePhoto} disabled={uploadingPhoto} activeOpacity={0.85} className="relative">
+                        <Avatar
+                            uri={avatarUrl}
+                            name={displayName}
+                            className="w-16 h-16 rounded-2xl bg-white/20 border border-white/30"
+                            textClassName="text-white text-2xl font-lato-bold"
+                        />
+                        <View className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-white items-center justify-center border-2 border-[#4A43EC]">
+                            {uploadingPhoto ? (
+                                <ActivityIndicator size="small" color="#4A43EC" />
+                            ) : (
+                                <Ionicons name="camera" size={12} color="#4A43EC" />
+                            )}
+                        </View>
+                    </TouchableOpacity>
                     <View className="flex-1">
                         {displayName && <Text className="text-white text-lg font-lato-bold">{displayName}</Text>}
                         {companyName && <Text className="text-white/80 text-xs font-lato-medium mt-0.5">{companyName}</Text>}
-                        {companyType && (
+                        {kycBadge && (
                             <View className="flex-row items-center mt-1.5">
-                                <View className="bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 rounded-md flex-row items-center gap-1">
-                                    <View className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    <Text className="text-emerald-300 text-[10px] font-lato-bold uppercase tracking-wider">
-                                        {companyType}
+                                <View className={`${kycBadge.bg} border ${kycBadge.border} px-2 py-0.5 rounded-md flex-row items-center gap-1`}>
+                                    <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: kycBadge.color }} />
+                                    <Text className={`${kycBadge.text} text-[10px] font-lato-bold uppercase tracking-wider`}>
+                                        {kycBadge.label}
                                     </Text>
                                 </View>
                             </View>
@@ -107,16 +209,21 @@ export default function Settings() {
                 </View>
             </LinearGradient>
 
-            <ScrollView 
+            <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 24, paddingBottom: 40 }}
                 className="flex-1"
             >
+                {loadingProfile && (
+                    <View className="items-center py-4">
+                        <ActivityIndicator color="#4A43EC" />
+                    </View>
+                )}
+
                 {/* Account Details Card - thin border instead of shadow */}
                 <View className="bg-white rounded-3xl border border-gray-200 p-5 mb-6">
                     <Text className="text-gray-900 text-[15px] font-lato-bold mb-4">Account Details</Text>
-                    
-                    {/* Phone Row */}
+
                     {displayPhone && (
                         <View className="flex-row items-center gap-4 py-3 border-b border-gray-100">
                             <View className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 items-center justify-center">
@@ -129,7 +236,30 @@ export default function Settings() {
                         </View>
                     )}
 
-                    {/* Location Row */}
+                    {displayEmail && (
+                        <View className="flex-row items-center gap-4 py-3 border-b border-gray-100">
+                            <View className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 items-center justify-center">
+                                <Feather name="mail" size={16} color="#6366F1" />
+                            </View>
+                            <View className="flex-1">
+                                <Text className="text-gray-400 text-[11px] font-lato-bold uppercase tracking-wider">Email</Text>
+                                <Text className="text-gray-800 text-[14px] font-lato-medium mt-0.5">{displayEmail}</Text>
+                            </View>
+                        </View>
+                    )}
+
+                    {companyName && (
+                        <View className="flex-row items-center gap-4 py-3 border-b border-gray-100">
+                            <View className="w-9 h-9 rounded-xl bg-purple-50 border border-purple-100 items-center justify-center">
+                                <Feather name="briefcase" size={16} color="#A855F7" />
+                            </View>
+                            <View className="flex-1">
+                                <Text className="text-gray-400 text-[11px] font-lato-bold uppercase tracking-wider">Company Name</Text>
+                                <Text className="text-gray-800 text-[14px] font-lato-medium mt-0.5">{companyName}</Text>
+                            </View>
+                        </View>
+                    )}
+
                     {location && (
                         <View className="flex-row items-center gap-4 py-3 border-b border-gray-100">
                             <View className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-100 items-center justify-center">
@@ -142,9 +272,8 @@ export default function Settings() {
                         </View>
                     )}
 
-                    {/* RERA Row */}
                     {reraNumber && (
-                        <View className="flex-row items-center gap-4 py-3">
+                        <View className="flex-row items-center gap-4 py-3 border-b border-gray-100">
                             <View className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 items-center justify-center">
                                 <Feather name="award" size={16} color="#10B981" />
                             </View>
@@ -154,7 +283,60 @@ export default function Settings() {
                             </View>
                         </View>
                     )}
+
+                    {branch?.name && (
+                        <View className="flex-row items-center gap-4 py-3 border-b border-gray-100">
+                            <View className="w-9 h-9 rounded-xl bg-cyan-50 border border-cyan-100 items-center justify-center">
+                                <MaterialCommunityIcons name="office-building-outline" size={16} color="#06B6D4" />
+                            </View>
+                            <View className="flex-1">
+                                <Text className="text-gray-400 text-[11px] font-lato-bold uppercase tracking-wider">Branch</Text>
+                                <Text className="text-gray-800 text-[14px] font-lato-medium mt-0.5">
+                                    {branch.city ? `${branch.name} — ${branch.city}` : branch.name}
+                                </Text>
+                            </View>
+                        </View>
+                    )}
+
+                    {memberSince && (
+                        <View className="flex-row items-center gap-4 py-3">
+                            <View className="w-9 h-9 rounded-xl bg-gray-100 border border-gray-200 items-center justify-center">
+                                <Feather name="calendar" size={16} color="#6B7280" />
+                            </View>
+                            <View className="flex-1">
+                                <Text className="text-gray-400 text-[11px] font-lato-bold uppercase tracking-wider">Member Since</Text>
+                                <Text className="text-gray-800 text-[14px] font-lato-medium mt-0.5">{memberSince}</Text>
+                            </View>
+                        </View>
+                    )}
                 </View>
+
+                {/* KYC Status Card */}
+                {profile?.kyc_status && (
+                    <TouchableOpacity
+                        onPress={() => router.push("/(screens)/kyc-details")}
+                        activeOpacity={0.85}
+                        className="bg-white rounded-3xl border border-gray-200 p-5 mb-6 flex-row items-center justify-between"
+                    >
+                        <View className="flex-row items-center gap-3 flex-1">
+                            <View
+                                className="w-9 h-9 rounded-xl items-center justify-center border"
+                                style={{ backgroundColor: `${kycBadge?.color}20`, borderColor: `${kycBadge?.color}40` }}
+                            >
+                                <MaterialCommunityIcons name="shield-check-outline" size={18} color={kycBadge?.color || "#6B7280"} />
+                            </View>
+                            <View className="flex-1">
+                                <Text className="text-gray-900 text-[14px] font-lato-bold">{kycBadge?.label || "KYC Status"}</Text>
+                                {profile.kyc_status?.toLowerCase() === "rejected" && profile.kyc_rejection_reason ? (
+                                    <Text className="text-red-500 text-[11px] font-lato mt-0.5" numberOfLines={2}>{profile.kyc_rejection_reason}</Text>
+                                ) : (
+                                    <Text className="text-gray-400 text-[11px] font-lato mt-0.5">Tap to view details</Text>
+                                )}
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+                    </TouchableOpacity>
+                )}
 
                 {/* Logout Button - thin border instead of shadow */}
                 <TouchableOpacity
@@ -168,4 +350,4 @@ export default function Settings() {
             </ScrollView>
         </View>
     );
-}
+}

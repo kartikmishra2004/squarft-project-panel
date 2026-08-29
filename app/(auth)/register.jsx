@@ -1,4 +1,4 @@
-import { Text, View, TextInput, TouchableOpacity, Platform, Alert, ActivityIndicator } from "react-native";
+import { Text, View, TextInput, TouchableOpacity, Platform, Alert, ActivityIndicator, ScrollView } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
@@ -14,6 +14,7 @@ import {
     setCompanyType,
     setReraNumber,
     setLocation,
+    setBranch,
     setOtpFlow,
     clearError,
     clearAuthInputs,
@@ -21,6 +22,7 @@ import {
 } from "../../store/slices/authSlice";
 import AuthHeader from "../../components/AuthHeader";
 import LocationMapPicker from "../../components/LocationMapPicker";
+import { branchService } from "../../services/branchService";
 
 const COUNTRY_CODE = "+91";
 
@@ -33,18 +35,40 @@ export default function Register() {
         companyName,
         reraNumber,
         location,
+        branchId,
+        branchName,
         loading,
         error,
     } = useSelector((state) => state.auth);
     const companyType = useSelector((state) => state.auth.companyType);
     const [showCompanyTypeDropdown, setShowCompanyTypeDropdown] = useState(false);
+    const [showBranchDropdown, setShowBranchDropdown] = useState(false);
     const [mapPickerVisible, setMapPickerVisible] = useState(false);
+    const [branches, setBranches] = useState([]);
+    const [branchesLoading, setBranchesLoading] = useState(false);
+    const [branchesError, setBranchesError] = useState('');
     const companyTypes = ["Builder", "Marketing"];
 
     useEffect(() => {
         dispatch(clearError());
         dispatch(clearAuthInputs());
     }, [dispatch]);
+
+    useEffect(() => {
+        const loadBranches = async () => {
+            setBranchesLoading(true);
+            setBranchesError('');
+            try {
+                const data = await branchService.getBranches();
+                setBranches(data);
+            } catch (err) {
+                setBranchesError(err?.message || 'Unable to load branches');
+            } finally {
+                setBranchesLoading(false);
+            }
+        };
+        loadBranches();
+    }, []);
 
     const confirmMapAddress = (address) => {
         dispatch(setLocation(address.location));
@@ -68,6 +92,10 @@ export default function Register() {
         }
         if (!reraNumber) {
             Alert.alert('Missing Information', 'Please enter your RERA number');
+            return;
+        }
+        if (!branchId) {
+            Alert.alert('Missing Information', 'Please select your branch');
             return;
         }
         if (!location) {
@@ -189,6 +217,52 @@ export default function Register() {
                                             </Text>
                                         </TouchableOpacity>
                                     ))}
+                                </View>
+                            )}
+                        </View>
+
+                        {/* Branch */}
+                        <View className="z-[90]">
+                            <Text className="text-gray-500 text-[13px] mb-1.5 font-lato-bold">Branch</Text>
+                            <TouchableOpacity
+                                onPress={() => setShowBranchDropdown(!showBranchDropdown)}
+                                disabled={branchesLoading}
+                                className="bg-white border border-gray-200 rounded-xl px-4 h-12 flex-row items-center justify-between mb-4"
+                            >
+                                <Text className="text-[15px] text-black font-lato">
+                                    {branchesLoading ? 'Loading branches...' : (branchName || 'Select Branch')}
+                                </Text>
+                                <Ionicons name={showBranchDropdown ? "chevron-up" : "chevron-down"} size={20} color="#666" />
+                            </TouchableOpacity>
+
+                            {branchesError && (
+                                <Text className="text-red-500 text-[12px] mb-4 -mt-3">{branchesError}</Text>
+                            )}
+
+                            {showBranchDropdown && (
+                                <View className="absolute top-[56px] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-lg z-[91] overflow-hidden max-h-56">
+                                    <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                                        {branches.length === 0 ? (
+                                            <View className="px-4 py-3">
+                                                <Text className="text-[13px] font-lato text-gray-400">No branches available</Text>
+                                            </View>
+                                        ) : (
+                                            branches.map((item) => (
+                                                <TouchableOpacity
+                                                    key={item.id}
+                                                    onPress={() => {
+                                                        dispatch(setBranch({ id: item.id, name: item.city ? `${item.name} — ${item.city}` : item.name }));
+                                                        setShowBranchDropdown(false);
+                                                    }}
+                                                    className={`px-4 py-3 border-b border-gray-50`}
+                                                >
+                                                    <Text className={`text-[13px] font-lato ${branchId === item.id ? 'text-[#4A43EC]' : 'text-gray-800'}`}>
+                                                        {item.city ? `${item.name} — ${item.city}` : item.name}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))
+                                        )}
+                                    </ScrollView>
                                 </View>
                             )}
                         </View>

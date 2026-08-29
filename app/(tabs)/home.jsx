@@ -7,8 +7,8 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
-import { mockData } from "../../constants/mockData";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
+import Avatar from "../../components/Avatar";
 import { updateProject, addProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
 import { setInventoryLoading, setInventoryData, setInventoryError } from "../../store/slices/inventorySlice";
@@ -17,8 +17,6 @@ import { visitService } from "../../services/visitService";
 
 import { dealService } from "../../services/dealService";
 import { inventoryService } from "../../services/inventoryService";
-
-const profileImg = require("../../assets/images/user_profile.png");
 
 // Skeleton shimmer box
 const SkeletonBox = ({ width, height, borderRadius = 8, style }) => {
@@ -54,6 +52,8 @@ export default function Home() {
     const notifications = useSelector((state) => state.notifications?.list || []);
     const inventoryByProject = useSelector((state) => state.inventory.byProject);
     const inventoryLoading = useSelector((state) => state.inventory.loading);
+    const authUser = useSelector((state) => state.auth.user);
+    const isKycCompleted = useSelector((state) => state.auth.isKycCompleted);
     const [activeTab, setActiveTab] = useState("Overview");
 
     const [selectedProjectId, setSelectedProjectId] = useState("");
@@ -1116,9 +1116,12 @@ export default function Home() {
         }));
     };
 
-    const projectOptions = projectsList.length > 0
-        ? projectsList.map(p => ({ id: p.id, title: p.name, location: p.city }))
-        : projectsData;
+    // Only ever derive the dropdown from the real, currently-fetched project list
+    // (projectsList, from the API). projectsData (the Redux `projects` slice) is
+    // never reset on logout, so falling back to it here could show a previous
+    // account's projects to a developer who genuinely has none.
+    const projectOptions = projectsList.map(p => ({ id: p.id, title: p.name, location: p.city }));
+    const hasProjects = projectOptions.length > 0;
 
     // Merge API overview into the shape the UI expects
     const apiHeader = overviewData?.header;
@@ -1141,9 +1144,11 @@ export default function Home() {
         toBeReleased: formatAmount(apiFinancials.to_be_released),
     } : getProjectStats(selectedProject);
 
-    const displayUserName = apiUserProfile?.name || mockData.user.name;
-    const displayUserDate = apiUserProfile?.date_display || mockData.user.date;
-    const displayUserAvatar = apiUserProfile?.avatar_url || null;
+    const authUserName = [authUser?.first_name, authUser?.last_name].filter(Boolean).join(' ');
+    const displayUserName = apiUserProfile?.name || authUserName || "Welcome";
+    const displayUserDate = apiUserProfile?.date_display || new Date().toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const displayUserAvatar = apiUserProfile?.avatar_url || authUser?.avatar_url || null;
+    const displayUserVerified = apiUserProfile?.is_verified ?? isKycCompleted;
 
     const displayProjectTitle = apiHeader?.name || selectedProject?.title || "Select Project";
     const displayProjectLocation = apiHeader?.location || selectedProject?.location || "";
@@ -1332,7 +1337,7 @@ export default function Home() {
         <View className="flex-1 bg-white">
             <StatusBar style={activeTab === "Overview" ? "light" : "dark"} translucent backgroundColor="transparent" />
             <Modal
-                visible={isProjectDropdownOpen}
+                visible={isProjectDropdownOpen && hasProjects}
                 transparent
                 animationType="fade"
                 statusBarTranslucent
@@ -1419,10 +1424,11 @@ export default function Home() {
                                         onPress={() => router.push("/(tabs)/settings")}
                                         className="w-[46px] h-[46px] relative"
                                     >
-                                        <Image
-                                            source={profileImg}
-                                            className="w-[50px] h-[50px] rounded-full border-2 border-white"
-                                            resizeMode="cover"
+                                        <Avatar
+                                            uri={displayUserAvatar}
+                                            name={displayUserName}
+                                            className="w-[50px] h-[50px] rounded-full border-2 border-white bg-white/20"
+                                            textClassName="text-white text-lg font-lato-bold"
                                         />
                                     </TouchableOpacity>
                                     <View className="ml-3">
@@ -1432,7 +1438,7 @@ export default function Home() {
                                             ) : (
                                                 <>
                                                     <Text className="text-white text-[15px] font-lato-bold">{displayUserName}</Text>
-                                                    {(apiUserProfile?.is_verified ?? mockData.user.verified) && (
+                                                    {displayUserVerified && (
                                                         <MaterialIcons name="verified" size={14} color="#4ADE80" style={{ marginLeft: 4 }} />
                                                     )}
                                                 </>
@@ -1464,15 +1470,15 @@ export default function Home() {
                             <View className="flex-row items-center gap-2.5 mb-4" style={{ zIndex: 1000, elevation: 1000, position: "relative" }}>
                                 <View className="flex-1 relative z-50" style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}>
                                     <TouchableOpacity
-                                        activeOpacity={0.85}
-                                        onPress={() => setIsProjectDropdownOpen((current) => !current)}
+                                        activeOpacity={hasProjects ? 0.85 : 1}
+                                        onPress={() => hasProjects && setIsProjectDropdownOpen((current) => !current)}
                                         className="h-9 bg-white rounded-xl flex-row items-center px-3"
                                     >
-                                        <Ionicons name="chevron-down" size={16} color="#4A43EC" />
-                                        <Text className="flex-1 ml-2 text-[#1A1A1A] font-lato text-[12px]" numberOfLines={1}>
+                                        {hasProjects && <Ionicons name="chevron-down" size={16} color="#4A43EC" />}
+                                        <Text className={`flex-1 ${hasProjects ? 'ml-2' : ''} text-[#1A1A1A] font-lato text-[12px]`} numberOfLines={1}>
                                             {overviewLoading
                                                 ? <SkeletonBox width={120} height={10} borderRadius={5} />
-                                                : displayProjectTitle
+                                                : (hasProjects ? displayProjectTitle : "No projects yet")
                                             }
                                         </Text>
                                     </TouchableOpacity>
@@ -1605,17 +1611,19 @@ export default function Home() {
                             </TouchableOpacity>
                             <View className="relative flex-1 mx-3 items-center" style={{ zIndex: DROPDOWN_LAYER, elevation: DROPDOWN_LAYER }}>
                                 <TouchableOpacity
-                                    activeOpacity={0.85}
-                                    onPress={() => setIsProjectDropdownOpen((current) => !current)}
+                                    activeOpacity={hasProjects ? 0.85 : 1}
+                                    onPress={() => hasProjects && setIsProjectDropdownOpen((current) => !current)}
                                     className="flex-row items-center max-w-full"
                                 >
                                     <Text className="text-[#1A1A1A] text-lg font-lato-bold mr-1" numberOfLines={1}>
                                         {overviewLoading
                                             ? <SkeletonBox width={140} height={14} borderRadius={6} />
-                                            : displayProjectTitle
+                                            : (hasProjects ? displayProjectTitle : "No projects yet")
                                         }
                                     </Text>
-                                    <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
+                                    {hasProjects && (
+                                        <Ionicons name={isProjectDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color="#1A1A1A" />
+                                    )}
                                 </TouchableOpacity>
 
 
@@ -1648,6 +1656,19 @@ export default function Home() {
             >
                 {activeTab === "Overview" ? (
                     <View className="pt-2">
+                        {!hasProjects ? (
+                            <View className="mx-5 my-4 bg-white rounded-[20px] border border-dashed border-gray-200 items-center justify-center py-14 px-6">
+                                <Ionicons name="business-outline" size={32} color="#9CA3AF" />
+                                <Text className="mt-3 text-[13px] font-lato-bold text-gray-500 text-center">No projects yet</Text>
+                                <Text className="mt-1 text-[11px] font-lato text-gray-400 text-center">Add your first project to see its overview here.</Text>
+                                <TouchableOpacity
+                                    onPress={() => router.push("/add-project")}
+                                    className="mt-4 bg-[#4A43EC] rounded-xl px-5 py-2.5"
+                                >
+                                    <Text className="text-white text-[12px] font-lato-bold">Add Project</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (
                         <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
                             {overviewLoading ? (
                                 <>
@@ -1789,6 +1810,7 @@ export default function Home() {
                                 </>
                             )}
                         </View>
+                        )}
                     </View>
                 ) : activeTab === "Inventory" ? (
                     <View className="p-4">

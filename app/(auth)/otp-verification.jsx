@@ -14,6 +14,7 @@ import {
     verifyOtpThunk,
     registerThunk,
     loginThunk,
+    fetchDeveloperKyc,
 } from "../../store/slices/authSlice";
 
 const logo = require("../../assets/icons/app-icon.png");
@@ -33,6 +34,7 @@ export default function OtpVerification() {
         companyType,
         reraNumber,
         location,
+        branchId,
         loading,
         error,
     } = useSelector((state) => state.auth);
@@ -42,6 +44,8 @@ export default function OtpVerification() {
     useEffect(() => {
         dispatch(clearError());
         autoSubmittedRef.current = false;
+        const focusTimeout = setTimeout(() => inputs.current[0]?.focus(), 300);
+        return () => clearTimeout(focusTimeout);
     }, [dispatch]);
 
     const handleChange = (text, index) => {
@@ -94,6 +98,12 @@ export default function OtpVerification() {
             if (loginThunk.fulfilled.match(loginResult)) {
                 dispatch(clearOtp());
                 dispatch(setLoggedIn(true));
+                // isKycCompleted defaults to false and (tabs)/_layout.jsx hard-redirects
+                // to /kyc whenever it's false - without this, that redirect fired on
+                // every single login (even for already-approved developers) because
+                // nothing had fetched their real KYC status yet at that point. Wait for
+                // it here so the redirect gate sees accurate data before it evaluates.
+                await dispatch(fetchDeveloperKyc());
                 router.replace("/(tabs)/home");
             }
             return;
@@ -108,6 +118,7 @@ export default function OtpVerification() {
             company_type: companyType,
             rera_number: reraNumber,
             location,
+            branch_id: branchId,
         }));
 
         if (registerThunk.fulfilled.match(registerResult)) {
@@ -115,7 +126,7 @@ export default function OtpVerification() {
             dispatch(setLoggedIn(true));
             router.replace("/(tabs)/home");
         }
-    }, [otp, otpToken, otpFlow, firstName, lastName, companyName, companyType, reraNumber, location, dispatch]);
+    }, [otp, otpToken, otpFlow, firstName, lastName, companyName, companyType, reraNumber, location, branchId, dispatch]);
 
     // Auto-submit once all 6 digits are present (covers paste + OS autofill).
     useEffect(() => {

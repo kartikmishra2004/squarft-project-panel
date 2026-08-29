@@ -68,6 +68,7 @@ export const authService = {
         company_type: userData.company_type,
         rera_number: userData.rera_number,
         location: userData.location,
+        branch_id: userData.branch_id,
         ...pushContext,
       });
 
