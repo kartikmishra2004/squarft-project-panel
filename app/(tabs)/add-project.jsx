@@ -252,10 +252,10 @@ export default function AddProject() {
                     area:           variant.area_sqft != null ? String(variant.area_sqft) : '',
                     areaUnit:       variant.area_unit || unit?.area_unit || 'Sq-ft',
                     price:          variant.selling_price != null ? String(variant.selling_price) : '',
-                    images:         normalizeImageList(variant.images),
+                    images:         mapResumedVariantImages(variant.images),
                     amenities:      parseJsonField(variant.amenities).length > 0 ? parseJsonField(variant.amenities) : [''],
                     extraCharges:   parseJsonField(variant.extra_charges).length > 0 ? parseJsonField(variant.extra_charges) : [{ title: '', amount: '' }],
-                    brochure:       variant.brochure_url ? { uri: variant.brochure_url, name: 'Brochure', mimeType: '', size: 0 } : null,
+                    brochure:       mapResumedBrochure(variant.brochure_url),
                     propertyNumber: unit?.unit_number || '',
                     hasShop:        false,
                 };
@@ -297,8 +297,8 @@ export default function AddProject() {
                                 areaUnit: variant.area_unit || 'Sq-ft',
                                 price: variant.selling_price != null ? String(variant.selling_price) : '',
                                 color: RESUME_COLORS[configs.length % RESUME_COLORS.length],
-                                images: normalizeImageList(variant.images),
-                                brochure: variant.brochure_url ? { uri: variant.brochure_url, name: 'Brochure', mimeType: '', size: 0 } : null,
+                                images: mapResumedVariantImages(variant.images),
+                                brochure: mapResumedBrochure(variant.brochure_url),
                                 amenities: parseJsonField(variant.amenities).filter(Boolean).length > 0
                                     ? parseJsonField(variant.amenities).filter(Boolean) : [''],
                                 extra_charges: parseJsonField(variant.extra_charges).length > 0
@@ -447,6 +447,10 @@ export default function AddProject() {
                 // is_approved=false with no expected_time = DB default, skip to avoid showing "No" on untouched approvals
                 const resolveApprovalStatus = (ap) => {
                     if (!ap) return '';
+                    // Exact status preserved server-side (only RERA/Building
+                    // Permission can be "Not Applicable" — everything else is a
+                    // plain Yes/No, always safely covered by the fallback below).
+                    if (ap.raw_status) return ap.raw_status;
                     if (ap.is_approved === true) return 'Yes';
                     if (ap.is_approved === false && ap.expected_time) return 'No';
                     return ''; // not set by user
@@ -454,7 +458,7 @@ export default function AddProject() {
 
                 if (approvals.tncp) dispatch(updateStep4Approval({ approvalKey: 'tncp', data: { status: resolveApprovalStatus(approvals.tncp), expectedTime: approvals.tncp.expected_time || '', approvalNumber: approvals.tncp.referenceNumber || '', approvalDate: approvals.tncp.approvalDate || '', documents: approvals.tncp.documents || [] } }));
                 if (approvals.municipal) dispatch(updateStep4Approval({ approvalKey: 'buildingPermission', data: { status: resolveApprovalStatus(approvals.municipal), expectedTime: approvals.municipal.expected_time || '', permissionNumber: approvals.municipal.referenceNumber || '', permissionDate: approvals.municipal.approvalDate || '', documents: approvals.municipal.documents || [] } }));
-                if (approvals.rera) dispatch(updateStep4Approval({ approvalKey: 'rera', data: { status: resolveApprovalStatus(approvals.rera), registrationNumber: approvals.rera.rera_id || '', expectedTime: approvals.rera.expected_time || '', registrationDate: approvals.rera.approvalDate || '', documents: approvals.rera.documents || [] } }));
+                if (approvals.rera) dispatch(updateStep4Approval({ approvalKey: 'rera', data: { status: resolveApprovalStatus(approvals.rera), registrationNumber: approvals.rera.rera_id || '', expectedTime: approvals.rera.expected_time || '', registrationDate: approvals.rera.approvalDate || '', documents: approvals.rera.documents || [], reasonNotAvailable: approvals.rera.reason_not_available || '' } }));
                 if (approvals.diversion) dispatch(updateStep4Approval({ approvalKey: 'diversion', data: { status: resolveApprovalStatus(approvals.diversion), expectedTime: approvals.diversion.expected_time || '', referenceNumber: approvals.diversion.referenceNumber || '', approvalDate: approvals.diversion.approvalDate || '', documents: approvals.diversion.documents || [] } }));
                 if (approvals.developmentPermission) dispatch(updateStep4Approval({ approvalKey: 'developmentPermission', data: { status: resolveApprovalStatus(approvals.developmentPermission), expectedTime: approvals.developmentPermission.expected_time || '', permissionNumber: approvals.developmentPermission.referenceNumber || '', permissionDate: approvals.developmentPermission.approvalDate || '', documents: approvals.developmentPermission.documents || [] } }));
             }
@@ -598,10 +602,10 @@ export default function AddProject() {
                 dispatch(updateStep6({
                     images: savedMedia
                         .filter(m => m.media_type === 'image')
-                        .map(m => ({ uri: m.url, isRemote: true })),
+                        .map(m => ({ uri: m.url, key: m.key, isRemote: true })),
                     documents: savedMedia
                         .filter(m => m.media_type === 'document')
-                        .map(m => ({ uri: m.url, name: m.label || 'Document', isRemote: true })),
+                        .map(m => ({ uri: m.url, key: m.key, name: m.label || 'Document', isRemote: true })),
                 }));
             }
 
@@ -650,8 +654,8 @@ export default function AddProject() {
             errors.state = 'State is required';
         }
 
-        if (!values.pincode || !/^[0-9]{5,6}$/.test(values.pincode.trim())) {
-            errors.pincode = 'Enter a valid pincode (5-6 digits)';
+        if (!values.pincode || !/^[0-9]{6}$/.test(values.pincode.trim())) {
+            errors.pincode = 'Enter a valid 6-digit pincode';
         }
 
         const nameValidator = (v) => v && v.trim().length >= 2;
@@ -672,7 +676,28 @@ export default function AddProject() {
         return { valid: Object.keys(errors).length === 0, errors };
     };
 
-    const handleNext = async () => {
+    const handleNext = async (opts) => {
+        const saveOnly = opts?.save === true;
+        // Record exactly which step to land on next time this draft is resumed:
+        // the step just finished (Next) or the step the user stayed on (Save Draft) —
+        // never silently skipped ahead, so "Continue draft" always returns them
+        // to exactly where they stopped.
+        const finishStep = async (nextStep, pid = projectId) => {
+            const resumeStep = saveOnly ? currentStep : nextStep;
+            if (pid) {
+                try {
+                    await projectFormApi.updateResumeStep(pid, resumeStep);
+                } catch (error) {
+                    console.log('[SAVE DRAFT] Failed to record resume step:', error);
+                }
+            }
+            if (saveOnly) {
+                alert('Draft saved.');
+            } else {
+                dispatch(setStep(nextStep));
+            }
+        };
+
         if (currentStep === 1) {
             const { valid, errors } = validateStep1Fields(step1);
             if (!valid) {
@@ -683,7 +708,11 @@ export default function AddProject() {
 
             // If draft already created (user went back), skip re-creating
             if (projectId) {
-                dispatch(setStep(2));
+                if (saveOnly) {
+                    alert('This step is already saved.');
+                } else {
+                    dispatch(setStep(2));
+                }
                 return;
             }
 
@@ -701,7 +730,7 @@ export default function AddProject() {
                     responsible_person_contact: step1.responsiblePersonContact,
                 });
                 dispatch(setProjectId(res.data.data.project_id));
-                dispatch(setStep(2));
+                await finishStep(2, res.data.data.project_id);
             } catch (error) {
                 const msg = error.response?.data?.message || "Failed to save project. Please try again.";
                 setStep1Errors({ api: msg });
@@ -723,7 +752,7 @@ export default function AddProject() {
                     sub_type: t.subType,
                 }));
                 await projectFormApi.configurePropertyTypes(projectId, { property_types });
-                dispatch(setStep(3));
+                await finishStep(3);
             } catch (error) {
                 console.error("Step 2 API error:", error);
                 const msg = error.response?.data?.message || "Failed to save property types. Please try again.";
@@ -736,7 +765,7 @@ export default function AddProject() {
 
         if (currentStep === 3) {
             if (!projectId) {
-                dispatch(setStep(4));
+                if (!saveOnly) dispatch(setStep(4));
                 return;
             }
             try {
@@ -781,10 +810,10 @@ export default function AddProject() {
                                     property_type:    type.mainType,
                                     property_subtype: type.subType,
                                     listing_type:     'buy',
-                                    images:           blueprint.images || [],
+                                    images:           (blueprint.images || []).map(extractMediaKey).filter(Boolean),
                                     amenities:        (blueprint.amenities || []).filter(Boolean),
                                     extra_charges:    (blueprint.extraCharges || []).filter(e => e.title),
-                                    brochure_url:     blueprint.brochure || null,
+                                    brochure_url:     extractMediaKey(blueprint.brochure),
                                     floors:           sectionFloors,
                                     units_per_floor:  sectionUnitsPerFloor,
                                 };
@@ -818,7 +847,7 @@ export default function AddProject() {
                     })
                 );
 
-                dispatch(setStep(4));
+                await finishStep(4);
             } catch (error) {
                 console.error("Step 3 API error:", error);
                 const msg = error.response?.data?.message || "Failed to save unit details. Please try again.";
@@ -832,23 +861,30 @@ export default function AddProject() {
         if (currentStep < 6) {
             // Step 4 Next → call step4-finalize
             if (currentStep === 4) {
-                if (!projectId) { dispatch(setStep(5)); return; }
+                if (!projectId) { if (!saveOnly) dispatch(setStep(5)); return; }
                 try {
                     setIsSubmitting(true);
 
+                    // referenceNumber/approvalDate/documents are always preserved
+                    // regardless of the current status radio — switching an
+                    // approval to "No"/"Not Applicable" after already uploading a
+                    // document or filling in a reference number must never
+                    // silently wipe that data out from under the user.
                     const buildApproval = (s, extra = {}) => {
-                        const { _allowEmptyTime, ...restExtra } = extra;
-                        if (!s.status || s.status === 'Not Applicable') {
-                            return { is_approved: false, expected_time: null, ...restExtra };
-                        }
                         const isApproved = s.status === 'Yes';
+                        const isKnown = s.status === 'Yes' || s.status === 'No';
                         return {
                             is_approved: isApproved,
-                            expected_time: isApproved ? null : (s.expectedTime || null),
+                            // Raw status string ("Yes" | "No" | "Not Applicable"), kept
+                            // alongside is_approved so RERA/Building Permission's
+                            // "Not Applicable" choice survives resume instead of being
+                            // indistinguishable from "never touched".
+                            status: s.status || null,
+                            expected_time: (isKnown && !isApproved) ? (s.expectedTime || null) : null,
                             referenceNumber: s.referenceNumber || s.approvalNumber || s.permissionNumber || null,
                             approvalDate: s.approvalDate || s.registrationDate || s.permissionDate || null,
                             documents: s.documents || [],
-                            ...restExtra,
+                            ...extra,
                         };
                     };
 
@@ -856,6 +892,7 @@ export default function AddProject() {
                     const diversionApproval = buildApproval(step4.approvals.diversion);
                     const reraApproval = buildApproval(step4.approvals.rera, {
                         rera_id: step4.approvals.rera.registrationNumber || null,
+                        reason_not_available: step4.approvals.rera.reasonNotAvailable || null,
                     });
                     const devPermApproval = buildApproval(step4.approvals.developmentPermission);
                     const municipalApproval = buildApproval(step4.approvals.buildingPermission);
@@ -885,7 +922,7 @@ export default function AddProject() {
                         bank_account: null,
                         approvals,
                     });
-                    dispatch(setStep(5));
+                    await finishStep(5);
                 } catch (error) {
                     console.error("Step 4 API error:", error);
                     const msg = error.response?.data?.message || "Failed to save approvals. Please try again.";
@@ -898,7 +935,7 @@ export default function AddProject() {
 
             // Step 5 Next → call step5-finalize
             if (currentStep === 5) {
-                if (!projectId) { dispatch(setStep(6)); return; }
+                if (!projectId) { if (!saveOnly) dispatch(setStep(6)); return; }
                 try {
                     setIsSubmitting(true);
                     await projectFormApi.finalizeStep5(projectId, {
@@ -966,18 +1003,22 @@ export default function AddProject() {
                             financial_ownership_remarks: step5.financialOwnershipRemarks || null,
                         },
                     });
-                    dispatch(setStep(6));
+                    await finishStep(6);
                 } catch (error) {
                     console.error("Step 5 API error:", error);
-                    // Non-blocking — proceed to step 6
-                    dispatch(setStep(6));
+                    // Non-blocking — proceed to step 6 (unless the user only asked to save)
+                    if (saveOnly) {
+                        alert('Some Step 5 details failed to save. Please try again.');
+                    } else {
+                        dispatch(setStep(6));
+                    }
                 } finally {
                     setIsSubmitting(false);
                 }
                 return;
             }
 
-            dispatch(setStep(currentStep + 1));
+            if (!saveOnly) dispatch(setStep(currentStep + 1));
         } else {
             // Step 6 Submit → upload images then call step6-finalize
             if (!projectId) {
@@ -988,13 +1029,15 @@ export default function AddProject() {
             try {
                 setIsSubmitting(true);
 
-                // Upload each image as multipart and collect returned URLs
+                // Upload each new image/document to S3 and collect the returned
+                // permanent file keys. Items restored from a resumed draft are
+                // already uploaded (isRemote + key set) and are reused as-is —
+                // never re-sent as their temporary signed preview URL.
                 const mediaItems = [];
                 for (let i = 0; i < step6.images.length; i++) {
                     const img = step6.images[i];
-                    // If already a remote URL (re-upload scenario), use as-is
-                    if (img.uri?.startsWith('http')) {
-                        mediaItems.push({ media_type: 'image', url: img.uri, is_cover: i === 0, sort_order: i });
+                    if (img.isRemote && img.key) {
+                        mediaItems.push({ media_type: 'image', url: img.key, is_cover: i === 0, sort_order: i });
                         continue;
                     }
                     const formData = new FormData();
@@ -1004,24 +1047,22 @@ export default function AddProject() {
                         type: img.mimeType || 'image/jpeg',
                     });
                     const uploadRes = await projectFormApi.uploadMedia(projectId, formData);
-                    const url = uploadRes.data?.data?.url || uploadRes.data?.url;
-                    if (url) {
-                        mediaItems.push({ media_type: 'image', url, is_cover: i === 0, sort_order: i });
+                    const key = uploadRes.data?.data?.key;
+                    if (key) {
+                        mediaItems.push({ media_type: 'image', url: key, is_cover: i === 0, sort_order: i });
                     }
                 }
 
-                await projectFormApi.finalizeStep6(projectId, { media: mediaItems });
-
-                // Upload documents
                 for (let i = 0; i < (step6.documents || []).length; i++) {
                     const doc = step6.documents[i];
-                    if (doc.uri?.startsWith('http') || doc.url?.startsWith('http')) {
+                    const sortOrder = step6.images.length + i;
+                    if (doc.isRemote && doc.key) {
                         mediaItems.push({
                             media_type: 'document',
-                            url: doc.uri || doc.url,
+                            url: doc.key,
                             label: doc.name || null,
                             is_cover: false,
-                            sort_order: step6.images.length + i,
+                            sort_order: sortOrder,
                         });
                         continue;
                     }
@@ -1032,19 +1073,27 @@ export default function AddProject() {
                         type: doc.mimeType || 'application/pdf',
                     });
                     const uploadRes = await projectFormApi.uploadMedia(projectId, formData);
-                    const url = uploadRes.data?.data?.url || uploadRes.data?.url;
-                    if (url) {
+                    const key = uploadRes.data?.data?.key;
+                    if (key) {
                         mediaItems.push({
                             media_type: 'document',
-                            url,
+                            url: key,
                             label: doc.name || null,
                             is_cover: false,
-                            sort_order: step6.images.length + i,
+                            sort_order: sortOrder,
                         });
                     }
                 }
 
-                await projectFormApi.finalizeStep6(projectId, { media: mediaItems });
+                // Saving a draft on Step 6 syncs the media as-is without
+                // publishing (status stays draft/in-progress); only the real
+                // Submit action flips the project to active.
+                await projectFormApi.finalizeStep6(projectId, { media: mediaItems, publish: !saveOnly });
+
+                if (saveOnly) {
+                    alert('Draft saved.');
+                    return;
+                }
 
                 dispatch(addProject({
                     id: projectId,
@@ -1087,7 +1136,8 @@ export default function AddProject() {
                 if (configs.length === 0) return true;
                 
                 return configs.some(unit => {
-                    const baseFields = !unit.area || !unit.propertyNumber;
+                    const priceValue = parseFloat(String(unit.price || '').replace(/,/g, ''));
+                    const baseFields = !unit.area || !unit.propertyNumber || !unit.price || !(priceValue > 0);
                     if (baseFields) return true;
 
                     if (type.subType === 'apartment') {
@@ -1165,31 +1215,62 @@ export default function AddProject() {
                                 <Ionicons name="arrow-back" size={20} color="white" />
                             </TouchableOpacity>
                             <Text className="text-white text-base font-lato-bold">Add Project</Text>
-                            <TouchableOpacity onPress={openDrafts} className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-white/20">
-                                <Ionicons name="document-text-outline" size={14} color="white" />
-                                <Text className="text-white text-xs font-lato-bold">Drafts</Text>
-                            </TouchableOpacity>
+                            <View className="flex-row items-center gap-2">
+                                <TouchableOpacity
+                                    onPress={() => handleNext({ save: true })}
+                                    disabled={isSubmitting}
+                                    className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-white/20"
+                                    style={{ opacity: isSubmitting ? 0.5 : 1 }}
+                                >
+                                    {isSubmitting ? (
+                                        <ActivityIndicator size="small" color="white" />
+                                    ) : (
+                                        <Ionicons name="save-outline" size={14} color="white" />
+                                    )}
+                                    <Text className="text-white text-xs font-lato-bold">Save</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={openDrafts} className="flex-row items-center gap-1 px-2 py-1 rounded-lg bg-white/20">
+                                    <Ionicons name="document-text-outline" size={14} color="white" />
+                                    <Text className="text-white text-xs font-lato-bold">Drafts</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
 
-                        {/* Step Indicator */}
+                        {/* Step Indicator — a completed (earlier) step can be tapped to
+                            jump straight back to it; the current/upcoming steps can't,
+                            since those still need their own data filled in first. */}
                         <View className="flex-row justify-between items-start mt-8">
-                            {steps.map((step) => (
-                                <View key={step.id} className="items-center" style={{ width: (width - 40) / 6 }}>
-                                    <View
-                                        className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${currentStep === step.id ? 'bg-white' : 'bg-transparent border border-white/40'
-                                            }`}
+                            {steps.map((step) => {
+                                const isPast = step.id < currentStep;
+                                return (
+                                    <TouchableOpacity
+                                        key={step.id}
+                                        disabled={!isPast}
+                                        onPress={() => dispatch(setStep(step.id))}
+                                        activeOpacity={isPast ? 0.6 : 1}
+                                        className="items-center"
+                                        style={{ width: (width - 40) / 6 }}
                                     >
-                                        <Text className={`text-xs font-lato-bold ${currentStep === step.id ? 'text-[#4A43EC]' : 'text-white/60'
-                                            }`}>
-                                            {step.id}
+                                        <View
+                                            className={`w-7 h-7 rounded-full items-center justify-center mb-1.5 ${currentStep === step.id ? 'bg-white' : isPast ? 'bg-white/25 border border-white/70' : 'bg-transparent border border-white/40'
+                                                }`}
+                                        >
+                                            {isPast ? (
+                                                <Ionicons name="checkmark" size={14} color="white" />
+                                            ) : (
+                                                <Text className={`text-xs font-lato-bold ${currentStep === step.id ? 'text-[#4A43EC]' : 'text-white/60'
+                                                    }`}>
+                                                    {step.id}
+                                                </Text>
+                                            )}
+                                        </View>
+                                        <Text className={`text-[8px] text-center font-lato-medium ${currentStep === step.id ? 'text-white' : isPast ? 'text-white/90' : 'text-white/60'
+                                            }`} numberOfLines={1}>
+                                            {step.title}
                                         </Text>
-                                    </View>
-                                    <Text className={`text-[8px] text-center font-lato-medium ${currentStep === step.id ? 'text-white' : 'text-white/60'
-                                        }`} numberOfLines={1}>
-                                        {step.title}
-                                    </Text>
-                                </View>
-                            ))}
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
                     </View>
 
@@ -1785,16 +1866,43 @@ const normalizeImageSource = (value) => {
     return null;
 };
 
-const normalizeImageList = (value) => {
-    if (!value) return [];
-    if (Array.isArray(value)) {
-        return value
-            .map((item) => normalizeImageSource(item))
-            .filter(Boolean)
-            .map((item) => item.uri);
-    }
-    const normalized = normalizeImageSource(value);
-    return normalized ? [normalized.uri] : [];
+// Resumed variant images come back from the backend as [{key, url, is_cover}]
+// where `url` is a temporary signed preview and `key` is the permanent S3
+// object key. Keep both: `uri` renders the thumbnail, `key` is what actually
+// gets re-sent to the backend on save (never the temporary signed url).
+const mapResumedVariantImages = (images) => {
+    if (!Array.isArray(images)) return [];
+    return images
+        .filter((img) => img && img.key)
+        .map((img) => ({ uri: img.url, key: img.key }));
+};
+
+const mapResumedBrochure = (brochure) => {
+    if (!brochure || !brochure.key) return null;
+    return { uri: brochure.url, name: 'Brochure', mimeType: '', size: 0, key: brochure.key };
+};
+
+// A variant's `images`/`brochure` items are either a freshly-uploaded
+// { uri, key } object or (legacy data) a bare key string — always resolve to
+// the permanent key string the backend expects, never a local/preview uri.
+const extractMediaKey = (item) => {
+    if (!item) return null;
+    if (typeof item === 'string') return item;
+    return item.key || null;
+};
+
+// Uploads one picked asset to S3 via the project-media endpoint and returns
+// the permanent key. Throws on failure — callers decide how to surface it.
+const uploadAssetToServer = async (projectId, asset, mediaType) => {
+    const formData = new FormData();
+    formData.append('file', {
+        uri: asset.uri,
+        name: asset.name || asset.fileName || `${mediaType}_${Date.now()}`,
+        type: asset.mimeType || asset.type || (mediaType === 'image' ? 'image/jpeg' : 'application/pdf'),
+    });
+    formData.append('media_type', mediaType);
+    const res = await projectFormApi.uploadMedia(projectId, formData);
+    return res.data?.data?.key || null;
 };
 
 // --- Step 3 Component ---
@@ -1894,7 +2002,7 @@ function Step3() {
 
     const handleUpdateDimensions = (field, value) => {
         const parsed = parseInt(value);
-        const val = isNaN(parsed) ? 0 : parsed;
+        const val = isNaN(parsed) || parsed < 0 ? 0 : parsed;
         handleUpdateBuilder(prev => ({
             ...prev,
             sections: prev.sections.map(sec => {
@@ -2041,6 +2149,11 @@ function Step3() {
             return;
         }
 
+        if (!projectId) {
+            alert('Please complete Step 1 before adding images.');
+            return;
+        }
+
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsMultipleSelection: true,
@@ -2048,22 +2161,38 @@ function Step3() {
             quality: 0.8,
         });
 
-        if (!result.canceled) {
-            const nextImages = [...currentImages, ...result.assets.map(asset => asset.uri)].slice(0, 5);
+        if (result.canceled) return;
+
+        try {
+            const uploaded = await Promise.all(
+                result.assets.map(async (asset) => {
+                    const key = await uploadAssetToServer(projectId, asset, 'image');
+                    return key ? { uri: asset.uri, key } : null;
+                })
+            );
+            const nextImages = [...currentImages, ...uploaded.filter(Boolean)].slice(0, 5);
             handleUpdateConfigField(cfgId, 'images', nextImages);
+        } catch (error) {
+            console.error('Variant image upload error:', error);
+            alert('Failed to upload one or more images. Please try again.');
         }
     };
 
     const handleRemoveVariantImage = (cfgId, imageUri) => {
         const config = activeSection?.configs?.find(c => c.id === cfgId);
         if (!config) return;
-        const nextImages = (config.images || []).filter(uri => uri !== imageUri);
+        const nextImages = (config.images || []).filter(img => img !== imageUri);
         handleUpdateConfigField(cfgId, 'images', nextImages);
     };
 
     const handlePickVariantBrochure = async (cfgId) => {
         const config = activeSection?.configs?.find(c => c.id === cfgId);
         if (!config) return;
+
+        if (!projectId) {
+            alert('Please complete Step 1 before adding a brochure.');
+            return;
+        }
 
         const result = await DocumentPicker.getDocumentAsync({
             type: [
@@ -2075,14 +2204,22 @@ function Step3() {
             copyToCacheDirectory: true
         });
 
-        if (!result.canceled && result.assets?.[0]) {
-            const brochure = result.assets[0];
+        if (result.canceled || !result.assets?.[0]) return;
+
+        const brochure = result.assets[0];
+        try {
+            const key = await uploadAssetToServer(projectId, brochure, 'document');
+            if (!key) throw new Error('Upload did not return a file key.');
             handleUpdateConfigField(cfgId, 'brochure', {
                 name: brochure.name || 'Brochure',
                 uri: brochure.uri,
                 mimeType: brochure.mimeType || '',
                 size: brochure.size || 0,
+                key,
             });
+        } catch (error) {
+            console.error('Variant brochure upload error:', error);
+            alert('Failed to upload the brochure. Please try again.');
         }
     };
 
@@ -3413,13 +3550,35 @@ const MultiCheckboxGroup = ({ label, options, values, onChange }) => {
 };
 
 const DocumentUploadButton = ({ label, documents, onDocumentsPicked }) => {
+    const projectId = useSelector((state) => state.project.projectId);
+    const [isUploading, setIsUploading] = useState(false);
+
     const pickDocuments = async () => {
+        if (!projectId) {
+            alert('Please complete Step 1 before adding documents.');
+            return;
+        }
+
         const result = await DocumentPicker.getDocumentAsync({
             type: "*/*",
             multiple: true,
         });
-        if (!result.canceled) {
-            onDocumentsPicked([...(documents || []), ...result.assets]);
+        if (result.canceled) return;
+
+        setIsUploading(true);
+        try {
+            const uploaded = await Promise.all(
+                result.assets.map(async (asset) => {
+                    const key = await uploadAssetToServer(projectId, asset, 'document');
+                    return key ? { name: asset.name, uri: asset.uri, mimeType: asset.mimeType || '', size: asset.size || 0, key } : null;
+                })
+            );
+            onDocumentsPicked([...(documents || []), ...uploaded.filter(Boolean)]);
+        } catch (error) {
+            console.error('Document upload error:', error);
+            alert('Failed to upload one or more documents. Please try again.');
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -3464,11 +3623,13 @@ const DocumentUploadButton = ({ label, documents, onDocumentsPicked }) => {
             ))}
             <TouchableOpacity
                 onPress={pickDocuments}
+                disabled={isUploading}
                 className="bg-[#F4F7FF] border border-dashed border-[#4A43EC]/30 rounded-2xl py-4 items-center justify-center"
+                style={{ opacity: isUploading ? 0.6 : 1 }}
             >
                 <Ionicons name="document-attach-outline" size={20} color="#4A43EC" />
                 <Text className="text-xs font-lato-bold text-[#4A43EC] mt-2">
-                    {(documents || []).length > 0 ? 'Add More Documents' : 'Upload Document'}
+                    {isUploading ? 'Uploading...' : (documents || []).length > 0 ? 'Add More Documents' : 'Upload Document'}
                 </Text>
             </TouchableOpacity>
         </View>

@@ -96,6 +96,7 @@ export const projectFormApi = {
     finalizeStep4: (projectId, data) => api.put(`/api/v1/project-panel/form/${projectId}/step4-finalize`, data),
     finalizeStep5: (projectId, data) => api.put(`/api/v1/project-panel/form/${projectId}/step5-finalize`, data),
     finalizeStep6: (projectId, data) => api.put(`/api/v1/project-panel/form/${projectId}/step6-finalize`, data),
+    updateResumeStep: (projectId, step) => api.put(`/api/v1/project-panel/form/${projectId}/resume-step`, { step }),
     uploadMedia: (projectId, formData) => api.post(
         `/api/v1/project-panel/form/${projectId}/media`,
         formData,

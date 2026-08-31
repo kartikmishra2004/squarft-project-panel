@@ -5,10 +5,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { StatusBar } from "expo-status-bar";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
 import ProjectDetailModal from "../../components/ProjectDetailModal";
 import Avatar from "../../components/Avatar";
+import ImageLightbox from "../../components/ImageLightbox";
 import { updateProject, addProject } from "../../store/slices/projectsSlice";
 import { addNotification } from "../../store/slices/notificationSlice";
 import { setInventoryLoading, setInventoryData, setInventoryError } from "../../store/slices/inventorySlice";
@@ -58,6 +59,7 @@ export default function Home() {
 
     const [selectedProjectId, setSelectedProjectId] = useState("");
     const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+    const [isImageLightboxVisible, setIsImageLightboxVisible] = useState(false);
     const [isProjectDetailVisible, setIsProjectDetailVisible] = useState(false);
     const [selectedDeal, setSelectedDeal] = useState(null);
     const [isInventoryEditVisible, setIsInventoryEditVisible] = useState(false);
@@ -210,8 +212,6 @@ export default function Home() {
         return firstImage?.uri ? { uri: firstImage.uri } : null;
     };
     const projectImageSource = getProjectImageSource(selectedProject);
-    const projectImageCount = selectedProject.projectImages?.length || 0;
-    const projectImagesLabel = projectImageCount > 0 ? `1/${projectImageCount}` : "0/0";
 
     const updateInventoryUnit = (target, updater) => {
         const project = projectsData.find(item => item.id === selectedProjectId);
@@ -567,10 +567,15 @@ export default function Home() {
         }
     }, []);
 
-    // Load backend projects on mount
-    useEffect(() => {
-        fetchBackendProjects();
-    }, [fetchBackendProjects]);
+    // Reload the projects list every time Home regains focus — not just on
+    // mount — so a project published via Add Project (which navigates
+    // home -> add-project -> success -> home without remounting Home)
+    // actually shows up without the user having to restart the app.
+    useFocusEffect(
+        useCallback(() => {
+            fetchBackendProjects();
+        }, [fetchBackendProjects])
+    );
 
     // Get the backend project UUID for the currently selected project
     const getBackendProjectId = useCallback(() => {
@@ -1184,7 +1189,7 @@ export default function Home() {
 
     // Cover image from API media or fallback to Redux
     const displayCoverImage = apiMedia.length > 0 ? { uri: apiMedia[0] } : getProjectImageSource(selectedProject);
-    const displayImageCount = apiMedia.length > 0 ? `1/${apiMedia.length}` : projectImagesLabel;
+    const lightboxImages = apiMedia.length > 0 ? apiMedia : (displayCoverImage ? [displayCoverImage.uri] : []);
 
     // ── Inventory from real API (falls back to Redux mock when not yet loaded) ──
     const backendProjectId = getBackendProjectId();
@@ -1635,19 +1640,21 @@ export default function Home() {
             </Animated.View>
 
             {/* Tabs Bar */}
-            <View className="flex-row justify-around border-b border-gray-100 bg-white" style={{ paddingHorizontal: 10, zIndex: 0, elevation: 0 }}>
-                {tabs.map((tab) => (
-                    <TouchableOpacity
-                        key={tab}
-                        onPress={() => handleTabPress(tab)}
-                        className={`pb-2 px-1.5 ${activeTab === tab ? "border-b-2 border-[#4A43EC]" : ""}`}
-                    >
-                        <Text className={`${activeTab === tab ? "text-[#4A43EC] font-lato-bold" : "text-gray-400 font-lato"} text-[11px]`}>
-                            {tab}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
+            {hasProjects && (
+                <View className="flex-row justify-around border-b border-gray-100 bg-white" style={{ paddingHorizontal: 10, zIndex: 0, elevation: 0 }}>
+                    {tabs.map((tab) => (
+                        <TouchableOpacity
+                            key={tab}
+                            onPress={() => handleTabPress(tab)}
+                            className={`pb-2 px-1.5 ${activeTab === tab ? "border-b-2 border-[#4A43EC]" : ""}`}
+                        >
+                            <Text className={`${activeTab === tab ? "text-[#4A43EC] font-lato-bold" : "text-gray-400 font-lato"} text-[11px]`}>
+                                {tab}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
 
             <ScrollView
                 className="flex-1"
@@ -1657,19 +1664,21 @@ export default function Home() {
                 {activeTab === "Overview" ? (
                     <View className="pt-2">
                         {!hasProjects ? (
-                            <View className="mx-5 my-4 bg-white rounded-[20px] border border-dashed border-gray-200 items-center justify-center py-14 px-6">
-                                <Ionicons name="business-outline" size={32} color="#9CA3AF" />
-                                <Text className="mt-3 text-[13px] font-lato-bold text-gray-500 text-center">No projects yet</Text>
-                                <Text className="mt-1 text-[11px] font-lato text-gray-400 text-center">Add your first project to see its overview here.</Text>
+                            <View className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 items-center justify-center py-12 px-6">
+                                <View className="w-14 h-14 rounded-full bg-[#EEF0FF] items-center justify-center">
+                                    <Ionicons name="business-outline" size={26} color="#4A43EC" />
+                                </View>
+                                <Text className="mt-4 text-[14px] font-lato-bold text-gray-700 text-center">No projects yet</Text>
+                                <Text className="mt-1 text-[11.5px] font-lato text-gray-400 text-center leading-5">Add your first project to see its overview here.</Text>
                                 <TouchableOpacity
                                     onPress={() => router.push("/add-project")}
-                                    className="mt-4 bg-[#4A43EC] rounded-xl px-5 py-2.5"
+                                    className="mt-5 bg-[#4A43EC] rounded-xl px-6 py-2.5"
                                 >
                                     <Text className="text-white text-[12px] font-lato-bold">Add Project</Text>
                                 </TouchableOpacity>
                             </View>
                         ) : (
-                        <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden">
+                        <View key={selectedProject.id} className="mx-5 my-4 bg-white rounded-[20px] border border-gray-200 shadow-sm overflow-hidden">
                             {overviewLoading ? (
                                 <>
                                     {/* Image skeleton */}
@@ -1718,42 +1727,44 @@ export default function Home() {
                                 </>
                             ) : (
                                 <>
-                                <View className="flex-row h-36">
-                                    <View className="flex-[2] relative">
-                                        {displayCoverImage ? (
-                                            <Image source={displayCoverImage} className="w-full h-full" resizeMode="cover" />
-                                        ) : (
-                                            <View className="w-full h-full bg-[#F4F7FF] items-center justify-center px-4">
-                                                <Ionicons name="image-outline" size={26} color="#9CA3AF" />
-                                                <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
-                                            </View>
-                                        )}
-                                        {displayCoverImage && (
-                                            <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
-                                                <Text className="text-white text-[8px] font-lato">{selectedProject.developer}</Text>
-                                            </View>
-                                        )}
-                                    </View>
-                                    <View className="flex-1 ml-0.5 bg-gray-200 relative">
-                                        {displayCoverImage ? (
-                                            <Image source={displayCoverImage} className="w-full h-full opacity-60" resizeMode="cover" />
-                                        ) : (
-                                            <View className="w-full h-full bg-gray-100 items-center justify-center px-2">
-                                                <Ionicons name="image-outline" size={20} color="#9CA3AF" />
-                                                <Text className="mt-1 text-[8px] font-lato-bold text-gray-400 text-center">No Image</Text>
-                                            </View>
-                                        )}
-                                        <View className="absolute bottom-2 right-2 bg-black/50 px-1.5 py-0.5 rounded-md">
-                                            <Text className="text-white text-[8px] font-lato-bold">{displayImageCount}</Text>
+                                <TouchableOpacity
+                                    activeOpacity={displayCoverImage ? 0.9 : 1}
+                                    disabled={!displayCoverImage}
+                                    onPress={() => setIsImageLightboxVisible(true)}
+                                    className="h-36 relative"
+                                >
+                                    {displayCoverImage ? (
+                                        <Image source={displayCoverImage} className="w-full h-full" resizeMode="cover" />
+                                    ) : (
+                                        <View className="w-full h-full bg-[#F4F7FF] items-center justify-center px-4">
+                                            <Ionicons name="image-outline" size={26} color="#9CA3AF" />
+                                            <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
                                         </View>
-                                    </View>
-                                </View>
+                                    )}
+                                    {displayCoverImage && (
+                                        <View className="absolute top-2 left-2 bg-black/40 px-2 py-0.5 rounded-md">
+                                            <Text className="text-white text-[8px] font-lato">{selectedProject.developer}</Text>
+                                        </View>
+                                    )}
+                                    {apiMedia.length > 1 && (
+                                        <View className="absolute bottom-2 right-2 bg-black/60 px-2 py-1 rounded-md flex-row items-center">
+                                            <Ionicons name="images-outline" size={11} color="white" />
+                                            <Text className="text-white text-[9px] font-lato-bold ml-1">View {apiMedia.length} Photos</Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+
+                                <ImageLightbox
+                                    visible={isImageLightboxVisible}
+                                    images={lightboxImages}
+                                    onClose={() => setIsImageLightboxVisible(false)}
+                                />
 
                                 <View className="p-3">
                                     <View className="flex-row items-center mb-1.5">
-                                        <Text className="text-gray-400 text-[9px] font-lato">Possession: {displayPossession}</Text>
+                                        <Text className="text-gray-400 text-[11px] font-lato">Possession: {displayPossession}</Text>
                                         <View className="w-1 h-1 rounded-full bg-gray-300 mx-1.5" />
-                                        <Text className="text-gray-400 text-[9px] font-lato">Avg Price per sq ft: {displayAvgPrice}</Text>
+                                        <Text className="text-gray-400 text-[11px] font-lato">Avg Price per sq ft: {displayAvgPrice}</Text>
                                     </View>
 
                                     <View className="flex-row items-center justify-between mb-0.5">
@@ -1770,14 +1781,14 @@ export default function Home() {
                                             </View>
                                         )}
                                     </View>
-                                    <Text className="text-gray-400 text-[11px] font-lato mb-2.5">{displayProjectLocation}</Text>
+                                    <Text className="text-gray-400 text-[13px] font-lato mb-2.5">{displayProjectLocation}</Text>
 
                                     <View className="border-t border-dashed border-gray-200 pt-2.5 mb-2.5">
                                         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                                             <View className="flex-row">
                                                 {displayApartments.map((apt, idx) => (
                                                     <View key={idx} className={`${idx !== 0 ? "border-l border-gray-100 pl-3 ml-3" : ""} min-w-[80px]`}>
-                                                        <Text className="text-gray-400 text-[8px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
+                                                        <Text className="text-gray-400 text-[10px] font-lato-bold uppercase mb-0.5">{apt.type}</Text>
                                                         <Text className="text-[#1A1A1A] text-[13px] font-lato-bold">{apt.price}</Text>
                                                     </View>
                                                 ))}

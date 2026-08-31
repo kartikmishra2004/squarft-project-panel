@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, Platform, Modal, ActivityIndic
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import MapView, { PROVIDER_GOOGLE } from "react-native-maps";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 
 const hasValidGoogleMapsKey = () => {
@@ -315,6 +315,11 @@ export default function LocationMapPicker({ visible, initialAddress, onClose, on
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+            {/* A fullScreen Modal presents into its own native surface, so the
+                app-root SafeAreaProvider's measured insets don't reliably reach
+                it — nest a provider here so the SafeAreaViews below get real
+                insets instead of falling back to 0 and sitting under the notch. */}
+            <SafeAreaProvider>
             <View className="flex-1 bg-white">
                 <MapView
                     ref={mapRef}
@@ -444,6 +449,7 @@ export default function LocationMapPicker({ visible, initialAddress, onClose, on
                     )}
                 </SafeAreaView>
             </View>
+            </SafeAreaProvider>
         </Modal>
     );
 }
