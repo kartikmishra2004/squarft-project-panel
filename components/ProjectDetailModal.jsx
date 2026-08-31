@@ -3,6 +3,7 @@ import { View, Text, Image, TouchableOpacity, Dimensions, ActivityIndicator, Ale
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { dealService } from "../services/dealService";
+import ImageLightbox from "./ImageLightbox";
 
 const { width } = Dimensions.get("window");
 
@@ -302,6 +303,7 @@ const getActiveDealId = (variant) => {
 export default function ProjectDetailModal({ visible, onClose, project, variant, onVariantUpdate, showDealSummary = false, showFollowUps = false }) {
     const sheetRef = useRef(null);
     const [sheetView, setSheetView] = useState("property");
+    const [isImageLightboxVisible, setIsImageLightboxVisible] = useState(false);
     const [paymentPlan, setPaymentPlan] = useState(() => buildPaymentPlan(variant));
     const [activeMilestoneIndex, setActiveMilestoneIndex] = useState(null);
     const [collectAmount, setCollectAmount] = useState("");
@@ -540,7 +542,14 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
     })();
     
     const nextDue = firstPresent(dealData?.next_due_label, dealData?.nextDue, dealData?.next_due_date, paymentSummaryState.nextDueLabel);
-    const dealStatus = paymentSummaryState.allPaid ? "Paid" : "Upcoming";
+    // "STATUS" means two different things depending on whether this unit has
+    // an actual deal: payment status ("Paid"/"Upcoming") when it does, but
+    // the unit's real availability (Available/Booked/Sold) when it doesn't —
+    // it must never show a payment-progress placeholder for a unit nobody
+    // has booked yet.
+    const dealStatus = variant.showDealSummary
+        ? (paymentSummaryState.allPaid ? "Paid" : "Upcoming")
+        : firstPresent(variant.footerStatus, variant.topStatus, EMPTY_LABEL);
     
     const normalizeImage = (image) => {
         if (!image) return null;
@@ -553,7 +562,6 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
         .filter(Boolean);
     const totalImages = propertyImages.length;
     const heroImage = propertyImages[0] || null;
-    const heroThumb = propertyImages[1] || propertyImages[0] || null;
     
     const amenitiesList = variant.amenities?.length
         ? variant.amenities
@@ -645,77 +653,45 @@ export default function ProjectDetailModal({ visible, onClose, project, variant,
                 {sheetView === "property" ? (
                     <>
                         <View className="mx-5 rounded-3xl overflow-hidden border border-[#E8ECF4] bg-white">
-                            <View style={{ height: 170, overflow: "hidden" }}>
-                                <View style={{ flex: 1, flexDirection: "row" }}>
-                                    {heroImage ? (
-                                        <Image source={heroImage} style={{ flex: 1.35, height: 170 }} resizeMode="cover" />
-                                    ) : (
-                                        <View style={{ flex: 1.35, height: 170, backgroundColor: "#F4F7FF", alignItems: "center", justifyContent: "center", paddingHorizontal: 16 }}>
-                                            <Ionicons name="image-outline" size={28} color="#9CA3AF" />
-                                            <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
-                                        </View>
-                                    )}
-                                    <View style={{ width: 2, backgroundColor: "#fff" }} />
-                                    <View style={{ flex: 1, height: 170, position: "relative" }}>
-                                        {heroThumb ? (
-                                            <Image source={heroThumb} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
-                                        ) : (
-                                            <View style={{ width: "100%", height: "100%", backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center", paddingHorizontal: 10 }}>
-                                                <Ionicons name="image-outline" size={22} color="#9CA3AF" />
-                                                <Text className="mt-1 text-[9px] font-lato-bold text-gray-400 text-center">No Image</Text>
-                                            </View>
-                                        )}
-                                        <View
-                                            style={{
-                                                position: "absolute",
-                                                bottom: 8,
-                                                right: 8,
-                                                backgroundColor: "rgba(0,0,0,0.55)",
-                                                borderRadius: 6,
-                                                paddingHorizontal: 6,
-                                                paddingVertical: 2,
-                                            }}
-                                        >
-                                            <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>{totalImages > 0 ? `1/${totalImages}` : "0/0"}</Text>
-                                        </View>
+                            <TouchableOpacity
+                                activeOpacity={heroImage ? 0.9 : 1}
+                                disabled={!heroImage}
+                                onPress={() => setIsImageLightboxVisible(true)}
+                                style={{ height: 170 }}
+                            >
+                                {heroImage ? (
+                                    <Image source={heroImage} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+                                ) : (
+                                    <View style={{ width: "100%", height: "100%", backgroundColor: "#F4F7FF", alignItems: "center", justifyContent: "center", paddingHorizontal: 16 }}>
+                                        <Ionicons name="image-outline" size={28} color="#9CA3AF" />
+                                        <Text className="mt-2 text-[11px] font-lato-bold text-gray-400 text-center">No images available</Text>
                                     </View>
-                                </View>
+                                )}
+                                {totalImages > 1 && (
+                                    <View
+                                        style={{
+                                            position: "absolute",
+                                            bottom: 8,
+                                            right: 8,
+                                            backgroundColor: "rgba(0,0,0,0.6)",
+                                            borderRadius: 8,
+                                            paddingHorizontal: 8,
+                                            paddingVertical: 5,
+                                            flexDirection: "row",
+                                            alignItems: "center",
+                                        }}
+                                    >
+                                        <Ionicons name="images-outline" size={12} color="white" />
+                                        <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700", marginLeft: 4 }}>View {totalImages} Photos</Text>
+                                    </View>
+                                )}
+                            </TouchableOpacity>
 
-                                <View
-                                    style={{
-                                        position: "absolute",
-                                        top: 12,
-                                        left: 12,
-                                        flexDirection: "row",
-                                        alignItems: "center",
-                                        backgroundColor: "#fff",
-                                        borderRadius: 30,
-                                        paddingHorizontal: 12,
-                                        paddingVertical: 6,
-                                        gap: 3,
-                                        shadowColor: "#000",
-                                        shadowOpacity: 0.1,
-                                        shadowRadius: 4,
-                                        elevation: 3,
-                                    }}
-                                >
-                                    <MaterialCommunityIcons name="check-decagram" size={16} color="#0052CC" />
-                                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#0052CC", letterSpacing: 0.2 }}>SQUARFT VERIFIED</Text>
-                                </View>
-
-                                <View
-                                    style={{
-                                        position: "absolute",
-                                        top: 10,
-                                        right: 10,
-                                        backgroundColor: "rgba(0,0,0,0.55)",
-                                        borderRadius: 20,
-                                        padding: 6,
-                                    }}
-                                >
-                                    <Ionicons name="chevron-down" size={20} color="#fff" />
-                                </View>
-                            </View>
+                            <ImageLightbox
+                                visible={isImageLightboxVisible}
+                                images={propertyImages.map((img) => img.uri)}
+                                onClose={() => setIsImageLightboxVisible(false)}
+                            />
 
                             <View className="px-5 pt-4 pb-3">
                                 <View className="flex-row items-center gap-5 mb-3">

@@ -1038,6 +1038,8 @@ export default function Home() {
                         unit_code: u.unit_code,
                         title: `${sectionLabel} • ${u.display_title || u.unit_code || unitLabel}`,
                         propertyType: u.configuration || u.title || context.inventoryLabel || "Property",
+                        price: u.price_display,
+                        priceRange: u.price_display,
                         area: details.area,
                         area_sqft: details.area_sqft,
                         possession: details.possession,
@@ -1660,6 +1662,16 @@ export default function Home() {
                 className="flex-1"
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 120 }}
+                refreshControl={
+                    (activeTab === 'Overview' || activeTab === 'Inventory') ? (
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={['#4A43EC']}
+                            tintColor="#4A43EC"
+                        />
+                    ) : undefined
+                }
             >
                 {activeTab === "Overview" ? (
                     <View className="pt-2">
@@ -1825,7 +1837,7 @@ export default function Home() {
                     </View>
                 ) : activeTab === "Inventory" ? (
                     <View className="p-4">
-                        {isInventoryLoading ? (
+                        {isInventoryLoading && !refreshing ? (
                             <View className="py-12 items-center">
                                 <ActivityIndicator size="large" color="#4A43EC" />
                                 <Text className="mt-3 text-gray-400 font-lato text-center">Loading inventory...</Text>
