@@ -1,25 +1,145 @@
-import appJson from './app.json';
+import 'dotenv/config';
 
-export default () => ({
-  ...appJson.expo,
-  android: {
-    ...appJson.expo.android,
+const googleMapsApiKey =
+  process.env.GOOGLE_MAPS_API_KEY ||
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+export default {
+  name: 'squarft-project-panel',
+  slug: 'squarft-project-panel',
+  version: '1.0.0',
+  orientation: 'portrait',
+
+  icon: './assets/icons/app-icon.png',
+
+  scheme: 'squarftprojectpanel',
+
+  userInterfaceStyle: 'automatic',
+  newArchEnabled: true,
+
+  ios: {
+    supportsTablet: true,
+    bundleIdentifier: 'com.kartik2611mishra.squarftprojectpanel',
+
     config: {
-      ...appJson.expo.android?.config,
+      googleMapsApiKey,
+    },
+
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+    },
+  },
+
+  android: {
+    package: 'com.kartik2611mishra.squarftprojectpanel',
+
+    adaptiveIcon: {
+      backgroundColor: '#E6F4FE',
+    },
+
+    googleServicesFile: './google-services.json',
+
+    edgeToEdgeEnabled: true,
+    softwareKeyboardLayoutMode: 'resize',
+    predictiveBackGestureEnabled: false,
+
+    config: {
       googleMaps: {
-        apiKey: process.env.GOOGLE_MAPS_API_KEY || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+        apiKey: googleMapsApiKey,
       },
     },
   },
-  ios: {
-    ...appJson.expo.ios,
-    config: {
-      ...appJson.expo.ios?.config,
-      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+
+  web: {
+    output: 'static',
+    favicon: './assets/images/favicon.png',
+    bundler: 'metro',
+  },
+
+  plugins: [
+    'expo-router',
+    'expo-font',
+    'expo-web-browser',
+
+    [
+      'expo-location',
+      {
+        locationAlwaysAndWhenInUsePermission:
+          'Allow SquarFT Project Panel to use your location to auto-fill the project address.',
+
+        locationWhenInUsePermission:
+          'Allow SquarFT Project Panel to use your location to auto-fill the project address.',
+      },
+    ],
+
+    [
+      'expo-splash-screen',
+      {
+        image: './assets/icons/icon.png',
+        resizeMode: 'cover',
+        imageWidth: 200,
+        backgroundColor: '#4A43EC',
+
+        dark: {
+          backgroundColor: '#4A43EC',
+        },
+      },
+    ],
+
+    [
+      'expo-notifications',
+      {
+        color: '#4A43EC',
+        defaultChannel: 'project-panel-alerts',
+      },
+    ],
+
+    [
+      'expo-image-picker',
+      {
+        photosPermission:
+          'Allow SquarFT Project Panel to access your photos to upload KYC documents.',
+
+        cameraPermission:
+          'Allow SquarFT Project Panel to access your camera to take a KYC selfie.',
+      },
+    ],
+
+    '@react-native-community/datetimepicker',
+  ],
+
+  splash: {
+    image: './assets/icons/icon.png',
+    resizeMode: 'cover',
+    imageWidth: 200,
+    backgroundColor: '#4A43EC',
+
+    dark: {
+      backgroundColor: '#4A43EC',
     },
   },
-  extra: {
-    ...appJson.expo.extra,
-    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
+
+  experiments: {
+    typedRoutes: true,
+    reactCompiler: true,
   },
-});
+
+  extra: {
+    router: {},
+
+    eas: {
+      projectId: '58405e4c-4b9f-47cc-8970-eddf4bd89648',
+    },
+
+    googleMapsApiKey,
+  },
+
+  updates: {
+    url: 'https://u.expo.dev/58405e4c-4b9f-47cc-8970-eddf4bd89648',
+  },
+
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
+  owner: 'squarft',
+};
