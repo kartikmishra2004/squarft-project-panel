@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import * as Notifications from "expo-notifications";
 import { useDispatch, useSelector } from "react-redux";
 import { addNotification } from "../store/slices/notificationSlice";
+import { hydrateNotificationsFromStorage } from "../store/store";
 import {
     getInitialNotificationResponseAsync,
     primePushNotificationsAsync,
@@ -33,6 +34,10 @@ export default function PushNotificationRegistrar() {
     const dispatch = useDispatch();
     const { isLoggedIn, user, token } = useSelector((state) => state.auth);
     const hasHandledInitialResponse = useRef(false);
+
+    useEffect(() => {
+        hydrateNotificationsFromStorage();
+    }, []);
 
     useEffect(() => {
         primePushNotificationsAsync().catch((error) => {
