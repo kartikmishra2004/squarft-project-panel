@@ -104,8 +104,6 @@ export default {
           'Allow SquarFT Project Panel to access your camera to take a KYC selfie.',
       },
     ],
-
-    '@react-native-community/datetimepicker',
   ],
 
   splash: {
