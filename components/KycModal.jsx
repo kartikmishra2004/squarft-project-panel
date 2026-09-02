@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
+import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useSelector } from 'react-redux';
 
@@ -77,11 +78,7 @@ export default function KycModal() {
         >
             <BottomSheetView style={styles.container}>
                 <View style={[styles.hero, { backgroundColor: copy.color }]}>
-                    <Image
-                        source={require('../assets/images/project_main.png')}
-                        style={styles.image}
-                        resizeMode="contain"
-                    />
+                    <Ionicons name="document-text-outline" size={72} color="#FFFFFF" />
                 </View>
 
                 <Text style={styles.title}>{copy.title}</Text>
@@ -113,15 +110,10 @@ const styles = StyleSheet.create({
         width: '100%',
         height: 230,
         alignItems: 'center',
-        justifyContent: 'flex-end',
+        justifyContent: 'center',
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
         overflow: 'hidden',
-    },
-    image: {
-        width: width * 0.88,
-        height: 230,
-        marginBottom: -16,
     },
     title: {
         color: '#111827',

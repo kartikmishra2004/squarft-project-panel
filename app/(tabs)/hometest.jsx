@@ -16,7 +16,6 @@ import { visitService } from "../../services/visitService";
 import { projectService } from "../../services/projectService";
 import { dealService } from "../../services/dealService";
 
-const profileImg = require("../../assets/images/user_profile.png");
 const HOME_TABS = ["Overview", "Inventory", "Visits", "Deals"];
 const DROPDOWN_LAYER = 2147483647;
 const INVENTORY_TABS = [
@@ -1140,11 +1139,17 @@ export default function Home() {
                             <View className="flex-row justify-between items-center mb-4">
                                 <View className="flex-row items-center">
                                     <View className="w-[46px] h-[46px] relative">
-                                        <Image
-                                            source={profileImg}
-                                            className="w-[50px] h-[50px] rounded-full border-2 border-white"
-                                            resizeMode="cover"
-                                        />
+                                        {displayUserAvatar ? (
+                                            <Image
+                                                source={{ uri: displayUserAvatar }}
+                                                className="w-[50px] h-[50px] rounded-full border-2 border-white"
+                                                resizeMode="cover"
+                                            />
+                                        ) : (
+                                            <View className="w-[50px] h-[50px] rounded-full border-2 border-white bg-white/20 items-center justify-center">
+                                                <Ionicons name="person" size={22} color="#FFFFFF" />
+                                            </View>
+                                        )}
                                     </View>
                                     <View className="ml-3">
                                         <View className="flex-row items-center">
