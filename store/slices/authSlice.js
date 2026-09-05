@@ -121,6 +121,7 @@ const authSlice = createSlice({
         rememberMe: false,
         isLoggedIn: false,
         isKycCompleted: false,
+        kycInitialized: false,
         kyc: null,
         kycStatus: null,
         kycLoading: false,
@@ -160,10 +161,14 @@ const authSlice = createSlice({
         },
         toggleRememberMe: (state) => { state.rememberMe = !state.rememberMe; },
         setLoggedIn: (state, action) => { state.isLoggedIn = action.payload; },
-        setKycCompleted: (state, action) => { state.isKycCompleted = action.payload; },
+        setKycCompleted: (state, action) => {
+            state.isKycCompleted = action.payload;
+            state.kycInitialized = true;
+        },
         setKycStatus: (state, action) => {
             state.kycStatus = action.payload;
             state.isKycCompleted = isApprovedKycStatus(action.payload);
+            state.kycInitialized = true;
         },
         setUser: (state, action) => { state.user = action.payload; },
         setToken: (state, action) => { state.token = action.payload; },
@@ -184,6 +189,7 @@ const authSlice = createSlice({
             state.verifiedToken = null;
             state.isLoggedIn = false;
             state.isKycCompleted = false;
+            state.kycInitialized = false;
             state.kyc = null;
             state.kycStatus = null;
             state.kycError = null;
@@ -229,6 +235,7 @@ const authSlice = createSlice({
                 state.kyc = null;
                 state.kycStatus = null;
                 state.isKycCompleted = false;
+                state.kycInitialized = true;
             })
             .addCase(registerThunk.rejected, (state, action) => {
                 state.loading = false;
@@ -240,6 +247,7 @@ const authSlice = createSlice({
                 state.token = action.payload.token;
                 state.user = action.payload.user || state.user;
                 state.isLoggedIn = true;
+                state.kycInitialized = false;
             })
             .addCase(loginThunk.rejected, (state, action) => {
                 state.loading = false;
@@ -266,12 +274,14 @@ const authSlice = createSlice({
                 state.kyc = action.payload;
                 state.kycStatus = status;
                 state.isKycCompleted = isApprovedKycStatus(status);
+                state.kycInitialized = true;
             })
             .addCase(fetchDeveloperKyc.rejected, (state, action) => {
                 console.error('[KYC REDUX] Request rejected:', action.payload || action.error);
                 state.kycLoading = false;
                 state.kycError = action.payload?.message || action.error?.message;
                 state.isKycCompleted = false;
+                state.kycInitialized = true;
             })
             .addCase(uploadDeveloperKyc.pending, (state) => {
                 state.kycLoading = true;
@@ -283,6 +293,7 @@ const authSlice = createSlice({
                 state.kyc = action.payload;
                 state.kycStatus = status;
                 state.isKycCompleted = isApprovedKycStatus(status);
+                state.kycInitialized = true;
             })
             .addCase(uploadDeveloperKyc.rejected, (state, action) => {
                 state.kycLoading = false;
@@ -298,6 +309,7 @@ const authSlice = createSlice({
                 state.kyc = action.payload;
                 state.kycStatus = status;
                 state.isKycCompleted = isApprovedKycStatus(status);
+                state.kycInitialized = true;
             })
             .addCase(submitDeveloperKyc.rejected, (state, action) => {
                 state.kycLoading = false;

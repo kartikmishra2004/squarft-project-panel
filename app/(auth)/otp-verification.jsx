@@ -168,7 +168,7 @@ export default function OtpVerification() {
                         <Image source={logo} style={{ width: 110, height: 110, margin: -20 }} resizeMode="contain" />
                     </View>
                     <Text className="text-white text-[32px] font-lato-bold mb-1">Verification</Text>
-                    <Text className="text-white/80 text-[14px] font-lato">We've sent a 6-digit code to your mobile number</Text>
+                    <Text className="text-white/80 text-[14px] font-lato">{"We've sent a 6-digit code to your mobile number"}</Text>
                 </View>
 
                 <View className="flex-1 bg-white px-6 pt-12">
@@ -217,7 +217,7 @@ export default function OtpVerification() {
                     </TouchableOpacity>
 
                     <View className="flex-row justify-center items-center">
-                        <Text className="text-gray-500 text-[14px] font-lato">Didn't receive code? </Text>
+                        <Text className="text-gray-500 text-[14px] font-lato">{"Didn't receive code? "}</Text>
                         <TouchableOpacity onPress={handleResend} disabled={loading}>
                             <Text className="text-[#4A43EC] text-[14px] font-lato-bold">Resend OTP</Text>
                         </TouchableOpacity>

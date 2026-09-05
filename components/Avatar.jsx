@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Image, Text, View } from "react-native";
 
 // Renders the user's avatar_url when present and loadable; falls back to the
@@ -8,6 +8,12 @@ import { Image, Text, View } from "react-native";
 export default function Avatar({ uri, name, className, textClassName }) {
     const [failed, setFailed] = useState(false);
     const initial = (name || "?").trim().charAt(0).toUpperCase();
+
+    // A failed old/expired URL must not permanently suppress a newly uploaded
+    // or freshly signed URL passed in by the parent.
+    useEffect(() => {
+        setFailed(false);
+    }, [uri]);
 
     if (uri && !failed) {
         return (

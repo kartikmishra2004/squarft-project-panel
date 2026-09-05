@@ -38,11 +38,32 @@ export default function KycModal() {
     const pathname = usePathname();
     const bottomSheetRef = useRef(null);
     const snapPoints = useMemo(() => ['64%'], []);
-    const { isLoggedIn, isKycCompleted, kycStatus } = useSelector((state) => state.auth);
-    const isAuthPath = pathname === '/' || pathname.includes('(auth)') || pathname.includes('onboarding') || pathname.includes('login') || pathname.includes('register');
+    const {
+        isLoggedIn,
+        isKycCompleted,
+        kycInitialized,
+        kycLoading,
+        kycError,
+        kycStatus,
+    } = useSelector((state) => state.auth);
+    const isAuthPath =
+        pathname === '/' ||
+        pathname.includes('(auth)') ||
+        pathname.includes('onboarding') ||
+        pathname.includes('login') ||
+        pathname.includes('register') ||
+        pathname.includes('otp-verification');
 
-    const isVisible = isLoggedIn && !isKycCompleted && !isAuthPath && !pathname.includes('kyc');
-    const copy = statusCopy[kycStatus] || statusCopy.default;
+    const isVisible = Boolean(
+        isLoggedIn &&
+        kycInitialized &&
+        !kycLoading &&
+        !kycError &&
+        !isKycCompleted &&
+        !isAuthPath &&
+        !pathname.includes('kyc')
+    );
+    const copy = statusCopy[String(kycStatus || '').toLowerCase()] || statusCopy.default;
 
     useEffect(() => {
         if (isVisible) {
@@ -64,8 +85,9 @@ export default function KycModal() {
         []
     );
 
-    if (!isVisible) return null;
-
+    // Keep the BottomSheetModal mounted while it is being dismissed. Returning
+    // null here used to clear the ref before the dismiss effect could close the
+    // portal, leaving a stale KYC sheet visible over verified accounts.
     return (
         <BottomSheetModal
             ref={bottomSheetRef}

@@ -4,6 +4,15 @@ const googleMapsApiKey =
   process.env.GOOGLE_MAPS_API_KEY ||
   process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
+// react-native-maps reads this value from AndroidManifest.xml at native build
+// time. Failing here prevents Expo from producing a development build that can
+// only crash later when the map screen is opened.
+if (!googleMapsApiKey) {
+  throw new Error(
+    'Google Maps API key is missing. Set GOOGLE_MAPS_API_KEY or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY before building the app.'
+  );
+}
+
 export default {
   name: 'squarft-project-panel',
   slug: 'squarft-project-panel',

@@ -104,6 +104,9 @@ export const projectFormApi = {
     ),
     getDraftStepData: (projectId) => api.get(`/api/v1/project-panel/form/${projectId}/step-data`),
     getProjectFormResume: (projectId) => api.get(`/api/v1/project-panel/form/${projectId}/resume`),
+    getAvailableFieldOfficers: (projectId, search = '') => api.get('/api/project-developer/field-officers/available', {
+      params: { project_id: projectId, q: search || undefined },
+    }),
 };
 
 // Project Overview APIs

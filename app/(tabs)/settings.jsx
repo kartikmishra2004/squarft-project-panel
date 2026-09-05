@@ -96,7 +96,7 @@ export default function Settings() {
         || user.full_name
         || user.name
         || null;
-    const avatarUrl = profile?.avatar_url ?? user.avatar_url;
+    const avatarUrl = profile?.profilePictureUrl || profile?.avatar_url || user.profilePictureUrl || user.avatar_url;
     const displayPhone = profile?.phone || user.phone || user.mobile;
     const displayEmail = profile?.email && profile.email !== "No email provided" ? profile.email : null;
     const companyName = profile?.company_name || user.company_name;
@@ -131,7 +131,7 @@ export default function Settings() {
         const result = useCamera
             ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.8 })
             : await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                mediaTypes: ['images'],
                 allowsEditing: true,
                 aspect: [1, 1],
                 quality: 0.8,
@@ -143,8 +143,8 @@ export default function Settings() {
         try {
             const updated = await profileService.updateProfilePicture(result.assets[0]);
             const newAvatarUrl = updated?.profilePictureUrl || updated?.avatar_url || null;
-            setProfile((current) => ({ ...current, avatar_url: newAvatarUrl }));
-            dispatch(setUser({ ...user, avatar_url: newAvatarUrl }));
+            setProfile((current) => ({ ...current, profilePictureUrl: newAvatarUrl, avatar_url: newAvatarUrl }));
+            dispatch(setUser({ ...user, profilePictureUrl: newAvatarUrl, avatar_url: newAvatarUrl }));
         } catch (error) {
             Alert.alert("Upload Failed", error?.message || "Unable to update your profile photo.");
         } finally {

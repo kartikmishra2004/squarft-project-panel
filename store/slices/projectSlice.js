@@ -91,6 +91,7 @@ const initialState = {
         images: [],
         videos: [],
         documents: [],
+        fieldOfficerId: null,
         agreed: false,
     },
 };
